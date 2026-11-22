@@ -60,6 +60,18 @@ export const useParticleLifeStore = defineStore('particleLife', () => {
     const forceFactor = ref<number>(1.0) // Adjust the overall force applied between particles (can't be 0)
     const frictionFactor = ref<number>(0.3) // Slow down the particles (0 to 1, where 0 is no friction)
 
+    // ---- Quantum / Electrical layer: Urge & Neuron particles -------------------------
+    const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
+    const numUrges = ref<number>(60) // Number of urge particles
+    const numNeurons = ref<number>(60) // Number of neuron particles
+    const metricMode = ref<number>(0) // goal family: 0 mixed density / 1 mixed fraction / 2 density-fraction / 3 cycle all
+    const urgeRadius = ref<number>(45) // Radius over which an urge measures its goal metric & a neuron pushes/pulls its color
+    const neuronRadius = ref<number>(30) // Radius (from the neuron) within which an urge drives it
+    const urgeForce = ref<number>(1.2) // Strength of a neuron's field on its color, scaled by drive from nearby urges
+    const controlGain = ref<number>(0.05) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign
+    const controlMax = ref<number>(2.0) // Clamp on |control| (+ attract / - repel)
+    const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
+
     // Define properties for randomizing radius matrix
     const minRadiusRange = ref<number[]>([30, 60]) // Range for the random minRadius of each color
     const maxRadiusRange = ref<number[]>([90, 150]) // Range for the random maxRadius of each color
@@ -92,6 +104,7 @@ export const useParticleLifeStore = defineStore('particleLife', () => {
         is3D, isCircle, hasGrid, hasCells, isCellFollow, isWallRepel, isWallWrap, wallState, hasDepthSize, hasDepthOpacity, maxOpacity, minOpacity, cellShape, wallShape, screenMultiplierForGridSize,
         minRadiusRange, maxRadiusRange, currentMaxRadius,
         repel, forceFactor, frictionFactor,
+        isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, cohesion,
         cellGroupSize, cellSizeFactor,
         captureType, isCapturingGIF, isShareOptionsOpen, selectedRulesOption, selectedColorPaletteOption, savedPresets, isSaveModalOpen,
         $reset
