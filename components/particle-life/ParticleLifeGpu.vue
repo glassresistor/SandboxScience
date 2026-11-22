@@ -237,7 +237,7 @@
                             <template v-if="particleLife.isCloningEnabled">
                                 <RangeInput input label="Metric Threshold"
                                             tooltip="An urge must keep its metric above this value for 2×(neurons-in-range)×3 consecutive checks (500 ms each) before cloning. Higher = rarer clones. Typical metrics range 0–20 depending on local density."
-                                            :min="1" :max="50" :step="0.5" v-model="particleLife.cloneMetricThreshold" mt-1>
+                                            :min="0" :max="15" :step="0.5" v-model="particleLife.cloneMetricThreshold" mt-1>
                                 </RangeInput>
                                 <RangeInput input label="Clone Impulse"
                                             tooltip="Initial velocity given to a clone so it shoots outside the original's radius but stays in the general area. Higher = flies further. Typical sim sizes are ~800–2000 px."
