@@ -77,7 +77,12 @@ fn vertex_main(instanceIndex: u32, vertexIndex: u32, size: f32) -> VertexOutput 
     let copyX = copyInstanceIndex - copyY * numCopiesX; // Faster than modulo (copyInstanceIndex % numCopiesX)
 
     let particle = particles[particleIndex];
-    let color = colors[u32(particle.particleType)];
+    var color = colors[u32(particle.particleType)]; // var: reassigned below with state-driven brightness
+    // Quantum/electrical: brightness driven by the particle's live state.
+    //   urges  -> glow with |control| (how hard they've learned to attract/repel)
+    //   neurons-> pulse with signal   (activity = nearby urges). matter has both = 0.
+    let bright = 1.0 + 0.9 * abs(particle.control) + 0.35 * min(particle.signal, 6.0);
+    color = vec4f(color.rgb * bright, color.a);
     let worldPos = vec2<f32>(
        fma(f32(i32(copyX) + infiniteOptions.start.x), options.simWidth, particle.x),
        fma(f32(i32(copyY) + infiniteOptions.start.y), options.simHeight, particle.y)

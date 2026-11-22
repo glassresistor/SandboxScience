@@ -76,6 +76,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const neuronAuthority = ref<number>(0.4) // Extra authority gained per nearby neuron (more neurons = more control)
     const maxAuthority = ref<number>(3.0) // Cap on the accumulated neuron authority
     const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
+    const isDebugConnections = ref<boolean>(false) // Debug: draw dotted lines between urges and the neurons wired to them
 
     const showLiveDeltaTime = ref<boolean>(false) // Show live Δt in the HUD (for debugging and performance monitoring)
     const manualDeltaTimeEnabled = ref<boolean>(false) // Override the automatic (framerate-independent) Δt with a fixed value
@@ -128,7 +129,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
         isTrackerActive, isTrackerSelectionActive, isTrackerCameraActive, isTrackerIndicatorVisible, trackerCameraSmoothing,
         minRadiusRange, maxRadiusRange, currentMaxRadius,
         repel, forceFactor, frictionFactor, useSpatialHash,
-        isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, neuronInfluence, neuronAuthority, maxAuthority, cohesion,
+        isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, neuronInfluence, neuronAuthority, maxAuthority, cohesion, isDebugConnections,
         showLiveDeltaTime, manualDeltaTimeEnabled, manualDeltaTime,
         isBrushActive, brushes, brushRadius, brushIntensity, brushType, attractForce, repulseForce, brushDirectionalForce, showBrushCircle,
         glowSize, glowIntensity, glowSteepness, particleOpacity,

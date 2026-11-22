@@ -223,6 +223,15 @@
                                         tooltip="How strongly urges and neurons cling to the body (so they coat it) and avoid overlapping each other. 0 = they drift freely."
                                         :min="0" :max="3" :step="0.01" v-model="particleLife.cohesion">
                             </RangeInput>
+
+                            <hr border-gray-500 my-2>
+                            <div flex items-center justify-between gap-2>
+                                <p class="w-2/3 text-2sm">
+                                    Debug links
+                                    <TooltipInfo container="#mainContainer" tooltip="Draw light dotted lines from each urge to the neurons within its radius, so you can see which control nodes are wired to which urge." />
+                                </p>
+                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isDebugConnections" />
+                            </div>
                         </Collapse>
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500">
                             <RangeInput input label="Particle Size"
@@ -501,6 +510,8 @@ import renderBinsShaderCode from 'assets/particle-life-gpu/shaders/render/render
 import renderTrackerShaderCode from 'assets/particle-life-gpu/shaders/render/render_tracker.wgsl?raw';
 import trackerComputeShaderCode from 'assets/particle-life-gpu/shaders/compute/trackerCompute.wgsl?raw';
 import trackerCameraUpdateShaderCode from 'assets/particle-life-gpu/shaders/compute/trackerCameraUpdate.wgsl?raw';
+import debugConnectionsShaderCode from 'assets/particle-life-gpu/shaders/compute/debugConnections.wgsl?raw';
+import renderConnectionsShaderCode from 'assets/particle-life-gpu/shaders/render/render_connections.wgsl?raw';
 
 export default defineComponent({
     name: 'ParticleLifeGpu',
@@ -617,6 +628,7 @@ export default defineComponent({
         let numUrges: number = particleLife.numUrges
         let numNeurons: number = particleLife.numNeurons
         let isParticleGlow: boolean = particleLife.isParticleGlow // Enable glow effect for the particles
+        let isDebugConnections: boolean = particleLife.isDebugConnections // Debug: draw urge<->neuron dotted lines
         let isAdditiveBlending = particleLife.isAdditiveBlending // Use additive blending for rendering particles
         let isWallRepel: boolean = particleLife.isWallRepel // Enable walls X and Y for the particles
         let isWallWrap: boolean = particleLife.isWallWrap // Enable wrapping for the particles
@@ -660,6 +672,8 @@ export default defineComponent({
         let cameraBuffer: GPUBuffer | undefined
         let interactionMatrixBuffer: GPUBuffer | undefined
         let electricalOptionsBuffer: GPUBuffer | undefined // Urge/neuron (quantum-electrical) layer parameters
+        let connDotsBuffer: GPUBuffer | undefined // debug connection dots (pos + color)
+        let connCountBuffer: GPUBuffer | undefined // atomic count of emitted connection dots
         let simOptionsBuffer: GPUBuffer | undefined
         let particleHashesBuffer: GPUBuffer | undefined
         let cellHeadsBuffer: GPUBuffer | undefined
@@ -681,6 +695,7 @@ export default defineComponent({
         let hdrTextureView: GPUTextureView
 
         let renderPipeline: GPURenderPipeline
+        let renderConnectionsPipeline: GPURenderPipeline // debug dotted urge<->neuron lines
         let renderGlowPipeline: GPURenderPipeline
         let renderCirclePipeline: GPURenderPipeline
         let renderMirrorPipeline: GPURenderPipeline
@@ -709,6 +724,7 @@ export default defineComponent({
         let bruteForceComputePipeline: GPUComputePipeline
         let particleComputeForcesPipeline: GPUComputePipeline
         let particleAdvancePipeline: GPUComputePipeline
+        let debugConnectionsPipeline: GPUComputePipeline // emits debug connection dots
         let particleAdvanceBrushPipeline: GPUComputePipeline
 
         let particleBufferReadOnlyBindGroup: GPUBindGroup
@@ -727,6 +743,8 @@ export default defineComponent({
         let infiniteRenderOptionsBindGroup: GPUBindGroup
         let brushOptionsBindGroup: GPUBindGroup
         let electricalBindGroup: GPUBindGroup
+        let connectionsComputeBindGroup: GPUBindGroup // debug lines compute (particles + dots + count)
+        let connectionsRenderBindGroup: GPUBindGroup // debug lines render (dots + count)
 
         let particleBufferBindGroupLayout: GPUBindGroupLayout
         let binPrefixSumBindGroupLayout: GPUBindGroupLayout
@@ -738,6 +756,8 @@ export default defineComponent({
         let simOptionsBindGroupLayout: GPUBindGroupLayout
         let deltaTimeBindGroupLayout: GPUBindGroupLayout
         let electricalBindGroupLayout: GPUBindGroupLayout
+        let connectionsComputeBindGroupLayout: GPUBindGroupLayout
+        let connectionsRenderBindGroupLayout: GPUBindGroupLayout
         let cameraBindGroupLayout: GPUBindGroupLayout
         let offscreenTextureBindGroupLayout: GPUBindGroupLayout
         let composeHdrBindGroupLayout: GPUBindGroupLayout
@@ -1591,6 +1611,33 @@ export default defineComponent({
                 renderPass.draw(4, NUM_PARTICLES)
                 renderPass.end()
             }
+
+            // Debug: draw dotted lines connecting each urge to the neurons wired to it.
+            // Capped so maxing both sliders can't trigger an O(urges*neurons) compute blowup.
+            if (isDebugConnections && numUrges > 0 && numNeurons > 0 && numUrges * numNeurons <= 60000) {
+                encoder.clearBuffer(connCountBuffer!, 0, 4)
+                const connPass = encoder.beginComputePass()
+                connPass.setPipeline(debugConnectionsPipeline)
+                connPass.setBindGroup(0, connectionsComputeBindGroup)
+                connPass.setBindGroup(1, simOptionsBindGroup)
+                connPass.setBindGroup(2, electricalBindGroup)
+                connPass.dispatchWorkgroups(Math.ceil(numUrges / 64))
+                connPass.end()
+
+                const connRenderPass = encoder.beginRenderPass({
+                    colorAttachments: [{
+                        view: ctx.getCurrentTexture().createView(),
+                        loadOp: 'load',
+                        storeOp: 'store',
+                    }],
+                })
+                connRenderPass.setPipeline(renderConnectionsPipeline)
+                connRenderPass.setBindGroup(0, connectionsRenderBindGroup)
+                connRenderPass.setBindGroup(1, cameraBindGroup)
+                connRenderPass.setBindGroup(2, simOptionsBindGroup)
+                connRenderPass.draw(4, MAX_CONN_DOTS)
+                connRenderPass.end()
+            }
         }
         // -------------------------------------------------------------------------------------------------------------
         const renderBrushCircle = (encoder: GPUCommandEncoder) => {
@@ -1705,10 +1752,25 @@ export default defineComponent({
                 device.queue.writeBuffer(electricalOptionsBuffer, 0, data)
             }
         }
+        const MAX_CONN_DOTS: number = 32768 // must match MAX_CONN_DOTS in debugConnections.wgsl
+        const CONN_DOT_STRIDE: number = 24 // ConnDot { pos: vec2f; col: vec3f } -> 24 bytes array stride
+        const createConnectionBuffers = () => {
+            if (connDotsBuffer) connDotsBuffer.destroy(); connDotsBuffer = undefined;
+            if (connCountBuffer) connCountBuffer.destroy(); connCountBuffer = undefined;
+            connDotsBuffer = device.createBuffer({
+                size: MAX_CONN_DOTS * CONN_DOT_STRIDE,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            })
+            connCountBuffer = device.createBuffer({
+                size: 4,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            })
+        }
         const createBuffers = () => {
             updateSimOptionsBuffer() // Set simulation options based on the store state
             updateInteractionMatrixBuffer() // Set interaction matrices based on the store state
             updateElectricalOptionsBuffer() // Urge/neuron (quantum-electrical) layer parameters
+            createConnectionBuffers() // Debug urge<->neuron line buffers
             updateParticleBuffers(true)
             updateEraseCompactBuffers()
             updateBinningBuffers()
@@ -2057,6 +2119,21 @@ export default defineComponent({
                     { binding: 0, resource: { buffer: electricalOptionsBuffer! } },
                 ],
             })
+            connectionsComputeBindGroup = device.createBindGroup({
+                layout: connectionsComputeBindGroupLayout,
+                entries: [
+                    { binding: 0, resource: { buffer: particleBuffer! } },
+                    { binding: 1, resource: { buffer: connDotsBuffer! } },
+                    { binding: 2, resource: { buffer: connCountBuffer! } },
+                ],
+            })
+            connectionsRenderBindGroup = device.createBindGroup({
+                layout: connectionsRenderBindGroupLayout,
+                entries: [
+                    { binding: 0, resource: { buffer: connDotsBuffer! } },
+                    { binding: 1, resource: { buffer: connCountBuffer! } },
+                ],
+            })
             cameraBindGroup = device.createBindGroup({
                 layout: cameraBindGroupLayout,
                 entries: [
@@ -2301,6 +2378,19 @@ export default defineComponent({
                     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }, // electricalOptionsBuffer
                 ],
             })
+            connectionsComputeBindGroupLayout = device.createBindGroupLayout({
+                entries: [
+                    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particleBuffer
+                    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // connDotsBuffer (write)
+                    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // connCountBuffer (atomic write)
+                ],
+            })
+            connectionsRenderBindGroupLayout = device.createBindGroupLayout({
+                entries: [
+                    { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } }, // connDotsBuffer
+                    { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } }, // connCountBuffer
+                ],
+            })
             bruteForceBindGroupLayout = device.createBindGroupLayout({
                 entries: [
                     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particleTempBuffer
@@ -2501,6 +2591,17 @@ export default defineComponent({
                 }),
                 compute: { module: particleAdvanceShader, entryPoint: 'particleAdvance' }
             })
+            const debugConnectionsShader = device.createShaderModule({ code: debugConnectionsShaderCode })
+            debugConnectionsPipeline = device.createComputePipeline({
+                layout: device.createPipelineLayout({
+                    bindGroupLayouts: [
+                        connectionsComputeBindGroupLayout,
+                        simOptionsBindGroupLayout,
+                        electricalBindGroupLayout,
+                    ],
+                }),
+                compute: { module: debugConnectionsShader, entryPoint: 'emitConnections' }
+            })
             const particleAdvanceBrushShader = device.createShaderModule({ code: particleAdvanceBrushShaderCode })
             particleAdvanceBrushPipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
@@ -2585,6 +2686,19 @@ export default defineComponent({
                 fragment: { module: renderShader, entryPoint: 'fragmentMain', targets: [{
                     format: navigator.gpu.getPreferredCanvasFormat(),
                     blend: particleAdditiveBlending
+                }] },
+                primitive: { topology: 'triangle-strip' }
+            })
+            const renderConnectionsShader = device.createShaderModule({ code: renderConnectionsShaderCode })
+            renderConnectionsPipeline = device.createRenderPipeline({
+                layout: device.createPipelineLayout({
+                    bindGroupLayouts: [connectionsRenderBindGroupLayout, cameraBindGroupLayout, simOptionsBindGroupLayout],
+                }),
+                vertex: { module: renderConnectionsShader, entryPoint: 'vertexMain' },
+                fragment: { module: renderConnectionsShader, entryPoint: 'fragmentMain', targets: [{
+                    format: navigator.gpu.getPreferredCanvasFormat(),
+                    // Normal (alpha) blending: lines draw ON TOP of bright matter so they stay visible.
+                    blend: particleNormalBlending
                 }] },
                 primitive: { topology: 'triangle-strip' }
             })
@@ -3508,14 +3622,22 @@ export default defineComponent({
             }
             return maxRandom
         }
+        // The neighbor scan window is a SQUARE of (2*cellSubdivisions+1) cells. Any interaction
+        // radius larger than that window gets clipped to the square -> axis-aligned "empty squares".
+        // So CELL_SIZE must be sized from the LARGEST radius in play: matter maxRadius OR urgeRadius.
+        const effectiveMaxRadius = () => Math.max(currentMaxRadius, particleLife.isElectricalEnabled ? particleLife.urgeRadius : 0)
+        const recomputeCellSize = () => {
+            const newSize = Math.max(1, Math.ceil(effectiveMaxRadius() / CELL_SUBDIVISIONS))
+            if (newSize === CELL_SIZE) return // only rebuild the grid when it actually changes
+            CELL_SIZE = newSize
+            setSimSize()
+            updateSimOptionsBuffer()
+        }
         const setCurrentMaxRadius = (value: number) => {
             if (currentMaxRadius === value) return
             currentMaxRadius = value
             particleLife.currentMaxRadius = value
-            CELL_SIZE = Math.max(1, Math.ceil(currentMaxRadius / CELL_SUBDIVISIONS))
-
-            setSimSize()
-            updateSimOptionsBuffer()
+            recomputeCellSize()
         }
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
@@ -3632,6 +3754,10 @@ export default defineComponent({
         watchElectrical(() => particleLife.neuronAuthority)
         watchElectrical(() => particleLife.maxAuthority)
         watchElectrical(() => particleLife.cohesion)
+        watch(() => particleLife.isDebugConnections, (value: boolean) => isDebugConnections = value)
+        // A larger urge radius needs a coarser grid so its field isn't clipped to the square scan window.
+        watch(() => particleLife.urgeRadius, () => { if (particleLife.isElectricalEnabled) recomputeCellSize() })
+        watch(() => particleLife.isElectricalEnabled, () => recomputeCellSize())
 
         watch(() => particleLife.showLiveDeltaTime, (value: boolean) => showLiveDeltaTime = value)
         watch(() => particleLife.manualDeltaTimeEnabled, (value: boolean) => {
@@ -3664,9 +3790,7 @@ export default defineComponent({
         watch(() => particleLife.debugMaxParticleCount, (value: number) => { debugMaxParticleCount = value; updateDebugOptionsBuffer(); })
         watch(() => particleLife.cellSubdivisions, (value: number) => {
             CELL_SUBDIVISIONS = value
-            CELL_SIZE = Math.ceil(currentMaxRadius / CELL_SUBDIVISIONS)
-            setSimSize()
-            updateSimOptionsBuffer()
+            recomputeCellSize()
         })
 
         let isUpdatingWallState = false

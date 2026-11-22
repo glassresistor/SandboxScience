@@ -7,8 +7,22 @@
 ## 🚀 Features
 
 - **Game of Life**: Explore cellular automata and understand the basics of computational biology.
-- **Particle Life**: Simulate and observe the behavior of particle systems.
+- **Particle Life**: Simulate and observe the behavior of particle systems — including an experimental **Quantum / Electrical** layer that adds *urge* and *neuron* particles on top of the classic bodies (see below).
 - **More Simulations**: Dive into various scientific simulations, with more being added regularly.
+
+## 🧬 Quantum / Electrical Layer (Particle Life)
+
+On top of the usual matter colors, the **2D GPU** engine can spawn two extra particle types that act on the bodies in a more "quantum & electrical" way. They live in the left sidebar under the **Quantum / Electrical** panel.
+
+- **Urges** — each urge has its own *objective*: a metric it tries to **maximize** (e.g. the local density of one specific color, the local fraction of that color, or how many other urges are nearby). Every frame it measures that metric and runs a small Hebbian learning rule on an internal `control` value: when its metric is improving it pushes harder, when it's worsening it backs off. That `control` becomes an **attract (+) / repel (−)** field applied to the surrounding matter. Because the fields of nearby urges **add up**, a clump of urges exerts a much stronger combined pull/push than any single one — so you can watch dense urge patches deform the bodies around them.
+
+- **Neurons** — each neuron is a *kind of control*: it has a mode (**attract / repel / self-attract**) and a target color. When a neuron gets close to an urge (within its radius) it nudges that urge's `control` in real time. Crucially, **the more neurons are around an urge, the more authority they grant it** — an isolated urge is only weakly modulated, while a well-wired one can swing its field hard. Neuron "activity" (how many urges it's wired to) also drives how brightly it glows.
+
+- **Single-pass memory** — each particle carries its `control` and `signal` state in the particle buffer, so *the next iteration reads the values written by the previous one*. No second pass is needed: the electrical state simply persists across frames as the simulation sorts and advances.
+
+- **Live visuals** — urges glow brighter as their `|control|` grows (you can literally watch them "learn"), and neurons pulse with their activity. Toggle **Debug links** to draw light dotted lines from each urge to the neurons within its radius, so you can see which control nodes are wired to which urge.
+
+> This layer is experimental and tuned for play. Start with the defaults (≈60 urges / ≈60 neurons) and adjust *Urge Field Strength*, *Control Gain* and *Neuron Influence/Authority* to taste — very high values can make the simulation unstable.
 
 ## 🎯 Goals
 
