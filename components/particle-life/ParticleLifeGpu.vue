@@ -229,14 +229,14 @@
                             <div flex items-center justify-between gap-2 mb-1>
                                 <p class="w-2/3 text-2sm">
                                     Urge Cloning
-                                    <TooltipInfo container="#mainContainer" tooltip="When an urge's metric exceeds the threshold, a dormant clone-pool particle is activated as a copy of that urge (same type → same goal & matrix row) plus its nearest neuron. The clone is shot outward with an impulse to exit the original's radius but stay in the general area. Clones are permanent." />
+                                    <TooltipInfo container="#mainContainer" tooltip="When an urge's metric stays above the threshold for a sustained period (2 × neurons-in-range × 3 ticks), a dormant clone-pool particle is activated as a copy of that urge plus ALL its in-range neurons. The clone is shot outward with an impulse to exit the original's radius but stay in the general area. Clones are permanent." />
                                 </p>
                                 <ToggleSwitch label="On" colorful-label v-model="particleLife.isCloningEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
                             </div>
 
                             <template v-if="particleLife.isCloningEnabled">
                                 <RangeInput input label="Metric Threshold"
-                                            tooltip="An urge triggers a clone when its running metric (signal) exceeds this value. Higher = rarer clones. Typical metrics range 0–20 depending on local density."
+                                            tooltip="An urge must keep its metric above this value for 2×(neurons-in-range)×3 consecutive checks (500 ms each) before cloning. Higher = rarer clones. Typical metrics range 0–20 depending on local density."
                                             :min="1" :max="50" :step="0.5" v-model="particleLife.cloneMetricThreshold" mt-1>
                                 </RangeInput>
                                 <RangeInput input label="Clone Impulse"
@@ -4288,8 +4288,15 @@ export default defineComponent({
         })
 
         // ---- Urge Cloning system ---------------------------------------------------------
-        // When an urge's metric (signal) exceeds cloneMetricThreshold, activate a dormant clone-pool
-        // slot as a copy of that urge (same type → same behavior) and optionally its nearest neuron.
+        // When an urge's metric (signal) stays above cloneMetricThreshold for a sustained period,
+        // activate a dormant clone-pool slot as a copy of that urge (same type → same behavior)
+        // and ALL neurons within neuronRadius of it.
+        //
+        // Sustained threshold: the metric must remain above the threshold for
+        //   requiredTicks = 2 × (number of neurons in range) × 3 check intervals
+        // before a clone is triggered. This prevents one-frame spikes from spawning clones.
+        // With 0 neurons in range, requiredTicks = 6 (minimum).
+        //
         // The clone is given an initial velocity impulse to shoot it outside the original's radius
         // but keep it in the general area. Clones are permanent (they don't expire).
         const CLONE_CHECK_INTERVAL_MS = 500
@@ -4297,6 +4304,8 @@ export default defineComponent({
         let isCloningInFlight = false // concurrency guard
         // Track which urges have already triggered a clone (avoid re-cloning every tick)
         let clonedUrges = new Set<number>()
+        // Consecutive ticks each urge has been above threshold (resets to 0 when below)
+        let sustainedAboveThreshold = new Map<number, number>()
 
         const checkAndClone = async () => {
             if (!particleLife.isCloningEnabled || !particleLife.isElectricalEnabled) return
@@ -4313,11 +4322,13 @@ export default defineComponent({
                 const threshold = particleLife.cloneMetricThreshold
                 const impulse = particleLife.cloneImpulse
                 const urgeRadius = Math.max(particleLife.urgeRadius, 10)
+                const neuronRadius = Math.max(particleLife.neuronRadius, 4)
+                const neuronR2 = neuronRadius * neuronRadius
 
-                // Collect urges with high metrics and find dormant slots
-                const highMetricUrges: { k: number, x: number, y: number }[] = []
+                // First pass: collect all particles by category
+                const urges: { k: number, x: number, y: number, signal: number }[] = []
                 const dormantSlots: number[] = [] // buffer indices of dormant particles
-                const neuronPositions: { idx: number, localM: number, x: number, y: number }[] = []
+                const neurons: { idx: number, localM: number, x: number, y: number }[] = []
 
                 for (let i = 0; i < NUM_PARTICLES; i++) {
                     const idx7 = i * 7
@@ -4326,29 +4337,61 @@ export default defineComponent({
                         dormantSlots.push(i)
                     } else if (ptype >= NUM_TYPES && ptype < NUM_TYPES + numUrges) {
                         const localK = ptype - NUM_TYPES
-                        const signal = particles[idx7 + 6]
-                        if (signal > threshold && !clonedUrges.has(localK)) {
-                            highMetricUrges.push({ k: localK, x: particles[idx7], y: particles[idx7 + 1] })
-                        }
+                        urges.push({ k: localK, x: particles[idx7], y: particles[idx7 + 1], signal: particles[idx7 + 6] })
                     } else if (ptype >= NUM_TYPES + numUrges && ptype < dormantType) {
                         const localM = ptype - NUM_TYPES - numUrges
-                        neuronPositions.push({ idx: i, localM, x: particles[idx7], y: particles[idx7 + 1] })
+                        neurons.push({ idx: i, localM, x: particles[idx7], y: particles[idx7 + 1] })
                     }
                 }
 
-                if (highMetricUrges.length === 0 || dormantSlots.length === 0) return
+                if (dormantSlots.length === 0) return // no pool available
 
-                // Activate up to min(highMetricUrges.length, dormantSlots.length) clones
-                const numToClone = Math.min(highMetricUrges.length, dormantSlots.length)
+                // Second pass: update sustained counters and determine which urges are ready to clone
+                const newSustained = new Map<number, number>()
+                const readyToClone: { k: number, x: number, y: number, neuronsInRange: { localM: number, x: number, y: number }[] }[] = []
+
+                for (const u of urges) {
+                    if (clonedUrges.has(u.k)) continue // already cloned this session
+
+                    // Count neurons within neuronRadius of this urge
+                    const inRange: { localM: number, x: number, y: number }[] = []
+                    for (const n of neurons) {
+                        const dx = n.x - u.x
+                        const dy = n.y - u.y
+                        if (dx * dx + dy * dy <= neuronR2) inRange.push({ localM: n.localM, x: n.x, y: n.y })
+                    }
+
+                    // Required sustained ticks: 2 × neuronsInRange × 3 (minimum 6 if no neurons)
+                    const requiredTicks = Math.max(6, 2 * inRange.length * 3)
+
+                    if (u.signal > threshold) {
+                        const prev = sustainedAboveThreshold.get(u.k) ?? 0
+                        const count = prev + 1
+                        newSustained.set(u.k, count)
+                        if (count >= requiredTicks) {
+                            readyToClone.push({ k: u.k, x: u.x, y: u.y, neuronsInRange: inRange })
+                        }
+                    } else {
+                        // Below threshold: reset counter
+                        // (don't add to newSustained, so it defaults to 0)
+                    }
+                }
+                sustainedAboveThreshold = newSustained
+
+                if (readyToClone.length === 0) return
+
+                // Activate clones: each ready urge consumes 1 slot for itself + N slots for its neurons
                 let slotPtr = 0
 
-                for (let c = 0; c < numToClone; c++) {
-                    const urge = highMetricUrges[c]
+                for (const urge of readyToClone) {
+                    const totalNeeded = 1 + urge.neuronsInRange.length // 1 for urge + all in-range neurons
+                    if (slotPtr + totalNeeded > dormantSlots.length) break // not enough pool remaining
+
+                    // --- Clone the urge itself ---
                     const slotIdx = dormantSlots[slotPtr++]
                     const s7 = slotIdx * 7
 
-                    // Clone the urge: same type → identical behavior (same goal, same matrix row)
-                    particles[s7 + 4] = NUM_TYPES + urge.k // type = same as source urge
+                    particles[s7 + 4] = NUM_TYPES + urge.k // same type → identical behavior
                     particles[s7 + 5] = 0 // control starts fresh (will learn independently)
                     particles[s7 + 6] = 0 // signal starts fresh
 
@@ -4359,39 +4402,32 @@ export default defineComponent({
                     particles[s7 + 1] = urge.y + Math.sin(angle) * offsetDist
 
                     // Velocity: shoot outward from the original, magnitude = cloneImpulse.
-                    // Direction is away from the original urge's position (radial), with some randomness.
-                    const shootAngle = angle + (Math.random() - 0.5) * 1.0 // ±30° scatter
+                    // Direction is radial away from the original, with ±30° scatter.
+                    const shootAngle = angle + (Math.random() - 0.5) * 1.0
                     particles[s7 + 2] = Math.cos(shootAngle) * impulse
                     particles[s7 + 3] = Math.sin(shootAngle) * impulse
 
                     clonedUrges.add(urge.k)
 
-                    // Also clone the nearest neuron to this urge (if available and pool has room)
-                    if (slotPtr < dormantSlots.length && neuronPositions.length > 0) {
+                    // --- Clone ALL neurons in range of this urge ---
+                    for (const srcNeuron of urge.neuronsInRange) {
+                        if (slotPtr >= dormantSlots.length) break
                         const nSlotIdx = dormantSlots[slotPtr++]
                         const n7 = nSlotIdx * 7
-                        // Find nearest neuron to the cloned urge position
-                        let bestN = -1, bestDist = Infinity
-                        for (let ni = 0; ni < neuronPositions.length; ni++) {
-                            const dx = neuronPositions[ni].x - particles[s7]
-                            const dy = neuronPositions[ni].y - particles[s7 + 1]
-                            const d2 = dx * dx + dy * dy
-                            if (d2 < bestDist) { bestDist = d2; bestN = ni }
-                        }
-                        if (bestN >= 0) {
-                            const srcNeuron = neuronPositions[bestN]
-                            particles[n7 + 4] = NUM_TYPES + numUrges + srcNeuron.localM // same neuron type
-                            particles[n7 + 5] = 0
-                            particles[n7 + 6] = 0
-                            // Position: near the cloned urge, slightly offset
-                            const nAngle = Math.random() * Math.PI * 2
-                            const nOffset = urgeRadius * 0.2 + Math.random() * urgeRadius * 0.2
-                            particles[n7]     = particles[s7] + Math.cos(nAngle) * nOffset
-                            particles[n7 + 1] = particles[s7 + 1] + Math.sin(nAngle) * nOffset
-                            // Velocity: same direction as the urge clone, slightly less
-                            particles[n7 + 2] = particles[s7 + 2] * 0.7
-                            particles[n7 + 3] = particles[s7 + 3] * 0.7
-                        }
+
+                        particles[n7 + 4] = NUM_TYPES + numUrges + srcNeuron.localM // same neuron type
+                        particles[n7 + 5] = 0
+                        particles[n7 + 6] = 0
+
+                        // Position: near the cloned urge, preserving relative offset from original
+                        const relX = srcNeuron.x - urge.x
+                        const relY = srcNeuron.y - urge.y
+                        particles[n7]     = particles[s7] + relX * 0.5 // half the original offset
+                        particles[n7 + 1] = particles[s7 + 1] + relY * 0.5
+
+                        // Velocity: same direction as the urge clone, slightly less (trails behind)
+                        particles[n7 + 2] = particles[s7 + 2] * 0.7
+                        particles[n7 + 3] = particles[s7 + 3] * 0.7
                     }
                 }
 
@@ -4408,6 +4444,7 @@ export default defineComponent({
             stopCloneCheck()
             if (!particleLife.isCloningEnabled) return
             clonedUrges.clear() // reset when re-enabling
+            sustainedAboveThreshold.clear()
             void checkAndClone()
             cloneCheckTimer = window.setInterval(() => { void checkAndClone() }, CLONE_CHECK_INTERVAL_MS)
         }
