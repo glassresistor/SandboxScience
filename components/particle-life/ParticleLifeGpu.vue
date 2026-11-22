@@ -249,6 +249,57 @@
                                 </RangeInput>
                             </template>
 
+                            <!-- Urge Lifecycle: Death -->
+                            <div class="flex items-center justify-between mt-2">
+                                <p class="w-2/3 text-2sm">
+                                    Urge Death (Starvation)
+                                    <TooltipInfo container="#mainContainer" tooltip="When an urge's metric stays below the threshold for the sustained time, it dies: its particle becomes dormant (invisible) and all neurons within neuronRadius of it also die. Death is permanent for the session." />
+                                </p>
+                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isDeathEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                            </div>
+                            <template v-if="particleLife.isDeathEnabled">
+                                <RangeInput input label="Metric Threshold" tooltip="Signal below this counts as 'starved'. Signal is ≥ 0 by construction, so a small epsilon means effectively zero."
+                                            :min="0" :max="2" :step="0.01" v-model="particleLife.deathMetricThreshold" mt-1>
+                                </RangeInput>
+                                <RangeInput input label="Sustained Ticks" tooltip="Consecutive 500 ms ticks below threshold before death. 12 ticks ≈ 6 seconds."
+                                            :min="3" :max="60" :step="1" v-model="particleLife.deathSustainedTicks" mt-1>
+                                </RangeInput>
+                            </template>
+
+                            <!-- Urge Lifecycle: Merges -->
+                            <div class="flex items-center justify-between mt-2">
+                                <p class="w-2/3 text-2sm">
+                                    Urge Merges
+                                    <TooltipInfo container="#mainContainer" tooltip="When two live urges stay within the merge radius for the sustained time, they merge: the higher-power urge survives (absorbing the other's metric/control), and the loser dies along with its in-range neurons. Tie → lower display id wins." />
+                                </p>
+                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isMergeEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                            </div>
+                            <template v-if="particleLife.isMergeEnabled">
+                                <RangeInput input label="Merge Radius" tooltip="World-unit distance within which two urges are considered close enough to merge. Default ≈ urgeRadius × 0.6."
+                                            :min="5" :max="200" :step="1" v-model="particleLife.mergeRadius" mt-1>
+                                </RangeInput>
+                                <RangeInput input label="Sustained Ticks" tooltip="Consecutive 500 ms ticks of proximity before merge fires. 8 ticks ≈ 4 seconds."
+                                            :min="3" :max="60" :step="1" v-model="particleLife.mergeSustainedTicks" mt-1>
+                                </RangeInput>
+                            </template>
+
+                            <!-- Urge Lifecycle: Murders -->
+                            <div class="flex items-center justify-between mt-2">
+                                <p class="w-2/3 text-2sm">
+                                    Urge Murders
+                                    <TooltipInfo container="#mainContainer" tooltip="When two live urges collide (distance below murderRadius) and their power gap exceeds the margin, the weaker dies immediately. No sustained requirement — instant collision event. Near-equal powers do not kill each other." />
+                                </p>
+                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isMurderEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                            </div>
+                            <template v-if="particleLife.isMurderEnabled">
+                                <RangeInput input label="Murder Radius" tooltip="World-unit distance for a 'collision'. Tighter than merge radius. Default ≈ urgeRadius × 0.35."
+                                            :min="2" :max="100" :step="1" v-model="particleLife.murderRadius" mt-1>
+                                </RangeInput>
+                                <RangeInput input label="Power Margin" tooltip="Minimum |powerA − powerB| (in signal units) before the weaker one dies. Higher = more tolerant of near-equal powers."
+                                            :min="0.1" :max="5" :step="0.1" v-model="particleLife.murderPowerMargin" mt-1>
+                                </RangeInput>
+                            </template>
+
                             <hr border-gray-500 my-2>
                             <p underline text-gray-300 class="-mt-0.5" mb-1>Urge ↔ Matter Matrix</p>
                             <p class="text-2sm text-gray-400 -mt-0.5 mb-1">Per-urge attraction/repulsion and radii toward each MATTER color (same model as the main matrix). Rows = urge index, columns = matter colors.</p>
@@ -4323,6 +4374,11 @@ export default defineComponent({
                 prevUrgeValues = newPrev // prunes ids that no longer exist
                 urgeStats.value = next
 
+                // Auto-deselect if the currently selected urge died (its id is missing from new stats)
+                if (selectedUrgeId.value !== -1 && !next.some(s => s.id === selectedUrgeId.value)) {
+                    selectedUrgeId.value = -1
+                }
+
                 // Refresh the on-canvas tracking data (positions + velocities) keyed by row id.
                 const posMap = new Map<number, { x: number, y: number, vx: number, vy: number }>()
                 for (const u of urgeEntries) {
@@ -4403,183 +4459,400 @@ export default defineComponent({
             }
         })
 
-        // ---- Urge Cloning system ---------------------------------------------------------
-        // When an urge's metric (signal) stays above cloneMetricThreshold for a sustained period,
-        // activate a dormant clone-pool slot as a copy of that urge (same type → same behavior)
-        // and ALL neurons within neuronRadius of it.
+        // ---- Urge Lifecycle: Death, Murder, Merge & Clone (unified pass) -------------------------
+        // Single buffer readback per tick (500 ms). Precedence order within a pass:
+        //   1. Death (starvation) — sustained low metric → dormant sentinel + neurons die
+        //   2. Murder — instant collision event, power gap > margin → weaker dies
+        //   3. Merge — sustained proximity → higher-power survives, loser dies
+        //   4. Clone — existing logic (absorbed into same pass to share the readback)
+        // A particle killed in an earlier phase is excluded from all later phases.
         //
-        // Sustained threshold: the metric must remain above the threshold for
-        //   requiredTicks = 2 × (number of neurons in range) × 3 check intervals
-        // before a clone is triggered. This prevents one-frame spikes from spawning clones.
-        // With 0 neurons in range, requiredTicks = 6 (minimum).
+        // Power definition: power = signal + 0.1 * |control|
+        //   - signal is the smoothed objective metric (higher = better at its goal)
+        //   - |control| adds a small tiebreak for urges that have learned strong actuation
+        //   - Single scalar, easy to tune and display
         //
-        // The clone is given an initial velocity impulse to shoot it outside the original's radius
-        // but keep it in the general area. Clones are permanent (they don't expire).
-        const CLONE_CHECK_INTERVAL_MS = 500
-        let cloneCheckTimer: number | null = null
-        let isCloningInFlight = false // concurrency guard
-        // Track which urges have already triggered a clone (avoid re-cloning every tick)
+        // Merge absorption: survivor gets max(signalA, signalB) for signal and
+        //   avg(controlA, controlB) for control. This preserves the best metric while
+        //   blending the learned controls so the merge is meaningful.
+        //
+        // Resurrection on urge-count change: applyTypeLayout() re-labels by index and
+        // would resurrect dead particles. This is accepted (it's a reset) — consistent with
+        // clonedUrges being cleared when numUrges changes. Death state is NOT persisted
+        // across a full relabel.
+
+        const LIFECYCLE_CHECK_INTERVAL_MS = 500
+        let lifecycleCheckTimer: number | null = null
+        let isLifecycleInFlight = false // concurrency guard (replaces isCloningInFlight)
+
+        // --- Death state ---
+        // Per-urge sustained-below counter, keyed by display id (originals = k, clones = -(k+1)*10 - 1)
+        let sustainedBelow = new Map<number, number>()
+
+        // --- Clone state (preserved from original cloning system) ---
         let clonedUrges = new Set<number>()
-        // Consecutive ticks each urge has been above threshold (resets to 0 when below)
         let sustainedAboveThreshold = new Map<number, number>()
 
-        const checkAndClone = async () => {
-            if (!particleLife.isCloningEnabled || !particleLife.isElectricalEnabled) return
-            if (numUrges <= 0 || numClonePool <= 0) return
-            if (isCloningInFlight || isUpdatingParticles || isEraseCompleting) return
+        // --- Merge state ---
+        // Per-pair sustained proximity counter. Key: min(idA,idB)*10000 + max(idA,idB) for unique pairs.
+        // (Display ids can be negative; we use a string key instead to avoid collisions.)
+        let sustainedProximity = new Map<string, number>()
+
+        // Helper: display id for an urge entry (matches readUrgeStats scheme)
+        const urgeDisplayId = (k: number, isClone: boolean): number => isClone ? -((k + 1) * 10 + 1) : k
+
+        // Helper: compute power for a live urge (single scalar)
+        const urgePower = (signal: number, control: number): number => signal + 0.1 * Math.abs(control)
+
+        // Helper: kill an urge particle and all live neurons within neuronRadius of it.
+        // Mutates the particles Float32Array in place. Returns nothing.
+        const killUrgeAndNeurons = (
+            particles: Float32Array,
+            urgeBufIdx: number,
+            x: number, y: number,
+            dormantType: number,
+            neurons: { idx: number, x: number, y: number }[],
+            neuronRadius: number
+        ) => {
+            const u7 = urgeBufIdx * 7
+            particles[u7 + 4] = dormantType // type → dormant sentinel (invisible, inert)
+            particles[u7 + 5] = 0           // zero control
+            particles[u7 + 6] = 0           // zero signal
+            particles[u7 + 2] = 0           // zero velocity x
+            particles[u7 + 3] = 0           // zero velocity y
+
+            const nr2 = neuronRadius * neuronRadius
+            for (const n of neurons) {
+                const dx = n.x - x
+                const dy = n.y - y
+                if (dx * dx + dy * dy <= nr2) {
+                    const n7 = n.idx * 7
+                    particles[n7 + 4] = dormantType // neuron also dies
+                    particles[n7 + 5] = 0
+                    particles[n7 + 6] = 0
+                    particles[n7 + 2] = 0
+                    particles[n7 + 3] = 0
+                }
+            }
+        }
+
+        const checkUrgeLifecycle = async () => {
+            // Run if ANY lifecycle feature is enabled (or cloning, which is always available)
+            const anyEnabled = particleLife.isDeathEnabled || particleLife.isMergeEnabled
+                || particleLife.isMurderEnabled || particleLife.isCloningEnabled
+            if (!anyEnabled || !particleLife.isElectricalEnabled) return
+            if (numUrges <= 0) return
+            if (isLifecycleInFlight || isUpdatingParticles || isEraseCompleting) return
             if (!particleBuffer || !device) return
 
-            isCloningInFlight = true
+            isLifecycleInFlight = true
             try {
                 const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * 7 * 4)
-                if (isUpdatingParticles || isEraseCompleting) return // guard after await
+                // Re-check guards after the await — a resize/erase may have started meanwhile.
+                if (isUpdatingParticles || isEraseCompleting) return
+
                 const particles = new Float32Array(arrayBuffer)
                 const dormantType = NUM_TYPES + numUrges + numNeurons
-                const threshold = particleLife.cloneMetricThreshold
-                const impulse = particleLife.cloneImpulse
-                const urgeRadius = Math.max(particleLife.urgeRadius, 10)
                 const neuronRadius = Math.max(particleLife.neuronRadius, 4)
-                const neuronR2 = neuronRadius * neuronRadius
+                const urgeRadius = Math.max(particleLife.urgeRadius, 10)
 
-                // First pass: collect all particles by category
-                const urges: { k: number, x: number, y: number, signal: number }[] = []
-                const dormantSlots: number[] = [] // buffer indices of dormant particles
-                const neurons: { idx: number, localM: number, x: number, y: number }[] = []
+                // --- Collect all particles by category (single pass over buffer) ---
+                interface UrgeEntry { bufIdx: number, k: number, isClone: boolean, x: number, y: number, vx: number, vy: number, control: number, signal: number }
+                interface NeuronEntry { idx: number, localM: number, x: number, y: number }
+
+                const urges: UrgeEntry[] = []
+                const neurons: NeuronEntry[] = []
+                const dormantSlots: number[] = [] // buffer indices of dormant particles (for cloning)
 
                 for (let i = 0; i < NUM_PARTICLES; i++) {
                     const idx7 = i * 7
-                    const ptype = Math.floor(particles[idx7 + 4]) // floor (not round) to handle clone fractional tags (e.g. 7.5 → 7)
+                    const rawType = particles[idx7 + 4]
+                    const ptype = Math.floor(rawType) // floor (not round!) to handle clone fractional tags
                     if (ptype === dormantType) {
                         dormantSlots.push(i)
                     } else if (ptype >= NUM_TYPES && ptype < NUM_TYPES + numUrges) {
                         const localK = ptype - NUM_TYPES
-                        urges.push({ k: localK, x: particles[idx7], y: particles[idx7 + 1], signal: particles[idx7 + 6] })
+                        const isClone = rawType - ptype > 0.1 // fractional tag = clone
+                        urges.push({ bufIdx: i, k: localK, isClone, x: particles[idx7], y: particles[idx7 + 1], vx: particles[idx7 + 2], vy: particles[idx7 + 3], control: particles[idx7 + 5], signal: particles[idx7 + 6] })
                     } else if (ptype >= NUM_TYPES + numUrges && ptype < dormantType) {
                         const localM = ptype - NUM_TYPES - numUrges
                         neurons.push({ idx: i, localM, x: particles[idx7], y: particles[idx7 + 1] })
                     }
                 }
 
-                if (dormantSlots.length === 0) return // no pool available
+                // Track which urges are dead this pass (by buffer index) so later phases skip them.
+                const deadBufIdx = new Set<number>()
+                let bufferModified = false
 
-                // Second pass: update sustained counters and determine which urges are ready to clone
-                const newSustained = new Map<number, number>()
-                const readyToClone: { k: number, x: number, y: number, neuronsInRange: { localM: number, x: number, y: number }[] }[] = []
+                // ===================================================================
+                // PHASE 1: DEATH (starvation) — sustained low metric → die
+                // ===================================================================
+                if (particleLife.isDeathEnabled) {
+                    const deathThreshold = particleLife.deathMetricThreshold
+                    const deathTicks = Math.max(1, particleLife.deathSustainedTicks)
+                    const newSustainedBelow = new Map<number, number>()
 
-                for (const u of urges) {
-                    if (clonedUrges.has(u.k)) continue // already cloned this session
-
-                    // Count neurons within neuronRadius of this urge
-                    const inRange: { localM: number, x: number, y: number }[] = []
-                    for (const n of neurons) {
-                        const dx = n.x - u.x
-                        const dy = n.y - u.y
-                        if (dx * dx + dy * dy <= neuronR2) inRange.push({ localM: n.localM, x: n.x, y: n.y })
-                    }
-
-                    // Required sustained ticks: 2 × neuronsInRange × 3 (minimum 6 if no neurons)
-                    const requiredTicks = Math.max(6, 2 * inRange.length * 3)
-
-                    if (u.signal > threshold) {
-                        const prev = sustainedAboveThreshold.get(u.k) ?? 0
-                        const count = prev + 1
-                        newSustained.set(u.k, count)
-                        if (count >= requiredTicks) {
-                            readyToClone.push({ k: u.k, x: u.x, y: u.y, neuronsInRange: inRange })
+                    for (const u of urges) {
+                        if (deadBufIdx.has(u.bufIdx)) continue // already dead this pass
+                        const id = urgeDisplayId(u.k, u.isClone)
+                        if (u.signal < deathThreshold) {
+                            const prev = sustainedBelow.get(id) ?? 0
+                            const count = prev + 1
+                            newSustainedBelow.set(id, count)
+                            if (count >= deathTicks) {
+                                // THIS URGE DIES NOW
+                                killUrgeAndNeurons(particles, u.bufIdx, u.x, u.y, dormantType, neurons, neuronRadius)
+                                deadBufIdx.add(u.bufIdx)
+                                bufferModified = true
+                                // Clear all tracking for this id
+                                sustainedBelow.delete(id)
+                                sustainedAboveThreshold.delete(u.k)
+                                // Drop proximity entries involving this id (exact part match, not substring)
+                                const idStr = String(id)
+                                for (const key of [...sustainedProximity.keys()]) {
+                                    const parts = key.split('_')
+                                    if (parts[0] === idStr || parts[1] === idStr) sustainedProximity.delete(key)
+                                }
+                            }
+                        } else {
+                            // Above threshold: reset counter (don't add to newSustainedBelow)
                         }
-                    } else {
-                        // Below threshold: reset counter
-                        // (don't add to newSustained, so it defaults to 0)
                     }
+                    sustainedBelow = newSustainedBelow
                 }
-                sustainedAboveThreshold = newSustained
 
-                if (readyToClone.length === 0) return
+                // ===================================================================
+                // PHASE 2: MURDER — instant collision, power gap > margin → weaker dies
+                // ===================================================================
+                if (particleLife.isMurderEnabled) {
+                    const murderR = Math.max(particleLife.murderRadius, 1)
+                    const murderR2 = murderR * murderR
+                    const powerMargin = particleLife.murderPowerMargin
 
-                // Activate clones: each ready urge consumes 1 slot for itself + N slots for its neurons
-                let slotPtr = 0
+                    for (let a = 0; a < urges.length; a++) {
+                        if (deadBufIdx.has(urges[a].bufIdx)) continue // skip dead as killer
+                        for (let b = a + 1; b < urges.length; b++) {
+                            if (deadBufIdx.has(urges[b].bufIdx)) continue // skip dead as victim
+                            const dx = urges[a].x - urges[b].x
+                            const dy = urges[a].y - urges[b].y
+                            if (dx * dx + dy * dy >= murderR2) continue
 
-                for (const urge of readyToClone) {
-                    const totalNeeded = 1 + urge.neuronsInRange.length // 1 for urge + all in-range neurons
-                    if (slotPtr + totalNeeded > dormantSlots.length) break // not enough pool remaining
+                            const pA = urgePower(urges[a].signal, urges[a].control)
+                            const pB = urgePower(urges[b].signal, urges[b].control)
+                            const gap = Math.abs(pA - pB)
+                            if (gap <= powerMargin) continue // dead-band: neither dies
 
-                    // --- Clone the urge itself ---
-                    const slotIdx = dormantSlots[slotPtr++]
-                    const s7 = slotIdx * 7
+                            // Weaker one dies immediately
+                            const victim = pA < pB ? urges[a] : urges[b]
+                            killUrgeAndNeurons(particles, victim.bufIdx, victim.x, victim.y, dormantType, neurons, neuronRadius)
+                            deadBufIdx.add(victim.bufIdx)
+                            bufferModified = true
 
-                    // Clone tag: fractional part of the type float marks this as a clone.
-                    // The shader does u32(particleType) which truncates → same integer type → identical behavior.
-                    // The CPU readback sees the .5 and can distinguish clones from originals.
-                    particles[s7 + 4] = NUM_TYPES + urge.k + 0.5
-                    particles[s7 + 5] = 0 // control starts fresh (will learn independently)
-                    particles[s7 + 6] = 0 // signal starts fresh
-
-                    // Position: near the original urge with a small random offset
-                    const angle = Math.random() * Math.PI * 2
-                    const offsetDist = urgeRadius * 0.3 + Math.random() * urgeRadius * 0.3
-                    particles[s7]     = urge.x + Math.cos(angle) * offsetDist
-                    particles[s7 + 1] = urge.y + Math.sin(angle) * offsetDist
-
-                    // Velocity: shoot outward from the original, magnitude = cloneImpulse.
-                    // Direction is radial away from the original, with ±30° scatter.
-                    const shootAngle = angle + (Math.random() - 0.5) * 1.0
-                    particles[s7 + 2] = Math.cos(shootAngle) * impulse
-                    particles[s7 + 3] = Math.sin(shootAngle) * impulse
-
-                    clonedUrges.add(urge.k)
-
-                    // --- Clone ALL neurons in range of this urge ---
-                    for (const srcNeuron of urge.neuronsInRange) {
-                        if (slotPtr >= dormantSlots.length) break
-                        const nSlotIdx = dormantSlots[slotPtr++]
-                        const n7 = nSlotIdx * 7
-
-                        particles[n7 + 4] = NUM_TYPES + numUrges + srcNeuron.localM // same neuron type
-                        particles[n7 + 5] = 0
-                        particles[n7 + 6] = 0
-
-                        // Position: near the cloned urge, preserving relative offset from original
-                        const relX = srcNeuron.x - urge.x
-                        const relY = srcNeuron.y - urge.y
-                        particles[n7]     = particles[s7] + relX * 0.5 // half the original offset
-                        particles[n7 + 1] = particles[s7 + 1] + relY * 0.5
-
-                        // Velocity: same direction as the urge clone, slightly less (trails behind)
-                        particles[n7 + 2] = particles[s7 + 2] * 0.7
-                        particles[n7 + 3] = particles[s7 + 3] * 0.7
+                            // Clear tracking for the victim
+                            const vid = urgeDisplayId(victim.k, victim.isClone)
+                            sustainedBelow.delete(vid)
+                            sustainedAboveThreshold.delete(victim.k)
+                            const vidStr = String(vid)
+                            for (const key of [...sustainedProximity.keys()]) {
+                                const parts = key.split('_')
+                                if (parts[0] === vidStr || parts[1] === vidStr) sustainedProximity.delete(key)
+                            }
+                        }
                     }
                 }
 
-                // Upload the modified buffer back to the GPU
-                device.queue.writeBuffer(particleBuffer, 0, particles)
+                // ===================================================================
+                // PHASE 3: MERGE — sustained proximity → higher-power survives
+                // ===================================================================
+                if (particleLife.isMergeEnabled) {
+                    const mergeR = Math.max(particleLife.mergeRadius, 1)
+                    const mergeR2 = mergeR * mergeR
+                    const mergeTicks = Math.max(1, particleLife.mergeSustainedTicks)
+
+                    // Build set of live urge ids for proximity tracking
+                    const newProximity = new Map<string, number>()
+
+                    for (let a = 0; a < urges.length; a++) {
+                        if (deadBufIdx.has(urges[a].bufIdx)) continue
+                        for (let b = a + 1; b < urges.length; b++) {
+                            if (deadBufIdx.has(urges[b].bufIdx)) continue
+                            const dx = urges[a].x - urges[b].x
+                            const dy = urges[a].y - urges[b].y
+                            if (dx * dx + dy * dy >= mergeR2) continue
+
+                            // Within merge radius: track sustained proximity for this pair
+                            const idA = urgeDisplayId(urges[a].k, urges[a].isClone)
+                            const idB = urgeDisplayId(urges[b].k, urges[b].isClone)
+                            // Sorted string key ensures unique unordered pair
+                            const key = idA < idB ? `${idA}_${idB}` : `${idB}_${idA}`
+                            const prev = sustainedProximity.get(key) ?? 0
+                            const count = prev + 1
+
+                            if (count >= mergeTicks) {
+                                // MERGE: higher power survives, lower dies
+                                const pA = urgePower(urges[a].signal, urges[a].control)
+                                const pB = urgePower(urges[b].signal, urges[b].control)
+                                let survivor: UrgeEntry, loser: UrgeEntry
+                                if (pA > pB) { survivor = urges[a]; loser = urges[b] }
+                                else if (pB > pA) { survivor = urges[b]; loser = urges[a] }
+                                else { survivor = idA < idB ? urges[a] : urges[b]; loser = survivor === urges[a] ? urges[b] : urges[a] }
+
+                                // Survivor absorbs: max signal, avg control
+                                const s7 = survivor.bufIdx * 7
+                                particles[s7 + 6] = Math.max(survivor.signal, loser.signal) // signal = best metric
+                                particles[s7 + 5] = (survivor.control + loser.control) * 0.5 // control = blended
+
+                                // Loser dies along with its neurons
+                                killUrgeAndNeurons(particles, loser.bufIdx, loser.x, loser.y, dormantType, neurons, neuronRadius)
+                                deadBufIdx.add(loser.bufIdx)
+                                bufferModified = true
+
+                                // Clear all tracking for the loser id
+                                const lid = urgeDisplayId(loser.k, loser.isClone)
+                                sustainedBelow.delete(lid)
+                                sustainedAboveThreshold.delete(loser.k)
+                                // Drop ALL proximity entries involving the loser (exact part match)
+                                const lidStr = String(lid)
+                                for (const k of [...sustainedProximity.keys()]) {
+                                    const parts = k.split('_')
+                                    if (parts[0] === lidStr || parts[1] === lidStr) sustainedProximity.delete(k)
+                                }
+                            } else {
+                                newProximity.set(key, count)
+                            }
+                        }
+                    }
+                    sustainedProximity = newProximity
+                }
+
+                // ===================================================================
+                // PHASE 4: CLONE — existing logic (absorbed into same pass)
+                // ===================================================================
+                if (particleLife.isCloningEnabled && numClonePool > 0 && dormantSlots.length > 0) {
+                    const threshold = particleLife.cloneMetricThreshold
+                    const impulse = particleLife.cloneImpulse
+                    const neuronR2 = neuronRadius * neuronRadius
+
+                    const newSustainedAbove = new Map<number, number>()
+                    const readyToClone: { k: number, x: number, y: number, neuronsInRange: NeuronEntry[] }[] = []
+
+                    for (const u of urges) {
+                        if (deadBufIdx.has(u.bufIdx)) continue // skip dead urges
+                        if (clonedUrges.has(u.k)) continue // already cloned this session
+
+                        // Count neurons within neuronRadius of this urge
+                        const inRange: NeuronEntry[] = []
+                        for (const n of neurons) {
+                            const dx = n.x - u.x
+                            const dy = n.y - u.y
+                            if (dx * dx + dy * dy <= neuronR2) inRange.push(n)
+                        }
+
+                        // Required sustained ticks: 2 × neuronsInRange × 3 (minimum 6 if no neurons)
+                        const requiredTicks = Math.max(6, 2 * inRange.length * 3)
+
+                        if (u.signal > threshold) {
+                            const prev = sustainedAboveThreshold.get(u.k) ?? 0
+                            const count = prev + 1
+                            newSustainedAbove.set(u.k, count)
+                            if (count >= requiredTicks) {
+                                readyToClone.push({ k: u.k, x: u.x, y: u.y, neuronsInRange: inRange })
+                            }
+                        }
+                    }
+                    sustainedAboveThreshold = newSustainedAbove
+
+                    // Activate clones: each ready urge consumes 1 slot for itself + N slots for its neurons
+                    let slotPtr = 0
+                    for (const urge of readyToClone) {
+                        const totalNeeded = 1 + urge.neuronsInRange.length
+                        if (slotPtr + totalNeeded > dormantSlots.length) break // not enough pool remaining
+
+                        // --- Clone the urge itself ---
+                        const slotIdx = dormantSlots[slotPtr++]
+                        const s7 = slotIdx * 7
+                        particles[s7 + 4] = NUM_TYPES + urge.k + 0.5 // fractional tag marks clone
+                        particles[s7 + 5] = 0
+                        particles[s7 + 6] = 0
+
+                        const angle = Math.random() * Math.PI * 2
+                        const offsetDist = urgeRadius * 0.3 + Math.random() * urgeRadius * 0.3
+                        particles[s7]     = urge.x + Math.cos(angle) * offsetDist
+                        particles[s7 + 1] = urge.y + Math.sin(angle) * offsetDist
+
+                        const shootAngle = angle + (Math.random() - 0.5) * 1.0
+                        particles[s7 + 2] = Math.cos(shootAngle) * impulse
+                        particles[s7 + 3] = Math.sin(shootAngle) * impulse
+
+                        clonedUrges.add(urge.k)
+
+                        // --- Clone ALL neurons in range of this urge ---
+                        for (const srcNeuron of urge.neuronsInRange) {
+                            if (slotPtr >= dormantSlots.length) break
+                            const nSlotIdx = dormantSlots[slotPtr++]
+                            const n7 = nSlotIdx * 7
+                            particles[n7 + 4] = NUM_TYPES + numUrges + srcNeuron.localM
+                            particles[n7 + 5] = 0
+                            particles[n7 + 6] = 0
+                            const relX = srcNeuron.x - urge.x
+                            const relY = srcNeuron.y - urge.y
+                            particles[n7]     = particles[s7] + relX * 0.5
+                            particles[n7 + 1] = particles[s7 + 1] + relY * 0.5
+                            particles[n7 + 2] = particles[s7 + 2] * 0.7
+                            particles[n7 + 3] = particles[s7 + 3] * 0.7
+                        }
+                        bufferModified = true
+                    }
+                }
+
+                // --- Upload modified buffer back to GPU (only if something changed) ---
+                if (bufferModified) {
+                    device.queue.writeBuffer(particleBuffer, 0, particles)
+                }
             } catch {
                 // Ignore transient readback failures
             } finally {
-                isCloningInFlight = false
+                isLifecycleInFlight = false
             }
         }
 
-        const startCloneCheck = () => {
-            stopCloneCheck()
-            if (!particleLife.isCloningEnabled) return
-            clonedUrges.clear() // reset when re-enabling
+        const startLifecycleCheck = () => {
+            stopLifecycleCheck()
+            // Reset state when (re-)enabling
+            clonedUrges.clear()
             sustainedAboveThreshold.clear()
-            void checkAndClone()
-            cloneCheckTimer = window.setInterval(() => { void checkAndClone() }, CLONE_CHECK_INTERVAL_MS)
+            sustainedBelow.clear()
+            sustainedProximity.clear()
+            void checkUrgeLifecycle()
+            lifecycleCheckTimer = window.setInterval(() => { void checkUrgeLifecycle() }, LIFECYCLE_CHECK_INTERVAL_MS)
         }
-        const stopCloneCheck = () => {
-            if (cloneCheckTimer !== null) {
-                window.clearInterval(cloneCheckTimer)
-                cloneCheckTimer = null
+        const stopLifecycleCheck = () => {
+            if (lifecycleCheckTimer !== null) {
+                window.clearInterval(lifecycleCheckTimer)
+                lifecycleCheckTimer = null
             }
         }
 
-        watch(() => particleLife.isCloningEnabled, (enabled) => {
-            if (enabled) startCloneCheck()
-            else stopCloneCheck()
+        // Watchers: start/stop the lifecycle pass when any feature is toggled
+        const anyLifecycleEnabled = () => particleLife.isDeathEnabled || particleLife.isMergeEnabled
+            || particleLife.isMurderEnabled || particleLife.isCloningEnabled
+        watch([
+            () => particleLife.isCloningEnabled,
+            () => particleLife.isDeathEnabled,
+            () => particleLife.isMergeEnabled,
+            () => particleLife.isMurderEnabled,
+        ], () => {
+            if (anyLifecycleEnabled()) startLifecycleCheck()
+            else stopLifecycleCheck()
         })
-        // Reset cloned set when urge count changes (indices are no longer valid)
-        watch(() => particleLife.numUrges, () => { clonedUrges.clear() })
+        // Reset all lifecycle state when urge count changes (indices are no longer valid)
+        watch(() => particleLife.numUrges, () => {
+            clonedUrges.clear()
+            sustainedAboveThreshold.clear()
+            sustainedBelow.clear()
+            sustainedProximity.clear()
+        })
+
 
         // Handle numClonePool changes: the pool ADDS dormant slots on top of the base matter
         // population, so resize the buffer accordingly (never steal slots from real matter).

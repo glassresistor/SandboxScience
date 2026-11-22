@@ -94,6 +94,19 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const cloneImpulse = ref<number>(1500) // Initial velocity magnitude for clones (enough to exit radius, stay in area)
     const numClonePool = ref<number>(100) // Number of dormant slots available for cloning (added to total particle count)
 
+    // ---- Urge Lifecycle: Death, Merges & Murders ---------------------------------------
+    const isDeathEnabled = ref<boolean>(false) // Starvation death: urge dies when metric stays near zero
+    const deathMetricThreshold = ref<number>(0.05) // Signal below this counts as "starved" (0–2)
+    const deathSustainedTicks = ref<number>(12) // Consecutive 500 ms ticks below threshold before death (12×500 ms ≈ 6 s)
+
+    const isMergeEnabled = ref<boolean>(false) // Two urges that stay close merge into one
+    const mergeRadius = ref<number>(27) // World-unit distance for "close" (default ≈ urgeRadius × 0.6)
+    const mergeSustainedTicks = ref<number>(8) // Consecutive ticks of proximity before merge (8×500 ms ≈ 4 s)
+
+    const isMurderEnabled = ref<boolean>(false) // Instant kill on collision when power gap exceeds margin
+    const murderRadius = ref<number>(16) // World-unit distance for "collision" (default ≈ urgeRadius × 0.35)
+    const murderPowerMargin = ref<number>(0.5) // Minimum |powerA − powerB| before the weaker dies
+
     const showLiveDeltaTime = ref<boolean>(false) // Show live Δt in the HUD (for debugging and performance monitoring)
     const manualDeltaTimeEnabled = ref<boolean>(false) // Override the automatic (framerate-independent) Δt with a fixed value
     const manualDeltaTime = ref<number>(0.0166) // Manual simulation time step in seconds (used only when manualDeltaTimeEnabled)
@@ -147,6 +160,9 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
         repel, forceFactor, frictionFactor, useSpatialHash,
         isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, neuronInfluence, neuronAuthority, maxAuthority, cohesion, isDebugConnections,
         isCloningEnabled, cloneMetricThreshold, cloneImpulse, numClonePool,
+        isDeathEnabled, deathMetricThreshold, deathSustainedTicks,
+        isMergeEnabled, mergeRadius, mergeSustainedTicks,
+        isMurderEnabled, murderRadius, murderPowerMargin,
         urgeRulesMatrix, urgeMinRadiusMatrix, urgeMaxRadiusMatrix, neuronRulesMatrix, neuronMinRadiusMatrix, neuronMaxRadiusMatrix,
         showLiveDeltaTime, manualDeltaTimeEnabled, manualDeltaTime,
         isBrushActive, brushes, brushRadius, brushIntensity, brushType, attractForce, repulseForce, brushDirectionalForce, showBrushCircle,
