@@ -501,7 +501,7 @@
         <!-- Urge tracking overlay: the marker position is set imperatively every frame (no GPU work);
              it simply projects the selected urge's last-known world position through the camera. -->
         <div class="absolute inset-0 pointer-events-none z-20 overflow-hidden" aria-hidden="true">
-            <div v-show="selectedUrgeId >= 0 && particleLife.isElectricalEnabled"
+            <div v-show="selectedUrgeId !== -1 && particleLife.isElectricalEnabled"
                  ref="urgeMarkerEl" class="absolute left-0 top-0 will-change-transform" style="opacity: 0; transform: translate(-9999px, -9999px)">
                 <!-- ring centred on the point -->
                 <div class="-translate-x-1/2 -translate-y-1/2">
@@ -512,7 +512,7 @@
                 <div class="absolute left-3.5 top-0 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900/85 backdrop-blur-sm px-2 py-1 ring-1 text-[0.7rem] leading-tight"
                      :style="{ borderColor: markerColor }">
                     <div class="flex items-center gap-1.5">
-                        <span class="font-mono font-semibold text-zinc-100">#{{ selectedUrgeId }}</span>
+                        <span class="font-mono font-semibold" :class="selectedUrgeId < 0 ? 'text-violet-300' : 'text-zinc-100'">{{ markerLabel }}</span>
                         <span class="text-amber-300">{{ markerObjective }}</span>
                     </div>
                     <div ref="urgeMarkerStatEl" class="font-mono text-[0.62rem] text-emerald-300"></div>
@@ -733,6 +733,9 @@ export default defineComponent({
         let numUrges: number = particleLife.numUrges
         let numNeurons: number = particleLife.numNeurons
         let numClonePool: number = particleLife.numClonePool // dormant slots for the cloning system
+        // Tracks the non-pool particle count (matter + urges + neurons) after the last successful
+        // resize. Used to detect pool-only resizes at execution time (robust against watcher ordering).
+        let lastNonPoolCount: number = baseMatterCount + numUrges + numNeurons
         let isParticleGlow: boolean = particleLife.isParticleGlow // Enable glow effect for the particles
         let isDebugConnections: boolean = particleLife.isDebugConnections // Debug: draw urge<->neuron dotted lines
         let isAdditiveBlending = particleLife.isAdditiveBlending // Use additive blending for rendering particles
@@ -3382,30 +3385,101 @@ export default defineComponent({
                 const oldParticles = new Float32Array(oldParticlesData)
                 initialParticles = new Float32Array(newCount * 7)
 
-                if (newCount > oldCount) { // If increasing the number of particles
-                    initialParticles.set(oldParticles)
-                    for (let i = oldCount; i < newCount; i++) {
-                        const baseIndex = i * 7
-                        initialParticles[baseIndex]     = Math.random() * SIM_WIDTH  // x
-                        initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT // y
-                    }
-                } else { // If decreasing the number of particles
-                    initialParticles.set(oldParticles.subarray(0, newCount * 7))
-                    for (let i = newCount; i < oldCount; i++) {
-                        const j = Math.floor(Math.random() * (i + 1))
-                        if (j < newCount) {
-                            const oldStartIndex = i * 7
-                            const newIndex = j * 7
-                            for (let c = 0; c < 7; c++) initialParticles[newIndex + c] = oldParticles[oldStartIndex + c]
+                // Detect pool-only resize: the non-pool count (matter+urges+neurons) is unchanged.
+                // This is robust against watcher ordering — if matter/urges/neurons also changed,
+                // lastNonPoolCount won't match and we fall through to the full relabel path.
+                const currentNonPool = baseMatterCount + numUrges + numNeurons
+                const isPoolOnly = (currentNonPool === lastNonPoolCount)
+
+                if (isPoolOnly) {
+                    // Pool-only resize: preserve every existing particle's type/position/velocity.
+                    // The spatial sort scatters particles throughout the buffer, so we CANNOT use
+                    // index-based layout. Instead:
+                    //   Grow  → keep all old data, append new dormant pool entries at the tail.
+                    //   Shrink → keep ALL non-dormant particles (matter/urges/neurons/clones),
+                    //             then fill remaining slots with dormants. Never drop a real particle.
+                    const dormantType = NUM_TYPES + numUrges + numNeurons
+
+                    if (newCount > oldCount) {
+                        // Grow: copy everything, append new dormant particles at the end.
+                        initialParticles.set(oldParticles)
+                        for (let i = oldCount; i < newCount; i++) {
+                            const baseIndex = i * 7
+                            initialParticles[baseIndex]     = Math.random() * SIM_WIDTH
+                            initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
+                            initialParticles[baseIndex + 2] = 0
+                            initialParticles[baseIndex + 3] = 0
+                            initialParticles[baseIndex + 4] = dormantType // invisible, no forces
+                            initialParticles[baseIndex + 5] = 0
+                            initialParticles[baseIndex + 6] = 0
+                        }
+                    } else {
+                        // Shrink: keep all non-dormant particles first, then fill with dormants.
+                        const nonDormant: number[] = []
+                        const dormant: number[] = []
+                        for (let i = 0; i < oldCount; i++) {
+                            const t = Math.floor(oldParticles[i * 7 + 4])
+                            if (t === dormantType) dormant.push(i)
+                            else nonDormant.push(i)
+                        }
+                        let writeIdx = 0
+                        // All non-dormant particles are preserved (matter, urges, neurons, clones).
+                        for (const src of nonDormant) {
+                            if (writeIdx >= newCount) break // safety: shouldn't happen
+                            const dst = writeIdx * 7
+                            const src7 = src * 7
+                            for (let c = 0; c < 7; c++) initialParticles[dst + c] = oldParticles[src7 + c]
+                            writeIdx++
+                        }
+                        // Fill remaining slots with dormant particles.
+                        for (const src of dormant) {
+                            if (writeIdx >= newCount) break
+                            const dst = writeIdx * 7
+                            const src7 = src * 7
+                            for (let c = 0; c < 7; c++) initialParticles[dst + c] = oldParticles[src7 + c]
+                            writeIdx++
+                        }
+                        // If somehow still short (shouldn't happen), pad with fresh dormants.
+                        while (writeIdx < newCount) {
+                            const baseIndex = writeIdx * 7
+                            initialParticles[baseIndex]     = Math.random() * SIM_WIDTH
+                            initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
+                            initialParticles[baseIndex + 2] = 0
+                            initialParticles[baseIndex + 3] = 0
+                            initialParticles[baseIndex + 4] = dormantType
+                            initialParticles[baseIndex + 5] = 0
+                            initialParticles[baseIndex + 6] = 0
+                            writeIdx++
                         }
                     }
+                } else {
+                    // Full resize (matter count / urge / neuron change): re-label everything.
+                    if (newCount > oldCount) {
+                        initialParticles.set(oldParticles)
+                        for (let i = oldCount; i < newCount; i++) {
+                            const baseIndex = i * 7
+                            initialParticles[baseIndex]     = Math.random() * SIM_WIDTH
+                            initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
+                        }
+                    } else {
+                        initialParticles.set(oldParticles.subarray(0, newCount * 7))
+                        for (let i = newCount; i < oldCount; i++) {
+                            const j = Math.floor(Math.random() * (i + 1))
+                            if (j < newCount) {
+                                const oldStartIndex = i * 7
+                                const newIndex = j * 7
+                                for (let c = 0; c < 7; c++) initialParticles[newIndex + c] = oldParticles[oldStartIndex + c]
+                            }
+                        }
+                    }
+                    applyTypeLayout(initialParticles) // re-assign matter/urge/neuron types for the new population
                 }
 
                 NUM_PARTICLES = newCount
-                // Keep the slider in sync only when the change came from the slider itself;
+                lastNonPoolCount = baseMatterCount + numUrges + numNeurons
+                // Keep the slider in sync only when the change came from the matter slider;
                 // pool/urge/neuron-driven resizes must not clobber the user's matter count.
-                if (newCount === NEW_NUM_PARTICLES) particleLife.numParticles = newCount
-                applyTypeLayout(initialParticles) // re-assign matter/urge/neuron types for the new population
+                if (newCount === NEW_NUM_PARTICLES && !isPoolOnly) particleLife.numParticles = newCount
                 updateParticleBuffers(true) // Destroy and recreate particle buffers
                 updateEraseCompactBuffers()
                 updateParticleBindGroups() // Recreate bind groups that depend on particle buffers
@@ -4150,16 +4224,30 @@ export default defineComponent({
         }
 
         // Colour + short objective for the on-canvas marker (reactive; only changes on selection/metric change).
-        const markerColor = computed(() => {
+        // Resolve the parent urge k for the currently selected row (clones use their parent's k).
+        const selectedParentK = computed(() => {
             const id = selectedUrgeId.value
-            if (id < 0) return '#ffffff'
-            const idx = ((id % particleLife.numColors) + particleLife.numColors) % particleLife.numColors
+            if (id >= 0) return id // original urge: id IS the parent k
+            const row = urgeStats.value.find(s => s.id === id)
+            return row?.cloneOf ?? 0
+        })
+        const markerColor = computed(() => {
+            if (selectedUrgeId.value === -1) return '#ffffff'
+            const k = selectedParentK.value
+            const idx = ((k % particleLife.numColors) + particleLife.numColors) % particleLife.numColors
             return colorRgbStrings.value[idx] ?? '#ffffff'
         })
         const markerObjective = computed(() => {
+            if (selectedUrgeId.value === -1) return ''
+            return objectiveLabelFor(selectedParentK.value)
+        })
+        // Display label for the on-canvas marker (clones show their lineage, e.g. "#3-C1").
+        const markerLabel = computed(() => {
             const id = selectedUrgeId.value
-            if (id < 0) return ''
-            return objectiveLabelFor(id)
+            if (id >= 0) return `#${id}`
+            const row = urgeStats.value.find(s => s.id === id)
+            if (row?.isClone && row.cloneOf !== undefined) return `#${row.cloneOf}-C${row.cloneId ?? 1}`
+            return `#${id}`
         })
 
         // A single guarded readback. Never runs while a resize/erase is mutating buffers.
@@ -4183,38 +4271,42 @@ export default defineComponent({
                 if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting) return
 
                 const particles = new Float32Array(arrayBuffer)
-                const urgesRaw: { k: number, x: number, y: number, vx: number, vy: number, control: number, signal: number }[] = []
+                // Collect urges (originals + clones) and neurons. Clones are identified by the
+                // fractional part of their type float (set to .5 at activation; the shader truncates
+                // via u32() so it sees the same integer type → identical physics behavior).
+                const urgeEntries: { k: number, isClone: boolean, x: number, y: number, vx: number, vy: number, control: number, signal: number }[] = []
                 const neuronPos: { x: number, y: number }[] = []
 
-                // The spatial-hash sort scatters urges/neurons through the buffer, so scan all.
                 for (let i = 0; i < NUM_PARTICLES; i++) {
                     const idx = i * 7
-                    const ptype = Math.round(particles[idx + 4])
-                    if (ptype < NUM_TYPES) continue // matter (control/signal are always 0)
-                    const localType = ptype - NUM_TYPES
+                    const rawType = particles[idx + 4]
+                    const intType = Math.floor(rawType)
+                    if (intType < NUM_TYPES) continue // matter (control/signal are always 0)
+                    const localType = intType - NUM_TYPES
                     if (localType < numUrges) {
-                        urgesRaw.push({ k: localType, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], control: particles[idx + 5], signal: particles[idx + 6] })
+                        const isClone = rawType - intType > 0.1 // fractional tag = clone
+                        urgeEntries.push({ k: localType, isClone, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], control: particles[idx + 5], signal: particles[idx + 6] })
                     } else if (localType - numUrges < numNeurons) {
                         neuronPos.push({ x: particles[idx], y: particles[idx + 1] })
                     }
                 }
 
-                // Refresh the on-canvas tracking data (positions + velocities) for every urge.
-                const posMap = new Map<number, { x: number, y: number, vx: number, vy: number }>()
-                for (const u of urgesRaw) posMap.set(u.k, { x: u.x, y: u.y, vx: u.vx, vy: u.vy })
-                urgeWorldPos = posMap
-                lastReadTimeMs = performance.now()
-
-                // Optional stretch: count each urge's "wired" neurons (within neuronRadius).
+                // Build rows with unique ids: originals get id = k, clones get a stable negative id
+                // derived from the parent's k (-(k+1)*10 - 1) so they're unique per clone identity.
                 const r2 = particleLife.neuronRadius * particleLife.neuronRadius
-                const next: UrgeStat[] = urgesRaw.map((u) => {
+                const next: UrgeStat[] = urgeEntries.map((u) => {
                     let wired = 0
                     for (let n = 0; n < neuronPos.length; n++) {
                         const dx = u.x - neuronPos[n].x
                         const dy = u.y - neuronPos[n].y
                         if (dx * dx + dy * dy <= r2) wired++
                     }
-                    return { id: u.k, type: NUM_TYPES + u.k, targetColor: u.k % NUM_TYPES, control: u.control, signal: u.signal, trendControl: 0, trendSignal: 0, wiredNeurons: wired }
+                    const id = u.isClone ? -((u.k + 1) * 10 + 1) : u.k
+                    return {
+                        id, type: NUM_TYPES + u.k, targetColor: u.k % NUM_TYPES,
+                        control: u.control, signal: u.signal, trendControl: 0, trendSignal: 0, wiredNeurons: wired,
+                        ...(u.isClone ? { isClone: true as const, cloneOf: u.k, cloneId: 1 } : {}),
+                    }
                 })
 
                 // Keep rows stable (by urge id) and compute the trend vs the previous readback.
@@ -4231,8 +4323,17 @@ export default defineComponent({
                 prevUrgeValues = newPrev // prunes ids that no longer exist
                 urgeStats.value = next
 
+                // Refresh the on-canvas tracking data (positions + velocities) keyed by row id.
+                const posMap = new Map<number, { x: number, y: number, vx: number, vy: number }>()
+                for (const u of urgeEntries) {
+                    const eid = u.isClone ? -((u.k + 1) * 10 + 1) : u.k
+                    posMap.set(eid, { x: u.x, y: u.y, vx: u.vx, vy: u.vy })
+                }
+                urgeWorldPos = posMap
+                lastReadTimeMs = performance.now()
+
                 // Refresh the live control/metric readout in the on-canvas marker (if one is tracked).
-                if (urgeMarkerStatEl.value && selectedUrgeId.value >= 0) {
+                if (urgeMarkerStatEl.value && selectedUrgeId.value !== -1) {
                     const sel = next.find((s) => s.id === selectedUrgeId.value)
                     urgeMarkerStatEl.value.textContent = sel ? `control ${sel.control >= 0 ? '+' : ''}${sel.control.toFixed(2)} · metric ${sel.signal.toFixed(2)}` : ''
                 }
@@ -4266,7 +4367,7 @@ export default defineComponent({
             const id = selectedUrgeId.value
             // Hide when nothing is selected, the layer is off, or the camera is GPU-tracked
             // (its centre lives on the GPU and we don't read it back every frame).
-            if (id < 0 || !particleLife.isElectricalEnabled || isCameraTracking) {
+            if (id === -1 || !particleLife.isElectricalEnabled || isCameraTracking) {
                 el.style.opacity = '0'
                 return
             }
@@ -4347,7 +4448,7 @@ export default defineComponent({
 
                 for (let i = 0; i < NUM_PARTICLES; i++) {
                     const idx7 = i * 7
-                    const ptype = Math.round(particles[idx7 + 4])
+                    const ptype = Math.floor(particles[idx7 + 4]) // floor (not round) to handle clone fractional tags (e.g. 7.5 → 7)
                     if (ptype === dormantType) {
                         dormantSlots.push(i)
                     } else if (ptype >= NUM_TYPES && ptype < NUM_TYPES + numUrges) {
@@ -4406,7 +4507,10 @@ export default defineComponent({
                     const slotIdx = dormantSlots[slotPtr++]
                     const s7 = slotIdx * 7
 
-                    particles[s7 + 4] = NUM_TYPES + urge.k // same type → identical behavior
+                    // Clone tag: fractional part of the type float marks this as a clone.
+                    // The shader does u32(particleType) which truncates → same integer type → identical behavior.
+                    // The CPU readback sees the .5 and can distinguish clones from originals.
+                    particles[s7 + 4] = NUM_TYPES + urge.k + 0.5
                     particles[s7 + 5] = 0 // control starts fresh (will learn independently)
                     particles[s7 + 6] = 0 // signal starts fresh
 
@@ -4730,7 +4834,7 @@ export default defineComponent({
 
             return {
                 particleLife, canvasRef, fps, executionTime, displayedDeltaTime, showLiveDeltaTime, colorRgbStrings,
-                urgeInspectorOpen, urgeStats, electricalParams, selectedUrgeId, urgeMarkerEl, urgeMarkerStatEl, markerColor, markerObjective, objectiveLabelFor,
+                urgeInspectorOpen, urgeStats, electricalParams, selectedUrgeId, urgeMarkerEl, urgeMarkerStatEl, markerColor, markerObjective, markerLabel, objectiveLabelFor,
                 handleZoom, toggleFullscreen, isFullscreen, smoothCenterView, regenerateLife, step, randomizeRadius, randomizeRulesAndRadius,
                 updateSimWidth, updateSimHeight, updateNumParticles, setNewNumParticles, setNewNumTypes,
                 updateRulesMatrixValue, updateMinMatrixValue, updateMaxMatrixValue, newRandomRulesMatrix,

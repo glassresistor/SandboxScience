@@ -57,7 +57,14 @@
                         <div class="flex items-center gap-2">
                             <span class="w-3.5 h-3.5 rounded-full ring-1 ring-white/40 shrink-0"
                                   :style="{ backgroundColor: colorFor(s.targetColor) }"></span>
-                            <span class="font-mono text-2sm text-zinc-100">#{{ s.id }}</span>
+                            <!-- Clone rows show their lineage label (e.g. #3-C1) in violet; originals show #k -->
+                            <span v-if="s.isClone && s.cloneOf !== undefined" class="font-mono text-2sm font-semibold text-violet-300">#{{ s.cloneOf }}-C{{ s.cloneId ?? 1 }}</span>
+                            <span v-else class="font-mono text-2sm text-zinc-100">#{{ s.id }}</span>
+                            <!-- Lineage badge for clones: "from #k" -->
+                            <span v-if="s.isClone && s.cloneOf !== undefined"
+                                  class="px-1.5 py-0.5 rounded bg-violet-500/15 ring-1 ring-violet-500/40 text-violet-300 text-[0.62rem] font-mono" title="Clone of this urge">
+                                from #{{ s.cloneOf }}
+                            </span>
                             <span v-if="selectedId === s.id" class="i-tabler-crosshair text-sky-400 shrink-0" title="Tracking on canvas"></span>
                             <span v-if="s.wiredNeurons !== undefined"
                                   class="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded bg-fuchsia-500/10 ring-1 ring-fuchsia-500/30 text-fuchsia-200 text-[0.68rem] font-mono" :title="'Neurons within neuronRadius driving this urge’s authority'">
@@ -65,10 +72,10 @@
                             </span>
                         </div>
 
-                        <!-- what it wants (STABLE over time; derived from this urge's index) -->
+                        <!-- what it wants (STABLE over time; derived from the parent urge's index) -->
                         <p class="mt-1 flex items-center gap-1.5 text-[0.74rem] leading-tight text-zinc-200">
                             <span class="i-tabler-target text-amber-400 shrink-0"></span>
-                            <span>{{ objectiveLabelFor(s.id) }}</span>
+                            <span>{{ objectiveLabelFor(s.cloneOf ?? s.id) }}</span>
                         </p>
 
                         <!-- control signed bar -->
@@ -117,14 +124,17 @@ import { defineComponent } from 'vue'
 
 // A single urge's live telemetry, read back from the GPU a few times per second.
 export interface UrgeStat {
-    id: number            // local urge index k
-    type: number          // NUM_TYPES + k (the particle type code)
+    id: number            // local urge index k (originals) or stable negative id (clones)
+    type: number          // NUM_TYPES + k (the particle type code, always the parent's)
     targetColor: number   // k % NUM_TYPES (the matter color this urge maximises)
     control: number       // signed, [-controlMax, +controlMax]  (+ attract / - repel)
     signal: number        // smoothed objective metric value
     trendControl: number  // control - prevControl (0 if no prior readback)
     trendSignal?: number  // signal - prevSignal (0/undefined if no prior readback)
     wiredNeurons?: number // optional: neurons within neuronRadius of this urge
+    isClone?: boolean     // true if this row represents a clone particle
+    cloneOf?: number      // parent urge k (only set when isClone)
+    cloneId?: number      // per-parent sequential clone number (1 = first clone of that parent)
 }
 
 // Snapshot of the global electrical parameters that apply to all urges/neurons.
