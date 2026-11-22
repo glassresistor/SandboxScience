@@ -257,7 +257,7 @@
                                          @update-min="updateUrgeMinValue"
                                          @update-max="updateUrgeMaxValue" />
                             <p v-else class="text-2sm text-gray-500">No urges — increase the Urge Count to edit this matrix.</p>
-                            <button type="button" mt-1 px-3 py-1 rounded-lg text-xs font-semibold bg-cyan-600/20 hover:bg-cyan-500/40 ring-1 ring-cyan-500/40 text-cyan-200 transition-all
+                            <button type="button" class="mt-1 px-3 py-1 rounded-lg text-xs font-semibold bg-cyan-600/20 hover:bg-cyan-500/40 ring-1 ring-cyan-500/40 text-cyan-200 transition-all"
                                     @click="randomizeUrgeMatrices" :disabled="particleLife.numUrges === 0">
                                 <span class="i-tabler-dice-6 mr-1"></span>Randomize Urge Matrix
                             </button>
