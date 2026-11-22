@@ -66,8 +66,8 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
 
     // ---- Quantum / Electrical layer: Urge & Neuron particles -------------------------
     const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
-    const numUrges = ref<number>(60) // Number of urge particles (each has its own objective)
-    const numNeurons = ref<number>(60) // Number of neuron particles (each is an actuator for one color, driven by nearby urges)
+    const numUrges = ref<number>(30) // Number of urge particles (each has its own objective)
+    const numNeurons = ref<number>(80) // Number of neuron particles (each is an actuator for one color, driven by nearby urges)
     const metricMode = ref<number>(0) // goal family: 0 mixed density / 1 mixed fraction / 2 density-fraction / 3 cycle all (per-urge polarity/type varies by index)
     const urgeRadius = ref<number>(45) // Radius over which an urge measures its goal metric & a neuron pushes/pulls its color
     const neuronRadius = ref<number>(30) // Radius (from the neuron) within which an urge drives it
@@ -82,7 +82,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
 
     // ---- Urge Cloning system -----------------------------------------------------------
     const isCloningEnabled = ref<boolean>(false) // Master switch for the clone-on-high-metric system
-    const cloneMetricThreshold = ref<number>(5.0) // Metric value above which an urge triggers a clone
+    const cloneMetricThreshold = ref<number>(0.5) // Metric value above which an urge triggers a clone
     const cloneImpulse = ref<number>(1500) // Initial velocity magnitude for clones (enough to exit radius, stay in area)
     const numClonePool = ref<number>(100) // Number of dormant slots available for cloning (added to total particle count)
 

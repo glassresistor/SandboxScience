@@ -62,8 +62,8 @@ export const useParticleLifeStore = defineStore('particleLife', () => {
 
     // ---- Quantum / Electrical layer: Urge & Neuron particles -------------------------
     const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
-    const numUrges = ref<number>(60) // Number of urge particles
-    const numNeurons = ref<number>(60) // Number of neuron particles
+    const numUrges = ref<number>(30) // Number of urge particles
+    const numNeurons = ref<number>(80) // Number of neuron particles
     const metricMode = ref<number>(0) // goal family: 0 mixed density / 1 mixed fraction / 2 density-fraction / 3 cycle all
     const urgeRadius = ref<number>(45) // Radius over which an urge measures its goal metric & a neuron pushes/pulls its color
     const neuronRadius = ref<number>(30) // Radius (from the neuron) within which an urge drives it

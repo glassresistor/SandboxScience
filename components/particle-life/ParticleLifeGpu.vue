@@ -237,7 +237,7 @@
                             <template v-if="particleLife.isCloningEnabled">
                                 <RangeInput input label="Metric Threshold"
                                             tooltip="An urge must keep its metric above this value for 2×(neurons-in-range)×3 consecutive checks (500 ms each) before cloning. Higher = rarer clones. Typical metrics range 0–20 depending on local density."
-                                            :min="0" :max="15" :step="0.5" v-model="particleLife.cloneMetricThreshold" mt-1>
+                                            :min="0.1" :max="10" :step="0.1" v-model="particleLife.cloneMetricThreshold" mt-1>
                                 </RangeInput>
                                 <RangeInput input label="Clone Impulse"
                                             tooltip="Initial velocity given to a clone so it shoots outside the original's radius but stays in the general area. Higher = flies further. Typical sim sizes are ~800–2000 px."
@@ -319,7 +319,7 @@
                                 <ToggleSwitch label="On" colorful-label v-model="urgeInspectorOpen" :disabled="!particleLife.isElectricalEnabled" />
                             </div>
 
-                            <UrgeInspector v-if="urgeInspectorOpen"
+                            <UrgeInspector v-if="urgeInspectorOpen" key="urge-inspector-panel"
                                            v-model:selected-id="selectedUrgeId"
                                            :stats="urgeStats"
                                            :params="electricalParams"
@@ -4160,10 +4160,14 @@ export default defineComponent({
                     }
                 })
 
+                // Deduplicate by id (defensive: prevents stale buffer data from producing repeated rows).
+                const seen = new Set<number>()
+                const deduped = next.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true })
+
                 // Keep rows stable (by urge id) and compute the trend vs the previous readback.
-                next.sort((a, b) => a.id - b.id)
+                deduped.sort((a, b) => a.id - b.id)
                 const newPrev = new Map<number, { control: number, signal: number }>()
-                for (const s of next) {
+                for (const s of deduped) {
                     const prev = prevUrgeValues.get(s.id)
                     if (prev) {
                         s.trendControl = s.control - prev.control
@@ -4172,10 +4176,10 @@ export default defineComponent({
                     newPrev.set(s.id, { control: s.control, signal: s.signal })
                 }
                 prevUrgeValues = newPrev // prunes ids that no longer exist
-                urgeStats.value = next
+                urgeStats.value = deduped
 
                 // Auto-deselect if the currently selected urge died (its id is missing from new stats)
-                if (selectedUrgeId.value !== -1 && !next.some(s => s.id === selectedUrgeId.value)) {
+                if (selectedUrgeId.value !== -1 && !deduped.some(s => s.id === selectedUrgeId.value)) {
                     selectedUrgeId.value = -1
                 }
 
@@ -4190,7 +4194,7 @@ export default defineComponent({
 
                 // Refresh the live control/metric readout in the on-canvas marker (if one is tracked).
                 if (urgeMarkerStatEl.value && selectedUrgeId.value !== -1) {
-                    const sel = next.find((s) => s.id === selectedUrgeId.value)
+                    const sel = deduped.find((s) => s.id === selectedUrgeId.value)
                     urgeMarkerStatEl.value.textContent = sel ? `control ${sel.control >= 0 ? '+' : ''}${sel.control.toFixed(2)} · metric ${sel.signal.toFixed(2)}` : ''
                 }
             } catch {
