@@ -77,7 +77,9 @@ fn vertex_main(instanceIndex: u32, vertexIndex: u32, size: f32) -> VertexOutput 
     let copyX = copyInstanceIndex - copyY * numCopiesX; // Faster than modulo (copyInstanceIndex % numCopiesX)
 
     let particle = particles[particleIndex];
-    var color = colors[u32(particle.particleType)]; // var: reassigned below with state-driven brightness
+    // Clamp to the color-table length so out-of-range/stale types render as the last entry
+    // (the invisible dormant slot) instead of reading past the buffer.
+    var color = colors[min(u32(particle.particleType), arrayLength(&colors) - 1u)]; // var: reassigned below with state-driven brightness
     // Quantum/electrical: brightness driven by the particle's live state.
     //   urges  -> glow with |control| (how hard they've learned to attract/repel)
     //   neurons-> pulse with signal   (activity = nearby urges). matter has both = 0.

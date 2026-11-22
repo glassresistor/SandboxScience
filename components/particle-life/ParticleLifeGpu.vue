@@ -721,6 +721,10 @@ export default defineComponent({
         let forceFactor: number = particleLife.forceFactor // Adjust the overall force applied between particles (can't be 0)
         let frictionFactor: number = particleLife.frictionFactor // Slow down the particles (0 to 1, where 0 is no friction)
         let NUM_PARTICLES: number = particleLife.numParticles
+        // The matter count the user actually asked for. Special particles (urges/neurons) and the
+        // dormant clone pool are ADDED on top of this, so growing/shrinking the pool never steals
+        // slots from real matter (which previously made ~numClonePool matter particles invisible).
+        let baseMatterCount: number = NUM_PARTICLES
         let NEW_NUM_PARTICLES: number = NUM_PARTICLES
         let PARTICLE_SIZE: number = particleLife.particleSize
         let NUM_TYPES: number = particleLife.numColors // matter colors only
@@ -846,7 +850,6 @@ export default defineComponent({
         let infiniteRenderOptionsBindGroup: GPUBindGroup
         let brushOptionsBindGroup: GPUBindGroup
         let electricalBindGroup: GPUBindGroup
-        let electricalInteractionBindGroup: GPUBindGroup // extended urge/neuron vs matter interaction matrix
         let connectionsComputeBindGroup: GPUBindGroup // debug lines compute (particles + dots + count)
         let connectionsRenderBindGroup: GPUBindGroup // debug lines render (dots + count)
 
@@ -860,7 +863,6 @@ export default defineComponent({
         let simOptionsBindGroupLayout: GPUBindGroupLayout
         let deltaTimeBindGroupLayout: GPUBindGroupLayout
         let electricalBindGroupLayout: GPUBindGroupLayout
-        let electricalInteractionBindGroupLayout: GPUBindGroupLayout
         let connectionsComputeBindGroupLayout: GPUBindGroupLayout
         let connectionsRenderBindGroupLayout: GPUBindGroupLayout
         let cameraBindGroupLayout: GPUBindGroupLayout
@@ -1392,7 +1394,18 @@ export default defineComponent({
         const initWebGPU = async () => {
             const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
             if (!adapter) throw new Error("WebGPU adapter not found")
-            device = await adapter.requestDevice()
+            // The force shaders use 5 bind groups (particles, simOptions, deltaTime,
+            // electrical options, extended interaction matrix). WebGPU's default limit is 4,
+            // so request the higher limit up front — otherwise createPipelineLayout fails and
+            // every compute pipeline comes back invalid (black screen).
+            if ((adapter.limits.maxBindGroups ?? 4) < 5) {
+                console.warn('[particle-life-gpu] GPU reports maxBindGroups < 5; the electrical-layer force shaders need 5 bind groups and will not work on this device.')
+            }
+            device = await adapter.requestDevice({
+                requiredLimits: {
+                    maxBindGroups: Math.min(5, adapter.limits.maxBindGroups),
+                },
+            })
             ctx = canvasRef.value!.getContext('webgpu')!
             ctx.configure({
                 device,
@@ -1403,6 +1416,13 @@ export default defineComponent({
         }
         const initLife = async (autoCenter: boolean = true) => {
             isInitializing = true
+            // The buffer must hold the full layout: base matter + urges + neurons + clone pool.
+            // Do this SYNCHRONOUSLY, before initParticles()/createBuffers() run, so every buffer
+            // is created at the final size. (An async resize here would read back and rebuild the
+            // particle buffers on frame 1, racing the render pass and leaving it black.)
+            NUM_PARTICLES = baseMatterCount + numUrges + numNeurons + numClonePool
+            NEW_NUM_PARTICLES = NUM_PARTICLES
+            if (NUM_PARTICLES !== particleLife.numParticles) particleLife.numParticles = NUM_PARTICLES
             setRulesMatrix(generateRules(0, NUM_TYPES)) // Random rule
             setMinRadiusMatrix(makeRandomMinRadiusMatrix())
             setMaxRadiusMatrix(makeRandomMaxRadiusMatrix())
@@ -1454,7 +1474,6 @@ export default defineComponent({
             //     animationFrameId = requestAnimationFrame(frame)
             //     return
             // }
-
             if (isDriftCamActive) handleDriftCamera()
             if (isCameraTracking) {
                 handleCameraTrackingMoveSmoothing()
@@ -1551,7 +1570,6 @@ export default defineComponent({
             computePass.setBindGroup(1, simOptionsBindGroup)
             computePass.setBindGroup(2, deltaTimeBindGroup)
             computePass.setBindGroup(3, electricalBindGroup)
-            computePass.setBindGroup(4, electricalInteractionBindGroup) // extended urge/neuron vs matter matrix
             computePass.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 64))
             computePass.end()
         }
@@ -1586,7 +1604,6 @@ export default defineComponent({
             forcesComputePass.setBindGroup(1, simOptionsBindGroup)
             forcesComputePass.setBindGroup(2, deltaTimeBindGroup)
             forcesComputePass.setBindGroup(3, electricalBindGroup)
-            forcesComputePass.setBindGroup(4, electricalInteractionBindGroup) // extended urge/neuron vs matter matrix
             forcesComputePass.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 64))
             forcesComputePass.end()
         }
@@ -2421,6 +2438,7 @@ export default defineComponent({
                     { binding: 1, resource: { buffer: particleBuffer! } },
                     { binding: 2, resource: { buffer: binOffsetBuffer! } },
                     { binding: 3, resource: { buffer: interactionMatrixBuffer! } },
+                    { binding: 4, resource: { buffer: electricalInteractionMatrixBuffer! } },
                 ],
             })
             bruteForceBindGroup = device.createBindGroup({
@@ -2429,12 +2447,7 @@ export default defineComponent({
                     { binding: 0, resource: { buffer: particleTempBuffer! } },
                     { binding: 1, resource: { buffer: particleBuffer! } },
                     { binding: 2, resource: { buffer: interactionMatrixBuffer! } },
-                ],
-            })
-            electricalInteractionBindGroup = device.createBindGroup({
-                layout: electricalInteractionBindGroupLayout,
-                entries: [
-                    { binding: 0, resource: { buffer: electricalInteractionMatrixBuffer! } },
+                    { binding: 3, resource: { buffer: electricalInteractionMatrixBuffer! } },
                 ],
             })
             trackerComputeBindGroup = device.createBindGroup({
@@ -2537,11 +2550,7 @@ export default defineComponent({
                     { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // particleBuffer
                     { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // binOffsetBuffer
                     { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // interactionMatrixBuffer
-                ],
-            })
-            electricalInteractionBindGroupLayout = device.createBindGroupLayout({
-                entries: [
-                    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // electricalInteractionMatrixBuffer
+                    { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // electricalInteractionMatrixBuffer (kept in group 0: default maxBindGroups is 4)
                 ],
             })
             electricalBindGroupLayout = device.createBindGroupLayout({
@@ -2567,6 +2576,7 @@ export default defineComponent({
                     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particleTempBuffer
                     { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // particleBuffer
                     { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // interactionMatrixBuffer
+                    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // electricalInteractionMatrixBuffer (kept in group 0: default maxBindGroups is 4)
                 ],
             })
             simOptionsBindGroupLayout = device.createBindGroupLayout({
@@ -2735,7 +2745,6 @@ export default defineComponent({
                         simOptionsBindGroupLayout,
                         deltaTimeBindGroupLayout,
                         electricalBindGroupLayout,
-                        electricalInteractionBindGroupLayout,
                     ],
                 }),
                 compute: { module: particleComputeForcesShader, entryPoint: 'computeForces' }
@@ -2748,7 +2757,6 @@ export default defineComponent({
                         simOptionsBindGroupLayout,
                         deltaTimeBindGroupLayout,
                         electricalBindGroupLayout,
-                        electricalInteractionBindGroupLayout,
                     ],
                 }),
                 compute: { module: bruteForceShader, entryPoint: 'main' }
@@ -3355,7 +3363,9 @@ export default defineComponent({
             })
         }
         const setNewNumParticles = (newCount: number) => {
-            NEW_NUM_PARTICLES = newCount
+            // The particle-count slider sets the MATTER count; urges/neurons/clone pool are added on top.
+            baseMatterCount = newCount
+            NEW_NUM_PARTICLES = newCount + numUrges + numNeurons + numClonePool
             isUpdateNumParticlesPending = true
         }
         const updateNumParticles = async (newCount: number) => {
@@ -3392,6 +3402,9 @@ export default defineComponent({
                 }
 
                 NUM_PARTICLES = newCount
+                // Keep the slider in sync only when the change came from the slider itself;
+                // pool/urge/neuron-driven resizes must not clobber the user's matter count.
+                if (newCount === NEW_NUM_PARTICLES) particleLife.numParticles = newCount
                 applyTypeLayout(initialParticles) // re-assign matter/urge/neuron types for the new population
                 updateParticleBuffers(true) // Destroy and recreate particle buffers
                 updateEraseCompactBuffers()
@@ -3675,7 +3688,9 @@ export default defineComponent({
         // Clone pool particles get DORMANT_TYPE = NUM_TYPES + numUrges + numNeurons (invisible, no forces).
         function applyTypeLayout(arr: Float32Array): void {
             const dormantType = NUM_TYPES + numUrges + numNeurons
-            const matterCount = Math.max(0, NUM_PARTICLES - numUrges - numNeurons - numClonePool)
+            // Layout is [matterCount matter][numUrges urges][numNeurons neurons][numClonePool pool]
+            // and matterCount is the user's base count — the buffer was sized to hold all of it.
+            const matterCount = Math.min(baseMatterCount, NUM_PARTICLES)
             for (let i = 0; i < NUM_PARTICLES; i++) {
                 const k = i * 7
                 let t: number
@@ -4462,31 +4477,15 @@ export default defineComponent({
         // Reset cloned set when urge count changes (indices are no longer valid)
         watch(() => particleLife.numUrges, () => { clonedUrges.clear() })
 
-        // Handle numClonePool changes: resize the buffer to include/exclude pool particles
-        const setNewClonePool = () => { isUpdateNumParticlesPending = true; NEW_NUM_PARTICLES = particleLife.numParticles }
+        // Handle numClonePool changes: the pool ADDS dormant slots on top of the base matter
+        // population, so resize the buffer accordingly (never steal slots from real matter).
+        const desiredTotalParticles = () => baseMatterCount + numUrges + numNeurons + numClonePool
         watch(() => particleLife.numClonePool, (newPool) => {
             numClonePool = newPool
-            // The total buffer size doesn't change — we just re-interpret the layout.
-            // Re-label to assign dormant types to the pool slots.
-            if (!isUpdatingParticles && particleBuffer && device) {
-                void (async () => {
-                    isUpdatingParticles = true
-                    await device.queue.onSubmittedWorkDone()
-                    try {
-                        const data = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 7 * 4)
-                        const arr = new Float32Array(data)
-                        applyTypeLayout(arr)
-                        // Preserve activated clones: re-apply dormant only to slots that are currently dormant
-                        // (simpler: just relabel everything; active clones will be re-triggered next tick)
-                        device.queue.writeBuffer(particleBuffer!, 0, arr)
-                        colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
-                        particleLife.currentColors = new Float32Array(colors)
-                        updateColorBuffer()
-                    } finally {
-                        isUpdatingParticles = false
-                    }
-                })()
-            }
+            const target = desiredTotalParticles()
+            if (target === NUM_PARTICLES) return // nothing to do
+            NEW_NUM_PARTICLES = target
+            isUpdateNumParticlesPending = true
         })
 
         watch(() => particleLife.showLiveDeltaTime, (value: boolean) => showLiveDeltaTime = value)
@@ -4670,8 +4669,7 @@ export default defineComponent({
             particleSortBindGroup = undefined as any;
             bruteForceBindGroup = undefined as any;
             particleComputeForcesBindGroup = undefined as any;
-            electricalInteractionBindGroup = undefined as any;
-            electricalInteractionBindGroupLayout = undefined as any;
+
             particleBufferBindGroup = undefined as any;
             simOptionsBindGroup = undefined as any;
             deltaTimeBindGroup = undefined as any;

@@ -85,7 +85,7 @@ fn get_interaction(index: u32, numTypes: u32) -> vec3<f32> {
 // encoding as `interactions`, laid out as [numUrges rows × numTypes cols] followed by
 // [numNeurons rows × numTypes cols]. kind: 0 = urge rows, 1 = neuron rows.
 fn get_electrical_interaction(kind: u32, localIndex: u32, targetColor: u32) -> vec3<f32> {
-    let offset = select(electrical.numUrges, electrical.numUrges + electrical.numNeurons, kind == 1u);
+    let offset = select(0u, electrical.numUrges, kind == 1u);
     let word = electricalInteractions.data[(offset + localIndex) * options.numTypes + targetColor];
     let rule = fma(f32((word >> 0u) & 0xFFu), 1.0 / 127.5, -1.0);
     let minR = f32((word >> 8u) & 0xFFu);
@@ -113,18 +113,24 @@ fn interaction_force(interaction: vec3<f32>, dist: f32) -> f32 {
 }
 
 // particle category: 0 matter, 1 urge, 2 neuron, 3 dormant (clone pool slot)
+// Default is NEURON (the historical behavior for any type >= numTypes+numUrges); only a type
+// strictly above the whole known population (matter+urges+neurons) is treated as a dormant
+// clone-pool slot. This keeps stale/mis-labeled types behaving like neurons instead of vanishing.
 fn cat(t: u32) -> u32 {
     if (t < options.numTypes) { return 0u; }
     if (t < options.numTypes + electrical.numUrges) { return 1u; }
-    if (t < options.numTypes + electrical.numUrges + electrical.numNeurons) { return 2u; }
-    return 3u; // dormant clone slot — no forces, invisible
+    // Dormant ONLY when the type is exactly the dormant slot code. Any other out-of-range value
+    // falls through to neuron so stale/mis-labeled particles stay visible and keep moving.
+    if (t == options.numTypes + electrical.numUrges + electrical.numNeurons) { return 3u; }
+    return 2u;
 }
 
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<storage, read_write> particlesDestination : array<Particle>;
 @group(0) @binding(2) var<storage, read> interactions: InteractionMatrix;
 // Extended interaction matrix for urges/neurons vs matter (see get_electrical_interaction).
-@group(4) @binding(0) var<storage, read> electricalInteractions: InteractionMatrix;
+// Lives in group 0 (not a 5th group) because WebGPU's default maxBindGroups is 4.
+@group(0) @binding(3) var<storage, read> electricalInteractions: InteractionMatrix;
 @group(1) @binding(0) var<uniform> options: SimOptions;
 @group(2) @binding(0) var<uniform> deltaTime: f32;
 @group(3) @binding(0) var<uniform> electrical : ElectricalOptions;
@@ -202,17 +208,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let params = get_electrical_interaction(kind, localIndex, typeB);
             velocitySum += dir * interaction_force(params, dist);
         }
-        // ---- special <-> special: simple symmetric rule ---------------------------------
-        // Convention (documented): each party applies HALF of its own row's entry toward the
-        // other special particle, so the pair force stays bounded and near-symmetric.
-        if ((isUrge || isNeuron) && (oCat == 1u || oCat == 2u)) {
-            let myKind = select(0u, 1u, isNeuron);
-            let theirKind = select(0u, 1u, oCat == 2u);
-            let myLocal = select(kIdx, mIdx, isNeuron);
-            let theirLocal = select(typeB - options.numTypes, typeB - options.numTypes - electrical.numUrges, oCat == 2u);
-            let params = get_electrical_interaction(myKind, myLocal, theirLocal);
-            velocitySum += dir * (0.5 * interaction_force(params, dist));
-        }
+        // Note: special<->special interactions are handled by the cohesion force below;
+        // the electrical interaction matrix only stores special-vs-matter rows.
 
         // ---- an urge gathering the metric for ITS OWN goal ------------------------------
         // (no direct urge->matter field: urges act on matter only by driving neurons)

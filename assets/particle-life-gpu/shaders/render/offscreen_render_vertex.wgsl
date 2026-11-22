@@ -56,7 +56,9 @@ fn vertexMain(
     }
     let particle = particles[instanceIndex];
     let offset = QUAD_VERTICES[vertexIndex];
-    let color = colors[u32(particle.particleType)];
+    // Clamp to the color-table length so out-of-range/stale types render as the last entry
+    // (the invisible dormant slot) instead of reading past the buffer.
+    let color = colors[min(u32(particle.particleType), arrayLength(&colors) - 1u)];
 
     let worldPos = vec2f(particle.x, particle.y) + offset * options.particleSize;
     let normalizedPos = (worldPos / vec2f(options.simWidth, options.simHeight)) * 2.0 - 1.0;

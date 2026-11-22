@@ -87,6 +87,8 @@ fn emitConnections(@builtin(global_invocation_id) id: vec3u) {
     // Neurons are the type codes at/above numTypes + numUrges; they too are scattered, so we
     // scan every particle and skip anything that is not a neuron.
     let neuronBase = f32(options.numTypes + electrical.numUrges);
+    // Dormant clone-pool slots (type == numTypes + numUrges + numNeurons) are not neurons.
+    let dormantType = f32(options.numTypes + electrical.numUrges + electrical.numNeurons);
     let halfW = options.simWidth * 0.5;
     let halfH = options.simHeight * 0.5;
     let wrapping = options.isWallWrap == 1u;
@@ -95,7 +97,7 @@ fn emitConnections(@builtin(global_invocation_id) id: vec3u) {
 
     for (var n = 0u; n < options.numParticles; n += 1u) {
         let b = particles[n];
-        if (b.particleType < neuronBase) { continue; } // matter or urge -> not a neuron
+        if (b.particleType < neuronBase || b.particleType >= dormantType) { continue; } // matter, urge, or dormant -> not a neuron
         var dx = b.x - ax;
         var dy = b.y - ay;
         if (wrapping) {
