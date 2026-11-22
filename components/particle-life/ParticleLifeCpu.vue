@@ -356,7 +356,7 @@ import RadiusVisualizer from "~/components/particle-life/RadiusVisualizer.vue";
 import UrgeInspector from "~/components/particle-life/UrgeInspector.vue";
 
 export default defineComponent({
-    components: {RadiusVisualizer, SaveModal, PresetPanel, MatrixSettings, RulesMatrix, Memory, BrushSettings, SidebarLeft },
+    components: {RadiusVisualizer, SaveModal, PresetPanel, MatrixSettings, RulesMatrix, Memory, BrushSettings, SidebarLeft, UrgeInspector },
     setup() {
         const particleLife = useParticleLifeStore()
         const rulesOptions = RULES_OPTIONS
