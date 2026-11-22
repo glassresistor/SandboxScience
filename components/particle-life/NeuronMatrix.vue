@@ -24,11 +24,11 @@
                             </div>
                             <!-- Column headers: matter color swatches -->
                             <div v-else-if="i === 0 && j > 0" h-full w-full class="pp-6" :title="'Matter color ' + (j - 1)">
-                                <div h-full w-full rounded-full ring-1 ring-slate-500/40 :style="{ backgroundColor: getColorStyleById(j-1) }"></div>
+                                <div class="h-full w-full rounded-full ring-1 ring-slate-500/40" :style="{ backgroundColor: getColorStyleById(j-1) }"></div>
                             </div>
                             <!-- Row headers: neuron index labels -->
                             <div v-else-if="j === 0 && i > 0" h-full w-full class="pp-6" :title="'Neuron ' + (i - 1)">
-                                <div h-full w-full rounded-full flex items-center justify-center text-[9px] font-mono text-white/80 bg-slate-800/70 ring-1 ring-slate-600/50 select-none>
+                                <div class="h-full w-full rounded-full flex items-center justify-center text-[9px] font-mono text-white/80 bg-slate-800/70 ring-1 ring-slate-600/50 select-none">
                                     <span class="truncate px-0.5">{{ i - 1 }}</span>
                                 </div>
                             </div>

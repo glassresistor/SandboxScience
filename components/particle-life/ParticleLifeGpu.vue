@@ -270,7 +270,7 @@
                                            @update-min="updateNeuronMinValue"
                                            @update-max="updateNeuronMaxValue" />
                             <p v-else class="text-2sm text-gray-500">No neurons — increase the Neuron Count to edit this matrix.</p>
-                            <button type="button" mt-1 px-3 py-1 rounded-lg text-xs font-semibold bg-fuchsia-600/20 hover:bg-fuchsia-500/40 ring-1 ring-fuchsia-500/40 text-fuchsia-200 transition-all
+                            <button type="button" class="mt-1 px-3 py-1 rounded-lg text-xs font-semibold bg-fuchsia-600/20 hover:bg-fuchsia-500/40 ring-1 ring-fuchsia-500/40 text-fuchsia-200 transition-all"
                                     @click="randomizeNeuronMatrices" :disabled="particleLife.numNeurons === 0">
                                 <span class="i-tabler-dice-6 mr-1"></span>Randomize Neuron Matrix
                             </button>
