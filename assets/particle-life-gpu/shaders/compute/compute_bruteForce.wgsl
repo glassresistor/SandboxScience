@@ -81,6 +81,37 @@ fn get_interaction(index: u32, numTypes: u32) -> vec3<f32> {
     return vec3<f32>(rule, minR, maxR);
 }
 
+// Extended interaction matrix for the electrical layer. Same 4-byte (rule u8, minR u8, maxR u16)
+// encoding as `interactions`, laid out as [numUrges rows × numTypes cols] followed by
+// [numNeurons rows × numTypes cols]. kind: 0 = urge rows, 1 = neuron rows.
+fn get_electrical_interaction(kind: u32, localIndex: u32, targetColor: u32) -> vec3<f32> {
+    let offset = select(electrical.numUrges, electrical.numUrges + electrical.numNeurons, kind == 1u);
+    let word = electricalInteractions.data[(offset + localIndex) * options.numTypes + targetColor];
+    let rule = fma(f32((word >> 0u) & 0xFFu), 1.0 / 127.5, -1.0);
+    let minR = f32((word >> 8u) & 0xFFu);
+    let maxR = f32((word >> 16u) & 0xFFFFu);
+    return vec3<f32>(rule, minR, maxR);
+}
+
+// Classic (rule, minR, maxR) force for a distance `dist` — identical math to the matter branch.
+// Returns the scalar along the direction from self toward the other particle
+// (positive = attract, negative = repel). Caller adds `dir * force`.
+fn interaction_force(interaction: vec3<f32>, dist: f32) -> f32 {
+    let maxR = interaction.z;
+    if (dist >= maxR) { return 0.0; }
+    let minR = interaction.y;
+    var force : f32;
+    if (dist < minR) {
+        force = fma(dist / minR, options.repel, -options.repel);
+    } else {
+        let rule = interaction.x;
+        let mid = (minR + maxR) * 0.5;
+        let slope = rule / (mid - minR);
+        force = fma(-slope, abs(dist - mid), rule);
+    }
+    return force;
+}
+
 fn cat(t: u32) -> u32 {
     if (t < options.numTypes) { return 0u; }
     if (t < options.numTypes + electrical.numUrges) { return 1u; }
@@ -90,6 +121,8 @@ fn cat(t: u32) -> u32 {
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<storage, read_write> particlesDestination : array<Particle>;
 @group(0) @binding(2) var<storage, read> interactions: InteractionMatrix;
+// Extended interaction matrix for urges/neurons vs matter (see get_electrical_interaction).
+@group(4) @binding(0) var<storage, read> electricalInteractions: InteractionMatrix;
 @group(1) @binding(0) var<uniform> options: SimOptions;
 @group(2) @binding(0) var<uniform> deltaTime: f32;
 @group(3) @binding(0) var<uniform> electrical : ElectricalOptions;
@@ -151,23 +184,31 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         if (isMatter && oCat == 0u) {
             let index = typeA * options.numTypes + typeB;
             let params = get_interaction(index, options.numTypes);
-            let maxR = params.z;
-            if (dist < maxR) {
-                let rule = params.x;
-                let minR = params.y;
-                var force = 0.0;
-                if (dist < minR) {
-                    force = (dist / minR - 1.0) * options.repel;
-                } else {
-                    let mid = (minR + maxR) / 2.0;
-                    let slope = rule / (mid - minR);
-                    force = -(slope * abs(dist - mid)) + rule;
-                }
-                if (force != 0.0) { velocitySum += dir * force; }
-            }
+            velocitySum += dir * interaction_force(params, dist);
         }
 
         if (!eOn) { continue; }
+
+        // ---- electrical <-> matter via the extended interaction matrix ------------------
+        // Same rule math as matter↔matter. Convention: only the ROW particle's entry is used;
+        // the matter side gets the reaction in its own pass (Newton's third law).
+        if ((isUrge && oCat == 0u) || (isNeuron && oCat == 0u)) {
+            let kind = select(0u, 1u, isNeuron);
+            let localIndex = select(kIdx, mIdx, isNeuron);
+            let params = get_electrical_interaction(kind, localIndex, typeB);
+            velocitySum += dir * interaction_force(params, dist);
+        }
+        // ---- special <-> special: simple symmetric rule ---------------------------------
+        // Convention (documented): each party applies HALF of its own row's entry toward the
+        // other special particle, so the pair force stays bounded and near-symmetric.
+        if ((isUrge || isNeuron) && (oCat == 1u || oCat == 2u)) {
+            let myKind = select(0u, 1u, isNeuron);
+            let theirKind = select(0u, 1u, oCat == 2u);
+            let myLocal = select(kIdx, mIdx, isNeuron);
+            let theirLocal = select(typeB - options.numTypes, typeB - options.numTypes - electrical.numUrges, oCat == 2u);
+            let params = get_electrical_interaction(myKind, myLocal, theirLocal);
+            velocitySum += dir * (0.5 * interaction_force(params, dist));
+        }
 
         // ---- an urge gathering the metric for ITS OWN goal ------------------------------
         // (no direct urge->matter field: urges act on matter only by driving neurons)
@@ -205,9 +246,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         particle.vx += velocitySum.x * forceFactor;
         particle.vy += velocitySum.y * forceFactor;
     } else {
+        // Special particles move under the extended interaction-matrix forces (already in
+        // velocitySum, scaled by options.forceFactor like everything else) PLUS the cohesion
+        // term, which stays scaled by the global cohesion slider so it can be zeroed out.
         let cf = electrical.cohesion * 0.5;
-        particle.vx += cohesionForce.x * forceFactor * cf;
-        particle.vy += cohesionForce.y * forceFactor * cf;
+        particle.vx += (velocitySum.x + cohesionForce.x) * forceFactor;
+        particle.vy += (velocitySum.y + cohesionForce.y) * forceFactor;
 
         if (isUrge) {
             let M = select(metricCount, select(0.0, metricCount / matterTotal, matterTotal > 0.0), goal.useCount == 1u);

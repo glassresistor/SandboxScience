@@ -226,6 +226,32 @@
                             </RangeInput>
 
                             <hr border-gray-500 my-2>
+                            <p underline text-gray-300 class="-mt-0.5" mb-1>Urge ↔ Matter Matrix</p>
+                            <p class="text-2sm text-gray-400 -mt-0.5 mb-1">Per-urge attraction/repulsion and radii toward each MATTER color (same model as the main matrix). Rows = urge index, columns = matter colors.</p>
+                            <UrgeMatrix v-if="particleLife.numUrges > 0" :store="particleLife"
+                                         @update-rule="updateUrgeRuleValue"
+                                         @update-min="updateUrgeMinValue"
+                                         @update-max="updateUrgeMaxValue" />
+                            <p v-else class="text-2sm text-gray-500">No urges — increase the Urge Count to edit this matrix.</p>
+                            <button type="button" mt-1 px-3 py-1 rounded-lg text-xs font-semibold bg-cyan-600/20 hover:bg-cyan-500/40 ring-1 ring-cyan-500/40 text-cyan-200 transition-all
+                                    @click="randomizeUrgeMatrices" :disabled="particleLife.numUrges === 0">
+                                <span class="i-tabler-dice-6 mr-1"></span>Randomize Urge Matrix
+                            </button>
+
+                            <hr border-gray-500 my-2>
+                            <p underline text-gray-300 class="-mt-0.5" mb-1>Neuron ↔ Matter Matrix</p>
+                            <p class="text-2sm text-gray-400 -mt-0.5 mb-1">Per-neuron attraction/repulsion and radii toward each MATTER color (same model as the main matrix). Rows = neuron index, columns = matter colors.</p>
+                            <NeuronMatrix v-if="particleLife.numNeurons > 0" :store="particleLife"
+                                           @update-rule="updateNeuronRuleValue"
+                                           @update-min="updateNeuronMinValue"
+                                           @update-max="updateNeuronMaxValue" />
+                            <p v-else class="text-2sm text-gray-500">No neurons — increase the Neuron Count to edit this matrix.</p>
+                            <button type="button" mt-1 px-3 py-1 rounded-lg text-xs font-semibold bg-fuchsia-600/20 hover:bg-fuchsia-500/40 ring-1 ring-fuchsia-500/40 text-fuchsia-200 transition-all
+                                    @click="randomizeNeuronMatrices" :disabled="particleLife.numNeurons === 0">
+                                <span class="i-tabler-dice-6 mr-1"></span>Randomize Neuron Matrix
+                            </button>
+
+                            <hr border-gray-500 my-2>
                             <div flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Debug links
@@ -520,6 +546,8 @@ import TrackerToggle from "~/components/particle-life/TrackerToggle.vue";
 import CenterViewButton from "~/components/particle-life/CenterViewButton.vue";
 import RadiusVisualizer from "~/components/particle-life/RadiusVisualizer.vue";
 import UrgeInspector, { type UrgeStat, type ElectricalParams } from "~/components/particle-life/UrgeInspector.vue";
+import UrgeMatrix from "~/components/particle-life/UrgeMatrix.vue";
+import NeuronMatrix from "~/components/particle-life/NeuronMatrix.vue";
 import { RULES_OPTIONS, generateRules } from '~/helpers/utils/rulesGenerator';
 import { PALETTE_OPTIONS, generateColors } from "~/helpers/utils/colorsGenerator";
 import { POSITION_OPTIONS, generatePositions } from "~/helpers/utils/positionsGenerator";
@@ -557,7 +585,7 @@ import renderConnectionsShaderCode from 'assets/particle-life-gpu/shaders/render
 
 export default defineComponent({
     name: 'ParticleLifeGpu',
-    components: { PresetPanel, SaveModal, BrushSettings, MatrixSettings, WrapModeSelection, TrackerOverlay, TrackerToggle, CenterViewButton, RadiusVisualizer, UrgeInspector },
+    components: { PresetPanel, SaveModal, BrushSettings, MatrixSettings, WrapModeSelection, TrackerOverlay, TrackerToggle, CenterViewButton, RadiusVisualizer, UrgeInspector, UrgeMatrix, NeuronMatrix },
     emits: ['switch-renderer'],
     setup(props, { emit }) {
         // Define refs and variables
@@ -616,6 +644,13 @@ export default defineComponent({
         let rulesMatrix: number[][] = [] // Rules matrix for each color
         let maxRadiusMatrix: number[][] = [] // Max radius matrix for each color
         let minRadiusMatrix: number[][] = [] // Min radius matrix for each color
+        // Electrical interaction matrices vs MATTER colors (rows = electrical particle, cols = matter color)
+        let urgeRulesMatrix: number[][] = []
+        let urgeMinRadiusMatrix: number[][] = []
+        let urgeMaxRadiusMatrix: number[][] = []
+        let neuronRulesMatrix: number[][] = []
+        let neuronMinRadiusMatrix: number[][] = []
+        let neuronMaxRadiusMatrix: number[][] = []
         let currentMaxRadius: number = 0 // Max value between all colors max radius (for cell size)
 
         // Define the simulation properties
@@ -713,6 +748,7 @@ export default defineComponent({
         let deltaTimeBuffer: GPUBuffer | undefined
         let cameraBuffer: GPUBuffer | undefined
         let interactionMatrixBuffer: GPUBuffer | undefined
+        let electricalInteractionMatrixBuffer: GPUBuffer | undefined // Extended matrix: [numUrges×numTypes] + [numNeurons×numTypes], same 4-byte encoding
         let electricalOptionsBuffer: GPUBuffer | undefined // Urge/neuron (quantum-electrical) layer parameters
         let connDotsBuffer: GPUBuffer | undefined // debug connection dots (pos + color)
         let connCountBuffer: GPUBuffer | undefined // atomic count of emitted connection dots
@@ -785,6 +821,7 @@ export default defineComponent({
         let infiniteRenderOptionsBindGroup: GPUBindGroup
         let brushOptionsBindGroup: GPUBindGroup
         let electricalBindGroup: GPUBindGroup
+        let electricalInteractionBindGroup: GPUBindGroup // extended urge/neuron vs matter interaction matrix
         let connectionsComputeBindGroup: GPUBindGroup // debug lines compute (particles + dots + count)
         let connectionsRenderBindGroup: GPUBindGroup // debug lines render (dots + count)
 
@@ -798,6 +835,7 @@ export default defineComponent({
         let simOptionsBindGroupLayout: GPUBindGroupLayout
         let deltaTimeBindGroupLayout: GPUBindGroupLayout
         let electricalBindGroupLayout: GPUBindGroupLayout
+        let electricalInteractionBindGroupLayout: GPUBindGroupLayout
         let connectionsComputeBindGroupLayout: GPUBindGroupLayout
         let connectionsRenderBindGroupLayout: GPUBindGroupLayout
         let cameraBindGroupLayout: GPUBindGroupLayout
@@ -1343,6 +1381,13 @@ export default defineComponent({
             setRulesMatrix(generateRules(0, NUM_TYPES)) // Random rule
             setMinRadiusMatrix(makeRandomMinRadiusMatrix())
             setMaxRadiusMatrix(makeRandomMaxRadiusMatrix())
+            // Electrical (urge/neuron vs matter) interaction matrices — random by default.
+            setUrgeRulesMatrix(makeRandomUrgeRulesMatrix())
+            setUrgeMinRadiusMatrix(makeRandomUrgeMinRadiusMatrix())
+            setUrgeMaxRadiusMatrix(makeRandomUrgeMaxRadiusMatrix())
+            setNeuronRulesMatrix(makeRandomNeuronRulesMatrix())
+            setNeuronMinRadiusMatrix(makeRandomNeuronMinRadiusMatrix())
+            setNeuronMaxRadiusMatrix(makeRandomNeuronMaxRadiusMatrix())
             // setRulesMatrix([[-0.2758, -0.9341, -0.7292, -0.2024, -0.4367, -0.4714, -0.8962],[0.3548, -0.4365, -0.5117, -0.3945, -0.7828, 0.7885, 0.4696],[-0.9114, -0.8742, -0.5724, 0.1277, 0.3471, 0.3468, -0.6377],[0.3619, 0.6267, -0.6251, -0.1823, -0.285, -0.7255, 0.4615],[-0.2717, 0.9975, -0.4783, -0.9001, -0.2176, -0.9916, -0.4428],[-0.133, -0.342, -0.5631, 0.1238, -0.2723, -0.7484, 0.8461],[0.571, -0.7669, 0.0851, 0.5078, 0.8143, -0.7627, 0.7893]])
             // setMinRadiusMatrix([[25, 39, 37, 31, 31, 40, 30],[33, 27, 37, 33, 40, 33, 40],[26, 31, 25, 30, 32, 34, 39],[33, 27, 33, 39, 34, 25, 38],[28, 32, 31, 30, 40, 37, 30],[39, 39, 38, 35, 25, 31, 40],[33, 36, 29, 35, 30, 25, 40]])
             // setMaxRadiusMatrix([[65, 72, 80, 66, 72, 67, 79],[69, 61, 75, 73, 69, 70, 73],[80, 69, 71, 74, 67, 62, 61],[73, 79, 70, 70, 70, 72, 79],[67, 65, 74, 76, 64, 77, 71],[61, 68, 72, 64, 69, 64, 79],[72, 68, 77, 74, 63, 70, 75]])
@@ -1481,6 +1526,7 @@ export default defineComponent({
             computePass.setBindGroup(1, simOptionsBindGroup)
             computePass.setBindGroup(2, deltaTimeBindGroup)
             computePass.setBindGroup(3, electricalBindGroup)
+            computePass.setBindGroup(4, electricalInteractionBindGroup) // extended urge/neuron vs matter matrix
             computePass.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 64))
             computePass.end()
         }
@@ -1515,6 +1561,7 @@ export default defineComponent({
             forcesComputePass.setBindGroup(1, simOptionsBindGroup)
             forcesComputePass.setBindGroup(2, deltaTimeBindGroup)
             forcesComputePass.setBindGroup(3, electricalBindGroup)
+            forcesComputePass.setBindGroup(4, electricalInteractionBindGroup) // extended urge/neuron vs matter matrix
             forcesComputePass.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 64))
             forcesComputePass.end()
         }
@@ -1813,7 +1860,7 @@ export default defineComponent({
         }
         const createBuffers = () => {
             updateSimOptionsBuffer() // Set simulation options based on the store state
-            updateInteractionMatrixBuffer() // Set interaction matrices based on the store state
+            updateAllInteractionBuffers() // Set matter + electrical interaction matrices from the store state
             updateElectricalOptionsBuffer() // Urge/neuron (quantum-electrical) layer parameters
             createConnectionBuffers() // Debug urge<->neuron line buffers
             updateParticleBuffers(true)
@@ -2135,6 +2182,49 @@ export default defineComponent({
                 device.queue.writeBuffer(interactionMatrixBuffer, 0, paddedInteractionData)
             }
         }
+        // Fill and upload the EXTENDED interaction matrix for the electrical layer.
+        // Layout: [numUrges × NUM_TYPES] rows (urge local index k vs matter color c), then
+        // [numNeurons × NUM_TYPES] rows — same 4-byte (rule u8, minR u8, maxR u16) encoding as the
+        // matter matrix. The buffer is recreated whenever its size changes (counts/numColors).
+        const updateElectricalInteractionBuffer = () => {
+            const stride = 4
+            const rows = numUrges + numNeurons
+            const data = new Uint8Array(rows * NUM_TYPES * stride)
+            const writeRow = (rules: number[][], minR: number[][], maxR: number[][], k: number, offset: number) => {
+                for (let c = 0; c < NUM_TYPES; c++) {
+                    const index = (offset + k) * NUM_TYPES * stride + c * stride
+                    data[index] = Math.round((rules[k][c] + 1) * 0.5 * 255)
+                    data[index + 1] = Math.round(minR[k][c])
+                    const mr = maxR[k][c]
+                    data[index + 2] = mr & 0xFF
+                    data[index + 3] = (mr >> 8) & 0xFF
+                }
+            }
+            for (let k = 0; k < numUrges; k++) writeRow(urgeRulesMatrix, urgeMinRadiusMatrix, urgeMaxRadiusMatrix, k, 0)
+            for (let m = 0; m < numNeurons; m++) writeRow(neuronRulesMatrix, neuronMinRadiusMatrix, neuronMaxRadiusMatrix, m, numUrges)
+
+            const paddedSize = Math.ceil(data.byteLength / 16) * 16 // Ensure padded to 16 bytes
+            const paddedData = new Uint8Array(paddedSize)
+            paddedData.set(data)
+
+            if (!electricalInteractionMatrixBuffer || electricalInteractionMatrixBuffer.size !== paddedSize) {
+                if (electricalInteractionMatrixBuffer) electricalInteractionMatrixBuffer.destroy(); electricalInteractionMatrixBuffer = undefined;
+                electricalInteractionMatrixBuffer = device.createBuffer({
+                    size: paddedSize,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                    mappedAtCreation: true
+                })
+                new Uint8Array(electricalInteractionMatrixBuffer.getMappedRange()).set(paddedData)
+                electricalInteractionMatrixBuffer.unmap()
+            } else {
+                device.queue.writeBuffer(electricalInteractionMatrixBuffer, 0, paddedData)
+            }
+        }
+        // Upload both the matter and the electrical interaction matrices to the GPU.
+        const updateAllInteractionBuffers = () => {
+            updateInteractionMatrixBuffer()
+            updateElectricalInteractionBuffer()
+        }
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
@@ -2316,6 +2406,12 @@ export default defineComponent({
                     { binding: 2, resource: { buffer: interactionMatrixBuffer! } },
                 ],
             })
+            electricalInteractionBindGroup = device.createBindGroup({
+                layout: electricalInteractionBindGroupLayout,
+                entries: [
+                    { binding: 0, resource: { buffer: electricalInteractionMatrixBuffer! } },
+                ],
+            })
             trackerComputeBindGroup = device.createBindGroup({
                 layout: trackerComputeBindGroupLayout,
                 entries: [
@@ -2416,6 +2512,11 @@ export default defineComponent({
                     { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // particleBuffer
                     { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // binOffsetBuffer
                     { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // interactionMatrixBuffer
+                ],
+            })
+            electricalInteractionBindGroupLayout = device.createBindGroupLayout({
+                entries: [
+                    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // electricalInteractionMatrixBuffer
                 ],
             })
             electricalBindGroupLayout = device.createBindGroupLayout({
@@ -2609,6 +2710,7 @@ export default defineComponent({
                         simOptionsBindGroupLayout,
                         deltaTimeBindGroupLayout,
                         electricalBindGroupLayout,
+                        electricalInteractionBindGroupLayout,
                     ],
                 }),
                 compute: { module: particleComputeForcesShader, entryPoint: 'computeForces' }
@@ -2621,6 +2723,7 @@ export default defineComponent({
                         simOptionsBindGroupLayout,
                         deltaTimeBindGroupLayout,
                         electricalBindGroupLayout,
+                        electricalInteractionBindGroupLayout,
                     ],
                 }),
                 compute: { module: bruteForceShader, entryPoint: 'main' }
@@ -3303,7 +3406,21 @@ export default defineComponent({
                     return Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])
                 }))
 
-                updateInteractionMatrixBuffer()
+                // Resize the electrical matrices along the matter-color columns too.
+                const resizeElectricalCol = (m: number[][], randomFn: () => number): number[][] => m.map(row => {
+                    if (row.length === newNumTypes) return row.slice()
+                    const newRow = row.slice(0, newNumTypes)
+                    while (newRow.length < newNumTypes) newRow.push(randomFn())
+                    return newRow
+                })
+                setUrgeRulesMatrix(resizeElectricalCol(urgeRulesMatrix, () => Math.round((Math.random() * 2 - 1) * 100) / 100))
+                setNeuronRulesMatrix(resizeElectricalCol(neuronRulesMatrix, () => Math.round((Math.random() * 2 - 1) * 100) / 100))
+                setUrgeMinRadiusMatrix(resizeElectricalCol(urgeMinRadiusMatrix, () => Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])))
+                setNeuronMinRadiusMatrix(resizeElectricalCol(neuronMinRadiusMatrix, () => Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])))
+                setUrgeMaxRadiusMatrix(resizeElectricalCol(urgeMaxRadiusMatrix, () => Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])))
+                setNeuronMaxRadiusMatrix(resizeElectricalCol(neuronMaxRadiusMatrix, () => Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])))
+
+                updateAllInteractionBuffers()
                 await relabelPopulation() // re-assign matter/urge/neuron types for the new color count
                 colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
                 particleLife.currentColors = new Float32Array(colors)
@@ -3321,8 +3438,26 @@ export default defineComponent({
             isUpdatingParticles = true
             await device.queue.onSubmittedWorkDone()
             try {
+                // Resize the electrical matrices to the new row counts (keep existing rows, randomize new ones).
+                const resizeElectricalRows = (m: number[][]): number[][] => m.map(row => row.slice(0, NUM_TYPES))
+                const padElectricalRows = (m: number[][], target: number, randomFn: () => number): number[][] => {
+                    const out = resizeElectricalRows(m)
+                    while (out.length < target) out.push(Array.from({ length: NUM_TYPES }, randomFn))
+                    return out
+                }
+                const randRule = () => Math.round((Math.random() * 2 - 1) * 100) / 100
+                const randMin = () => Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])
+                const randMax = () => Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])
+                setUrgeRulesMatrix(padElectricalRows(urgeRulesMatrix, particleLife.numUrges, randRule))
+                setNeuronRulesMatrix(padElectricalRows(neuronRulesMatrix, particleLife.numNeurons, randRule))
+                setUrgeMinRadiusMatrix(padElectricalRows(urgeMinRadiusMatrix, particleLife.numUrges, randMin))
+                setNeuronMinRadiusMatrix(padElectricalRows(neuronMinRadiusMatrix, particleLife.numNeurons, randMin))
+                setUrgeMaxRadiusMatrix(padElectricalRows(urgeMaxRadiusMatrix, particleLife.numUrges, randMax))
+                setNeuronMaxRadiusMatrix(padElectricalRows(neuronMaxRadiusMatrix, particleLife.numNeurons, randMax))
+
                 numUrges = particleLife.numUrges
                 numNeurons = particleLife.numNeurons
+                updateAllInteractionBuffers() // rebuild the GPU buffer before relabeling
                 await relabelPopulation()
                 colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
                 particleLife.currentColors = new Float32Array(colors)
@@ -3388,7 +3523,9 @@ export default defineComponent({
                 }
 
                 updateColorBuffer()
-                updateInteractionMatrixBuffer()
+                updateAllInteractionBuffers()
+                // NOTE: presets do NOT save/load the six electrical interaction matrices — they
+                // keep their current values (or random defaults) across preset loads.
                 // Keep the quantum/electrical layout consistent after a preset load
                 await relabelPopulation()
                 colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
@@ -3560,16 +3697,34 @@ export default defineComponent({
             }
             return matrix
         }
+        // Random generators for the electrical (urge/neuron vs matter) interaction matrices.
+        // Same conventions as the matter ones: radii from minRadiusRange/maxRadiusRange, rules
+        // uniform in [-1, 1]. Rows = electrical particle count, columns = matter colors.
+        function makeRandomElectricalMatrix(rows: number, randomFn: () => number): number[][] {
+            const matrix: number[][] = []
+            for (let i = 0; i < rows; i++) {
+                const row: number[] = []
+                for (let j = 0; j < NUM_TYPES; j++) row.push(randomFn())
+                matrix.push(row)
+            }
+            return matrix
+        }
+        function makeRandomUrgeRulesMatrix() { return makeRandomElectricalMatrix(numUrges, () => Math.round((Math.random() * 2 - 1) * 100) / 100) }
+        function makeRandomNeuronRulesMatrix() { return makeRandomElectricalMatrix(numNeurons, () => Math.round((Math.random() * 2 - 1) * 100) / 100) }
+        function makeRandomUrgeMinRadiusMatrix() { return makeRandomElectricalMatrix(numUrges, () => Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])) }
+        function makeRandomNeuronMinRadiusMatrix() { return makeRandomElectricalMatrix(numNeurons, () => Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])) }
+        function makeRandomUrgeMaxRadiusMatrix() { return makeRandomElectricalMatrix(numUrges, () => Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])) }
+        function makeRandomNeuronMaxRadiusMatrix() { return makeRandomElectricalMatrix(numNeurons, () => Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])) }
         const randomizeRadius = () => {
             setMinRadiusMatrix(makeRandomMinRadiusMatrix())
             setMaxRadiusMatrix(makeRandomMaxRadiusMatrix())
-            updateInteractionMatrixBuffer()
+            updateAllInteractionBuffers()
         }
         const randomizeRulesAndRadius = () => {
             setRulesMatrix(generateRules(0, NUM_TYPES))
             setMinRadiusMatrix(makeRandomMinRadiusMatrix())
             setMaxRadiusMatrix(makeRandomMaxRadiusMatrix())
-            updateInteractionMatrixBuffer()
+            updateAllInteractionBuffers()
         }
         const updateColors = async (useRandomGenerator: boolean | Event = false) => {
             const shouldRandom = typeof useRandomGenerator === 'boolean' ? useRandomGenerator : false
@@ -3584,7 +3739,7 @@ export default defineComponent({
             if (shouldRandom) particleLife.selectedRulesOption = rulesOptions[Math.floor(Math.random() * rulesOptions.length)].id
 
             setRulesMatrix(generateRules(particleLife.selectedRulesOption, NUM_TYPES))
-            updateInteractionMatrixBuffer()
+            updateAllInteractionBuffers()
         }
         const updateParticlePositions = async (useRandomGenerator: boolean | Event = false) => {
             const shouldRandom = typeof useRandomGenerator === 'boolean' ? useRandomGenerator : false
@@ -3641,6 +3796,71 @@ export default defineComponent({
             }
             updateInteractionMatrixBuffer()
         }
+        // Cell-edit handlers for the electrical interaction matrices (row x, matter-color column y).
+        const updateUrgeRuleValue = (x: number, y: number, value: number) => {
+            const roundedValue = Math.round(value * 100) / 100
+            particleLife.urgeRulesMatrix[x][y] = roundedValue
+            urgeRulesMatrix[x][y] = roundedValue
+            updateElectricalInteractionBuffer()
+        }
+        const updateUrgeMinValue = (x: number, y: number, value: number) => {
+            particleLife.urgeMinRadiusMatrix[x][y] = value
+            urgeMinRadiusMatrix[x][y] = value
+            if (value > particleLife.urgeMaxRadiusMatrix[x][y]) {
+                particleLife.urgeMaxRadiusMatrix[x][y] = value
+                urgeMaxRadiusMatrix[x][y] = value
+                setCurrentMaxRadius(getCurrentMaxRadius())
+            }
+            updateElectricalInteractionBuffer()
+        }
+        const updateUrgeMaxValue = (x: number, y: number, value: number) => {
+            particleLife.urgeMaxRadiusMatrix[x][y] = value
+            urgeMaxRadiusMatrix[x][y] = value
+            setCurrentMaxRadius(getCurrentMaxRadius())
+            if (value < particleLife.urgeMinRadiusMatrix[x][y]) {
+                particleLife.urgeMinRadiusMatrix[x][y] = value
+                urgeMinRadiusMatrix[x][y] = value
+            }
+            updateElectricalInteractionBuffer()
+        }
+        const updateNeuronRuleValue = (x: number, y: number, value: number) => {
+            const roundedValue = Math.round(value * 100) / 100
+            particleLife.neuronRulesMatrix[x][y] = roundedValue
+            neuronRulesMatrix[x][y] = roundedValue
+            updateElectricalInteractionBuffer()
+        }
+        const updateNeuronMinValue = (x: number, y: number, value: number) => {
+            particleLife.neuronMinRadiusMatrix[x][y] = value
+            neuronMinRadiusMatrix[x][y] = value
+            if (value > particleLife.neuronMaxRadiusMatrix[x][y]) {
+                particleLife.neuronMaxRadiusMatrix[x][y] = value
+                neuronMaxRadiusMatrix[x][y] = value
+                setCurrentMaxRadius(getCurrentMaxRadius())
+            }
+            updateElectricalInteractionBuffer()
+        }
+        const updateNeuronMaxValue = (x: number, y: number, value: number) => {
+            particleLife.neuronMaxRadiusMatrix[x][y] = value
+            neuronMaxRadiusMatrix[x][y] = value
+            setCurrentMaxRadius(getCurrentMaxRadius())
+            if (value < particleLife.neuronMinRadiusMatrix[x][y]) {
+                particleLife.neuronMinRadiusMatrix[x][y] = value
+                neuronMinRadiusMatrix[x][y] = value
+            }
+            updateElectricalInteractionBuffer()
+        }
+        const randomizeUrgeMatrices = () => {
+            setUrgeRulesMatrix(makeRandomUrgeRulesMatrix())
+            setUrgeMinRadiusMatrix(makeRandomUrgeMinRadiusMatrix())
+            setUrgeMaxRadiusMatrix(makeRandomUrgeMaxRadiusMatrix())
+            updateElectricalInteractionBuffer()
+        }
+        const randomizeNeuronMatrices = () => {
+            setNeuronRulesMatrix(makeRandomNeuronRulesMatrix())
+            setNeuronMinRadiusMatrix(makeRandomNeuronMinRadiusMatrix())
+            setNeuronMaxRadiusMatrix(makeRandomNeuronMaxRadiusMatrix())
+            updateElectricalInteractionBuffer()
+        }
         const newRandomRulesMatrix = () => {
 
         }
@@ -3657,6 +3877,13 @@ export default defineComponent({
             particleLife.maxRadiusMatrix = maxRadiusMatrix
             setCurrentMaxRadius(getCurrentMaxRadius())
         }
+        // Setters for the electrical interaction matrices (keep local + store in sync).
+        function setUrgeRulesMatrix(m: number[][]) { urgeRulesMatrix = m; particleLife.urgeRulesMatrix = m }
+        function setUrgeMinRadiusMatrix(m: number[][]) { urgeMinRadiusMatrix = m; particleLife.urgeMinRadiusMatrix = m }
+        function setUrgeMaxRadiusMatrix(m: number[][]) { urgeMaxRadiusMatrix = m; particleLife.urgeMaxRadiusMatrix = m; setCurrentMaxRadius(getCurrentMaxRadius()) }
+        function setNeuronRulesMatrix(m: number[][]) { neuronRulesMatrix = m; particleLife.neuronRulesMatrix = m }
+        function setNeuronMinRadiusMatrix(m: number[][]) { neuronMinRadiusMatrix = m; particleLife.neuronMinRadiusMatrix = m }
+        function setNeuronMaxRadiusMatrix(m: number[][]) { neuronMaxRadiusMatrix = m; particleLife.neuronMaxRadiusMatrix = m; setCurrentMaxRadius(getCurrentMaxRadius()) }
         // -------------------------------------------------------------------------------------------------------------
         const getCurrentMaxRadius = () => {
             let maxRandom = 0
@@ -3664,6 +3891,12 @@ export default defineComponent({
                 for (let j = 0; j < NUM_TYPES; j++) {
                     if (maxRadiusMatrix[i][j] > maxRandom) maxRandom = maxRadiusMatrix[i][j]
                 }
+            }
+            // The electrical matrices can now carry the largest interaction radii too.
+            for (const m of [urgeMaxRadiusMatrix, neuronMaxRadiusMatrix]) {
+                for (let i = 0; i < m.length; i++)
+                    for (let j = 0; j < m[i].length; j++)
+                        if (m[i][j] > maxRandom) maxRandom = m[i][j]
             }
             return maxRandom
         }
@@ -4123,6 +4356,7 @@ export default defineComponent({
             deltaTimeBuffer?.destroy(); deltaTimeBuffer = undefined;
             cameraBuffer?.destroy(); cameraBuffer = undefined;
             interactionMatrixBuffer?.destroy(); interactionMatrixBuffer = undefined;
+            electricalInteractionMatrixBuffer?.destroy(); electricalInteractionMatrixBuffer = undefined;
             simOptionsBuffer?.destroy(); simOptionsBuffer = undefined;
             glowOptionsBuffer?.destroy(); glowOptionsBuffer = undefined;
             infiniteRenderOptionsBuffer?.destroy(); infiniteRenderOptionsBuffer = undefined;
@@ -4202,6 +4436,8 @@ export default defineComponent({
             particleSortBindGroup = undefined as any;
             bruteForceBindGroup = undefined as any;
             particleComputeForcesBindGroup = undefined as any;
+            electricalInteractionBindGroup = undefined as any;
+            electricalInteractionBindGroupLayout = undefined as any;
             particleBufferBindGroup = undefined as any;
             simOptionsBindGroup = undefined as any;
             deltaTimeBindGroup = undefined as any;
@@ -4266,6 +4502,8 @@ export default defineComponent({
                 handleZoom, toggleFullscreen, isFullscreen, smoothCenterView, regenerateLife, step, randomizeRadius, randomizeRulesAndRadius,
                 updateSimWidth, updateSimHeight, updateNumParticles, setNewNumParticles, setNewNumTypes,
                 updateRulesMatrixValue, updateMinMatrixValue, updateMaxMatrixValue, newRandomRulesMatrix,
+                updateUrgeRuleValue, updateUrgeMinValue, updateUrgeMaxValue, randomizeUrgeMatrices,
+                updateNeuronRuleValue, updateNeuronMinValue, updateNeuronMaxValue, randomizeNeuronMatrices,
                 updateRulesMatrix, updateParticlePositions, updateColors, loadPreset, updateSingleColor,
                 startTrackerSelection, cancelTrackerSelection, stopTracker, onTrackerZoneSelected,
                 rulesOptions, paletteOptions, positionOptions, switchTo3D

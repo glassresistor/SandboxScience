@@ -14,6 +14,16 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const minRadiusMatrix = ref<number[][]>([]) // Min radius matrix for each color
     const maxRadiusMatrix = ref<number[][]>([]) // Max radius matrix for each color
 
+    // Interaction matrices between the electrical particles and MATTER colors, using the exact
+    // same (rule, minR, maxR) model as matter↔matter. Rows = electrical particle local index,
+    // columns = matter color index. The row-particle's entry governs the force it exerts on matter.
+    const urgeRulesMatrix = ref<number[][]>([]) // [numUrges × numColors] rule per (urge, matter color)
+    const urgeMinRadiusMatrix = ref<number[][]>([]) // [numUrges × numColors] min radius
+    const urgeMaxRadiusMatrix = ref<number[][]>([]) // [numUrges × numColors] max radius
+    const neuronRulesMatrix = ref<number[][]>([]) // [numNeurons × numColors] rule per (neuron, matter color)
+    const neuronMinRadiusMatrix = ref<number[][]>([]) // [numNeurons × numColors] min radius
+    const neuronMaxRadiusMatrix = ref<number[][]>([]) // [numNeurons × numColors] max radius
+
     const simWidth = ref<number>(0) // Grid width
     const simHeight = ref<number>(0) // Grid height
     const linkProportions = ref<boolean>(false) // Constraint x y sim proportions
@@ -130,6 +140,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
         minRadiusRange, maxRadiusRange, currentMaxRadius,
         repel, forceFactor, frictionFactor, useSpatialHash,
         isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, neuronInfluence, neuronAuthority, maxAuthority, cohesion, isDebugConnections,
+        urgeRulesMatrix, urgeMinRadiusMatrix, urgeMaxRadiusMatrix, neuronRulesMatrix, neuronMinRadiusMatrix, neuronMaxRadiusMatrix,
         showLiveDeltaTime, manualDeltaTimeEnabled, manualDeltaTime,
         isBrushActive, brushes, brushRadius, brushIntensity, brushType, attractForce, repulseForce, brushDirectionalForce, showBrushCircle,
         glowSize, glowIntensity, glowSteepness, particleOpacity,

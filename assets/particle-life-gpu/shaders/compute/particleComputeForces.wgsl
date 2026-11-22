@@ -112,6 +112,37 @@ fn get_interaction(index: u32) -> vec3<f32> {
     return vec3<f32>(rule, minR, maxR);
 }
 
+// Extended interaction matrix for the electrical layer. Same 4-byte (rule u8, minR u8, maxR u16)
+// encoding as `interactions`, laid out as [numUrges rows × numTypes cols] followed by
+// [numNeurons rows × numTypes cols]. kind: 0 = urge rows, 1 = neuron rows.
+fn get_electrical_interaction(kind: u32, localIndex: u32, targetColor: u32) -> vec3<f32> {
+    let offset = select(electrical.numUrges, electrical.numUrges + electrical.numNeurons, kind == 1u);
+    let word = electricalInteractions.data[(offset + localIndex) * options.numTypes + targetColor];
+    let rule = fma(f32((word >> 0u) & 0xFFu), 1.0 / 127.5, -1.0);
+    let minR = f32((word >> 8u) & 0xFFu);
+    let maxR = f32((word >> 16u) & 0xFFFFu);
+    return vec3<f32>(rule, minR, maxR);
+}
+
+// Classic (rule, minR, maxR) force for a distance `dist` — identical math to branch 1.
+// Returns the scalar along the direction from self toward the other particle
+// (positive = attract, negative = repel). Caller adds `dir * force`.
+fn interaction_force(interaction: vec3<f32>, dist: f32) -> f32 {
+    let maxR = interaction.z;
+    if (dist >= maxR) { return 0.0; }
+    let minR = interaction.y;
+    var force : f32;
+    if (dist < minR) {
+        force = fma(dist / minR, options.repel, -options.repel);
+    } else {
+        let rule = interaction.x;
+        let mid = (minR + maxR) * 0.5;
+        let slope = rule / (mid - minR);
+        force = fma(-slope, abs(dist - mid), rule);
+    }
+    return force;
+}
+
 // particle category: 0 matter, 1 urge, 2 neuron
 fn cat(t: u32) -> u32 {
     if (t < options.numTypes) { return 0u; }
@@ -156,6 +187,9 @@ fn urgeGoal(k: u32) -> UrgeGoal {
 @group(0) @binding(2) var<storage, read> binOffset : array<u32>;
 @group(0) @binding(3) var<storage, read> interactions: InteractionMatrix;
 
+// Extended interaction matrix for urges/neurons vs matter (see get_electrical_interaction).
+@group(4) @binding(0) var<storage, read> electricalInteractions: InteractionMatrix;
+
 @group(1) @binding(0) var<uniform> options : SimOptions;
 @group(2) @binding(0) var<uniform> deltaTime : f32;
 @group(3) @binding(0) var<uniform> electrical : ElectricalOptions;
@@ -167,7 +201,6 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     let half_width = options.simWidth * 0.5;
     let half_height = options.simHeight * 0.5;
     let is_wrapping = options.isWallWrap == 1u;
-    let repelForce = options.repel;
     let cellSubdivisions = i32(options.cellSubdivisions);
 
     var particle = particlesSource[id.x];
@@ -248,23 +281,35 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
                 if (isMatter && oCat == 0u) {
                     let myTypeOffset = myType * options.numTypes;
                     let interaction = get_interaction(myTypeOffset + oType);
-                    let maxR = interaction.z;
-                    if (dist < maxR) {
-                        let minR = interaction.y;
-                        var force : f32;
-                        if (dist < minR) {
-                            force = fma(dist / minR, repelForce, -repelForce);
-                        } else {
-                            let rule = interaction.x;
-                            let mid = (minR + maxR) * 0.5;
-                            let slope = rule / (mid - minR);
-                            force = fma(-slope, abs(dist - mid), rule);
-                        }
-                        totalForce += dir * force;
-                    }
+                    totalForce += dir * interaction_force(interaction, dist);
                 }
 
                 if (!eOn) { continue; } // electrical layer off -> only classic forces apply
+
+                // ---- 1b) electrical <-> matter via the extended interaction matrix --------
+                // Urges and neurons push/pull matter with the SAME rule math as matter↔matter,
+                // using their own per-particle row (local index) vs the matter color column.
+                // Convention: only the ROW particle's entry is used, so a special particle
+                // contributes its force to totalForce while the matter side gets the reaction in
+                // ITS OWN pass (Newton's third law emerges from the two independent reads).
+                if ((isUrge && oCat == 0u) || (isNeuron && oCat == 0u)) {
+                    let kind = select(0u, 1u, isNeuron);
+                    let localIndex = select(kIdx, mIdx, isNeuron);
+                    let interaction = get_electrical_interaction(kind, localIndex, oType);
+                    totalForce += dir * interaction_force(interaction, dist);
+                }
+                // ---- 1c) special <-> special: simple symmetric rule ------------------------
+                // Convention chosen (documented per the spec): each party applies HALF of its own
+                // row's entry toward the other special particle. Since both parties read their
+                // own row in their own pass, this keeps the pair force bounded and symmetric-ish.
+                if ((isUrge || isNeuron) && (oCat == 1u || oCat == 2u)) {
+                    let myKind = select(0u, 1u, isNeuron);
+                    let theirKind = select(0u, 1u, oCat == 2u);
+                    let myLocal = select(kIdx, mIdx, isNeuron);
+                    let theirLocal = select(oType - options.numTypes, oType - options.numTypes - electrical.numUrges, oCat == 2u);
+                    let interaction = get_electrical_interaction(myKind, myLocal, theirLocal);
+                    totalForce += dir * (0.5 * interaction_force(interaction, dist));
+                }
 
                 // ---- 2) an urge gathering the metric for ITS OWN goal ----------------------
                 // (There is no direct urge->matter field anymore: urges act on matter ONLY by
@@ -311,10 +356,14 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
         particle.vy = fma(totalForce.y, forceFactor, particle.vy);
         // matter keeps control/signal = 0
     } else {
-        // special particles move only under cohesion (friction is applied in the advance pass)
+        // Special particles move under the extended interaction-matrix forces (branch 1b/1c,
+        // already in totalForce and scaled by options.forceFactor like everything else) PLUS the
+        // cohesion term, which stays scaled by the global cohesion slider so it can be zeroed out.
+        // The matrix forces move the specials at full strength; cohesion is an additional
+        // clump/anti-overlap term scaled by its own slider (zeroing it removes only that part).
         let cf = electrical.cohesion * 0.5;
-        particle.vx = fma(cohesionForce.x, forceFactor * cf, particle.vx);
-        particle.vy = fma(cohesionForce.y, forceFactor * cf, particle.vy);
+        particle.vx = fma(totalForce.x + cohesionForce.x, forceFactor, particle.vx);
+        particle.vy = fma(totalForce.y + cohesionForce.y, forceFactor, particle.vy);
 
         if (isUrge) {
             // The metric value for this urge's OWN goal, evaluated from the previous frame.
