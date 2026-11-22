@@ -65,16 +65,16 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     // ---- Quantum / Electrical layer: Urge & Neuron particles -------------------------
     const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
     const numUrges = ref<number>(60) // Number of urge particles (each has its own objective)
-    const numNeurons = ref<number>(60) // Number of neuron particles (each is a kind of control)
-    const metricMode = ref<number>(0) // 0 local density of target color / 1 local fraction / 2 own-type density
-    const urgeRadius = ref<number>(45) // Radius over which an urge acts on matter & measures its metric
-    const neuronRadius = ref<number>(30) // Radius over which a neuron modulates an urge's control
-    const urgeForce = ref<number>(1.2) // Strength of an urge's attract/repel field on matter (additive when clumped)
-    const controlGain = ref<number>(0.05) // Learning rate: how strongly dM/dt pushes an urge's control
-    const controlMax = ref<number>(2.0) // Clamp on |control|
-    const neuronInfluence = ref<number>(0.6) // Strength of a single neuron's vote on an urge's control
-    const neuronAuthority = ref<number>(0.4) // Extra authority gained per nearby neuron (more neurons = more control)
-    const maxAuthority = ref<number>(3.0) // Cap on the accumulated neuron authority
+    const numNeurons = ref<number>(60) // Number of neuron particles (each is an actuator for one color, driven by nearby urges)
+    const metricMode = ref<number>(0) // goal family: 0 mixed density / 1 mixed fraction / 2 density-fraction / 3 cycle all (per-urge polarity/type varies by index)
+    const urgeRadius = ref<number>(45) // Radius over which an urge measures its goal metric & a neuron pushes/pulls its color
+    const neuronRadius = ref<number>(30) // Radius (from the neuron) within which an urge drives it
+    const urgeForce = ref<number>(1.2) // Strength of a neuron's field on its color, scaled by the drive from nearby urges
+    const controlGain = ref<number>(0.05) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign
+    const controlMax = ref<number>(2.0) // Clamp on |control| (+ attract / - repel)
+    const neuronInfluence = ref<number>(0.6) // (legacy, unused) strength of a single neuron's vote on an urge's control
+    const neuronAuthority = ref<number>(0.4) // (legacy, unused) extra authority gained per nearby neuron
+    const maxAuthority = ref<number>(3.0) // (legacy, unused) cap on the accumulated neuron authority
     const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
     const isDebugConnections = ref<boolean>(false) // Debug: draw dotted lines between urges and the neurons wired to them
 

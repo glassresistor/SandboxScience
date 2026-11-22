@@ -4,21 +4,33 @@
 // Particle type layout (see CPU side):
 //   [0, numTypes)                       -> matter colors (classic particle life rules)
 //   [numTypes, numTypes + numUrges)     -> urges.  local index k = type - numTypes
-//                                         target color = k % numTypes (the metric it maximises)
+//                                         Each urge has its OWN goal, derived deterministically
+//                                         from k (no extra buffer fields): a target color and an
+//                                         objective polarity. Some attract their color, some repel.
 //   [numTypes+numUrges, TOTAL_TYPES)    -> neurons. local index m = type - numTypes - numUrges
-//                                         mode       = m % 3        (0 attract / 1 repel / 2 self-attract)
-//                                         target color = floor(m/3) % numTypes
+//                                         target color = m % numTypes  (fixed for its lifetime)
+//
+// MODEL: urges modulate NEURONS; neurons actuate MATTER.
+//   * An urge learns a signed `control` (+ attract / − repel) toward ITS OWN goal. The sign is
+//     NOT fixed in advance — the learning rule finds it, so the population ends up with a mix of
+//     attracting and repelling urges (diverse by construction via the per-urge goal).
+//   * A neuron is a pure actuator for ONE matter color. In its own branch it scans for urges within
+//     `neuronRadius` OF THE NEURON, sums their previous-frame signed `control` (falloff-weighted)
+//     into a `drive`, then pushes/pulls ONLY matter of its single target color by that drive.
+//   * So an urge's effect on matter is mediated through neurons: it recruits nearby neurons to
+//     attract or repel the color those neurons own. There is no direct urge->matter field.
 //
 // Each particle carries two persistent "electrical" scalars that survive across frames:
-//   control : for an urge, its current attract(+) / repel(-) bias applied to nearby matter.
-//             A neuron within `neuronRadius` nudges this value in real time; the more neurons
-//             are around, the more authority (bigger allowed change) the urge gets.
-//   signal  : for an urge, the running value of the objective metric it is maximising.
-//             Comparing this frame's metric with `signal` (the previous frame's value) gives a
-//             dM/dt gradient that drives a simple Hebbian learning rule on `control`.
+//   control : for an urge, its current attract(+) / repel(-) bias (its learned intent). A neuron
+//             reads it to decide how hard to push/pull its color. For a neuron it is 0.
+//   signal  : for an urge, the running value of the objective metric it tracks (prior frame).
+//             Comparing this frame's metric with `signal` gives a dM/dt gradient that drives a
+//             simple Hebbian learning rule on `control`. For a neuron it is its firing activity.
 //
-// Because these fields live in the particle buffer, the sort pass carries them to next frame's
-// source automatically -> "the next iteration uses information from the prior" with a SINGLE pass.
+// SINGLE PASS: the force pass reads last frame's state (particleTempBuffer) and writes the new one,
+// so every particle sees only PREVIOUS-frame values of all others. No second pass, no ordering
+// dependency between urge-control learning and neuron actuation — the 1-frame delay doubles as
+// smoothing.
 // =============================================================================
 struct InteractionMatrix { data: array<u32> };
 struct SimOptions {
@@ -49,8 +61,8 @@ struct Particle {
     vx : f32,
     vy : f32,
     particleType : f32,
-    control : f32, // urge attract/repel bias (modified by neurons) — persists across frames
-    signal  : f32, // urge running objective-metric value (prior frame) for dM/dt learning
+    control : f32, // urge: learned attract(+) / repel(-) intent — read by nearby neurons. Persists.
+    signal  : f32, // urge: prior-frame objective metric (for dM/dt). neuron: firing activity. Persists.
 }
 struct ElectricalOptions {
     enabled: u32,        // master switch for the whole electrical layer
@@ -60,11 +72,11 @@ struct ElectricalOptions {
     urgeRadius: f32,     // radius over which an urge acts on matter & measures its metric
     neuronRadius: f32,   // radius over which a neuron modulates an urge
     urgeForce: f32,      // strength of an urge's attract/repel field on matter
-    controlGain: f32,    // learning rate: how strongly dM/dt pushes the urge's control
+    controlGain: f32,    // learning rate: how strongly dM/dt pushes an urge's control toward its goal sign
     controlMax: f32,     // clamp on |control|
-    neuronInfluence: f32,// strength of a single neuron's vote on an urge's control
-    neuronAuthority: f32,// extra authority gained per nearby neuron (more neurons = more control)
-    maxAuthority: f32,   // cap on the accumulated neuron authority
+    neuronInfluence: f32,// (legacy) strength of a single neuron's vote on an urge's control — unused now
+    neuronAuthority: f32,// (legacy) extra authority gained per nearby neuron — unused now
+    maxAuthority: f32,   // (legacy) cap on the accumulated neuron authority — unused now
     cohesion: f32,       // how strongly urges/neurons cling to the body & avoid overlapping
 };
 
@@ -107,6 +119,38 @@ fn cat(t: u32) -> u32 {
     return 2u;
 }
 
+// Per-urge goal, derived deterministically from the urge's local index k so the population is
+// diverse with NO extra buffer fields. metricMode picks the *family* of goals; the index then
+// varies both the objective type and its polarity (attract + / repel −) within that family.
+struct UrgeGoal {
+    polarity: f32,  // +1 = wants to attract its color, -1 = wants to repel it
+    useCount: u32,  // metric is a raw count (density) when set, else a local fraction
+}
+fn urgeGoal(k: u32) -> UrgeGoal {
+    let numTypes = options.numTypes;
+    if (numTypes == 0u) { return UrgeGoal(1.0, 1u); }
+    var polarity: f32 = 1.0;
+    var useCount: u32 = 1u;
+    switch (electrical.metricMode % 4u) {
+        case 0u: { // mix of attract & repel, all by local density
+            if ((k % 2u) != 0u) { polarity = -1.0; }
+        }
+        case 1u: { // mix of attract & repel, all by local fraction
+            if ((k % 2u) != 0u) { polarity = -1.0; }
+            useCount = 0u;
+        }
+        case 2u: { // attract-by-density / repel-by-fraction
+            if ((k % 2u) != 0u) { polarity = -1.0; useCount = 0u; }
+        }
+        default: { // cycle attract/repel AND density/fraction across the population
+            let quad = (k / 2u) % 4u;
+            if ((quad == 1u) || (quad == 3u)) { polarity = -1.0; }
+            if ((quad == 1u) || (quad == 2u)) { useCount = 0u; }
+        }
+    }
+    return UrgeGoal(polarity, useCount);
+}
+
 @group(0) @binding(0) var<storage, read> particlesSource : array<Particle>;
 @group(0) @binding(1) var<storage, read_write> particlesDestination : array<Particle>;
 @group(0) @binding(2) var<storage, read> binOffset : array<u32>;
@@ -132,8 +176,13 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     let isMatter = myCat == 0u;
     let isUrge = myCat == 1u;
     let isNeuron = myCat == 2u;
-    // the color this urge wants to maximise (only meaningful when isUrge)
-    let urgeTarget = (myType - options.numTypes) % options.numTypes;
+
+    // Per-urge goal: the target color it acts on and the objective polarity/type it wants.
+    let kIdx = myType - options.numTypes;                       // local urge index (valid if isUrge)
+    let mIdx = myType - options.numTypes - electrical.numUrges; // local neuron index (valid if isNeuron)
+    let goal = urgeGoal(kIdx);
+    let urgeTarget = kIdx % options.numTypes;   // the color this urge acts on (only meaningful when isUrge)
+    let neuronTarget = mIdx % options.numTypes; // the single color this neuron actuates (valid if isNeuron)
 
     let binInfo = getBinInfo(vec2f(particle.x, particle.y), options);
 
@@ -153,11 +202,10 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     let particlePosition = vec2f(particle.x, particle.y);
 
     // accumulators used by the electrical layer
-    var metricCount: f32 = 0.0;   // target-color matter within urgeRadius  (metric mode 0)
-    var matterTotal: f32 = 0.0;   // all matter within urgeRadius           (metric mode 1)
-    var nearUrges: f32 = 0.0;     // urges within range                     (metric mode 2 / neuron activity)
-    var neuronBias: f32 = 0.0;    // sum of nearby neurons' votes on this urge's control
-    var neuronCount: u32 = 0u;    // number of nearby neurons (drives authority)
+    var metricCount: f32 = 0.0;   // this urge's target-color matter within urgeRadius (density metric)
+    var matterTotal: f32 = 0.0;   // all matter within urgeRadius (denominator for the fraction metric)
+    var drive: f32 = 0.0;         // neuron: signed sum of nearby urges' previous-frame control
+    var firing: f32 = 0.0;        // neuron: magnitude of that drive (its "firing activity")
     var cohesionForce = vec2f(0.0, 0.0);
 
     let eOn = electrical.enabled != 0u;
@@ -218,35 +266,26 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
 
                 if (!eOn) { continue; } // electrical layer off -> only classic forces apply
 
-                // ---- 2) urge field acting on this matter particle (additive when clumped) --
-                if (isMatter && oCat == 1u && dist < eR) {
+                // ---- 2) an urge gathering the metric for ITS OWN goal ----------------------
+                // (There is no direct urge->matter field anymore: urges act on matter ONLY by
+                //  driving neurons, which then push/pull their single color.)
+                if (isUrge && oCat == 0u && dist < eR) {
+                    matterTotal += 1.0;
+                    if (oType == urgeTarget) { metricCount += 1.0; }
+                }
+
+                // ---- 3) a neuron driven by nearby urges, measured FROM THE NEURON ----------
+                // The reference point is this neuron: it scans for urges within `neuronRadius`
+                // of itself and accumulates their previous-frame signed control (falloff-weighted).
+                if (isNeuron && oCat == 1u && dist < nR) {
+                    let fall = max(0.0, 1.0 - dist / nR);
+                    drive += other.control * fall;   // other is the urge; .control is last frame's value
+                }
+                // ---- 4) a neuron actuating ONLY its own color ------------------------------
+                if (isNeuron && oCat == 0u && oType == neuronTarget && dist < eR) {
                     let fall = max(0.0, 1.0 - dist / eR);
-                    totalForce += dir * (other.control * fall * electrical.urgeForce);
+                    totalForce += dir * (drive * electrical.urgeForce * fall); // drive>0 attracts, <0 repels
                 }
-
-                // ---- 3) an urge gathering its metric + neuron modulation ------------------
-                if (isUrge) {
-                    if (oCat == 0u && dist < eR) {
-                        matterTotal += 1.0;
-                        if (oType == urgeTarget) { metricCount += 1.0; }
-                    }
-                    if (oCat == 2u && dist < nR) {
-                        let mIdx = oType - options.numTypes - electrical.numUrges;
-                        let mode = mIdx % 3u;                       // 0 attract / 1 repel / 2 self
-                        let nTarget = (mIdx / 3u) % options.numTypes;
-                        var s: f32 = 1.0;
-                        if (mode == 1u) { s = -1.0; }
-                        else if (mode == 2u) { s = 0.5; }
-                        let w = select(0.3, 1.0, nTarget == urgeTarget); // neurons sharing the urge's interest weigh more
-                        let fall = max(0.0, 1.0 - dist / nR);
-                        neuronBias += s * fall * w;
-                        neuronCount += 1u;
-                    }
-                    if (oCat == 1u && dist < eR) { nearUrges += 1.0; }
-                }
-
-                // ---- 4) a neuron measuring how many urges it is wired to --------------------
-                if (isNeuron && oCat == 1u && dist < nR) { nearUrges += 1.0; }
 
                 // ---- 5) cohesion: specials cling to the body and avoid overlapping ----------
                 if (isUrge || isNeuron) {
@@ -278,28 +317,20 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
         particle.vy = fma(cohesionForce.y, forceFactor * cf, particle.vy);
 
         if (isUrge) {
-            // the metric value this urge is trying to maximise, evaluated this frame
-            var M: f32;
-            if (electrical.metricMode == 1u) {
-                M = select(0.0, metricCount / matterTotal, matterTotal > 0.0);
-            } else if (electrical.metricMode == 2u) {
-                M = nearUrges;
-            } else {
-                M = metricCount;
-            }
+            // The metric value for this urge's OWN goal, evaluated from the previous frame.
+            let M = select(metricCount, select(0.0, metricCount / matterTotal, matterTotal > 0.0), goal.useCount == 1u);
 
+            // Hebbian rule toward the goal's polarity: when the metric moves in the direction the
+            // urge wants (dM has the sign of its polarity) it pushes harder; otherwise it backs off.
             let dM = M - particle.signal; // gradient vs the previous frame's stored value
-            var newControl = particle.control + electrical.controlGain * dM;
-
-            // neurons grant authority: more nearby neurons -> bigger allowed change
-            let authority = min(1.0 + f32(neuronCount) * electrical.neuronAuthority, electrical.maxAuthority);
-            newControl += neuronBias * electrical.neuronInfluence * authority;
+            var newControl = particle.control + electrical.controlGain * goal.polarity * dM;
             newControl = clamp(newControl, -electrical.controlMax, electrical.controlMax);
 
             particle.control = newControl;
             particle.signal = mix(particle.signal, M, 0.15); // smooth the stored metric
-        } else { // neuron: activity = how many urges it is close to (it "fires" more when busy)
-            particle.signal = mix(particle.signal, nearUrges, 0.2);
+        } else { // neuron: activity = magnitude of the drive it is under (it "fires" when recruited)
+            firing = abs(drive);
+            particle.signal = mix(particle.signal, firing, 0.2);
             particle.control = 0.0;
         }
     }

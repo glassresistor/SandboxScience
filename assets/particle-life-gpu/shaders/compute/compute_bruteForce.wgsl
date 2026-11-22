@@ -1,5 +1,8 @@
 // Particle Life — 2D GPU BRUTE-FORCE force pass (with Urge / Neuron "quantum-electrical" layer)
 // Same particle layout & electrical semantics as particleComputeForces.wgsl; O(N^2) neighbor scan.
+// MODEL: urges modulate NEURONS; neurons actuate MATTER. Each urge has its own goal (derived from
+// its index k); a neuron scans for urges within `neuronRadius` OF ITSELF, sums their previous-frame
+// signed control into a drive, then pushes/pulls ONLY matter of its single color (m % numTypes).
 struct InteractionMatrix { data: array<u32> };
 struct SimOptions {
     simWidth: f32,
@@ -47,6 +50,29 @@ struct ElectricalOptions {
     cohesion: f32,
 };
 
+// Per-urge goal (see particleComputeForces.wgsl): diversity by index k, no extra buffer fields.
+struct UrgeGoal {
+    polarity: f32,  // +1 attract / -1 repel
+    useCount: u32,  // metric is a raw count when set, else a local fraction
+}
+fn urgeGoal(k: u32) -> UrgeGoal {
+    let numTypes = options.numTypes;
+    if (numTypes == 0u) { return UrgeGoal(1.0, 1u); }
+    var polarity: f32 = 1.0;
+    var useCount: u32 = 1u;
+    switch (electrical.metricMode % 4u) {
+        case 0u: { if ((k % 2u) != 0u) { polarity = -1.0; } }
+        case 1u: { if ((k % 2u) != 0u) { polarity = -1.0; } useCount = 0u; }
+        case 2u: { if ((k % 2u) != 0u) { polarity = -1.0; useCount = 0u; } }
+        default: {
+            let quad = (k / 2u) % 4u;
+            if ((quad == 1u) || (quad == 3u)) { polarity = -1.0; }
+            if ((quad == 1u) || (quad == 2u)) { useCount = 0u; }
+        }
+    }
+    return UrgeGoal(polarity, useCount);
+}
+
 fn get_interaction(index: u32, numTypes: u32) -> vec3<f32> {
     let word = interactions.data[index];
     let rule = (f32((word >> 0u) & 0xFFu) / 255.0) * 2.0 - 1.0;
@@ -83,14 +109,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let isMatter = myCat == 0u;
     let isUrge = myCat == 1u;
     let isNeuron = myCat == 2u;
-    let urgeTarget = (typeA - options.numTypes) % options.numTypes;
+
+    let kIdx = typeA - options.numTypes;                       // local urge index (valid if isUrge)
+    let mIdx = typeA - options.numTypes - electrical.numUrges; // local neuron index (valid if isNeuron)
+    let goal = urgeGoal(kIdx);
+    let urgeTarget = kIdx % options.numTypes;   // the color this urge acts on
+    let neuronTarget = mIdx % options.numTypes; // the single color this neuron actuates
 
     var velocitySum = vec2<f32>(0.0, 0.0);
     var metricCount: f32 = 0.0;
     var matterTotal: f32 = 0.0;
-    var nearUrges: f32 = 0.0;
-    var neuronBias: f32 = 0.0;
-    var neuronCount: u32 = 0u;
+    var drive: f32 = 0.0;      // neuron: signed sum of nearby urges' previous-frame control
+    var firing: f32 = 0.0;     // neuron: magnitude of that drive (its "firing activity")
     var cohesionForce = vec2<f32>(0.0, 0.0);
 
     let eOn = electrical.enabled != 0u;
@@ -139,35 +169,23 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         if (!eOn) { continue; }
 
-        // ---- urge field on matter (additive when clumped) ------------------------------
-        if (isMatter && oCat == 1u && dist < eR) {
+        // ---- an urge gathering the metric for ITS OWN goal ------------------------------
+        // (no direct urge->matter field: urges act on matter only by driving neurons)
+        if (isUrge && oCat == 0u && dist < eR) {
+            matterTotal += 1.0;
+            if (typeB == urgeTarget) { metricCount += 1.0; }
+        }
+
+        // ---- a neuron driven by nearby urges, measured FROM THE NEURON ------------------
+        if (isNeuron && oCat == 1u && dist < nR) {
+            let fall = max(0.0, 1.0 - dist / nR);
+            drive += other.control * fall;   // other is the urge; .control is last frame's value
+        }
+        // ---- a neuron actuating ONLY its own color -------------------------------------
+        if (isNeuron && oCat == 0u && typeB == neuronTarget && dist < eR) {
             let fall = max(0.0, 1.0 - dist / eR);
-            velocitySum += dir * (other.control * fall * electrical.urgeForce);
+            velocitySum += dir * (drive * electrical.urgeForce * fall); // drive>0 attracts, <0 repels
         }
-
-        // ---- urge metric + neuron modulation -------------------------------------------
-        if (isUrge) {
-            if (oCat == 0u && dist < eR) {
-                matterTotal += 1.0;
-                if (typeB == urgeTarget) { metricCount += 1.0; }
-            }
-            if (oCat == 2u && dist < nR) {
-                let mIdx = typeB - options.numTypes - electrical.numUrges;
-                let mode = mIdx % 3u;
-                let nTarget = (mIdx / 3u) % options.numTypes;
-                var s: f32 = 1.0;
-                if (mode == 1u) { s = -1.0; }
-                else if (mode == 2u) { s = 0.5; }
-                let w = select(0.3, 1.0, nTarget == urgeTarget);
-                let fall = max(0.0, 1.0 - dist / nR);
-                neuronBias += s * fall * w;
-                neuronCount += 1u;
-            }
-            if (oCat == 1u && dist < eR) { nearUrges += 1.0; }
-        }
-
-        // ---- neuron activity -----------------------------------------------------------
-        if (isNeuron && oCat == 1u && dist < nR) { nearUrges += 1.0; }
 
         // ---- cohesion ------------------------------------------------------------------
         if (isUrge || isNeuron) {
@@ -192,23 +210,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         particle.vy += cohesionForce.y * forceFactor * cf;
 
         if (isUrge) {
-            var M: f32;
-            if (electrical.metricMode == 1u) {
-                M = select(0.0, metricCount / matterTotal, matterTotal > 0.0);
-            } else if (electrical.metricMode == 2u) {
-                M = nearUrges;
-            } else {
-                M = metricCount;
-            }
+            let M = select(metricCount, select(0.0, metricCount / matterTotal, matterTotal > 0.0), goal.useCount == 1u);
             let dM = M - particle.signal;
-            var newControl = particle.control + electrical.controlGain * dM;
-            let authority = min(1.0 + f32(neuronCount) * electrical.neuronAuthority, electrical.maxAuthority);
-            newControl += neuronBias * electrical.neuronInfluence * authority;
+            var newControl = particle.control + electrical.controlGain * goal.polarity * dM;
             newControl = clamp(newControl, -electrical.controlMax, electrical.controlMax);
             particle.control = newControl;
             particle.signal = mix(particle.signal, M, 0.15);
         } else {
-            particle.signal = mix(particle.signal, nearUrges, 0.2);
+            firing = abs(drive);
+            particle.signal = mix(particle.signal, firing, 0.2);
             particle.control = 0.0;
         }
     }

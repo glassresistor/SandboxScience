@@ -14,15 +14,15 @@
 
 On top of the usual matter colors, the **2D GPU** engine can spawn two extra particle types that act on the bodies in a more "quantum & electrical" way. They live in the left sidebar under the **Quantum / Electrical** panel.
 
-- **Urges** — each urge has its own *objective*: a metric it tries to **maximize** (e.g. the local density of one specific color, the local fraction of that color, or how many other urges are nearby). Every frame it measures that metric and runs a small Hebbian learning rule on an internal `control` value: when its metric is improving it pushes harder, when it's worsening it backs off. That `control` becomes an **attract (+) / repel (−)** field applied to the surrounding matter. Because the fields of nearby urges **add up**, a clump of urges exerts a much stronger combined pull/push than any single one — so you can watch dense urge patches deform the bodies around them.
+- **Urges** — each urge has its own *goal*, derived deterministically from its index (so the population is diverse, with no extra state): a target color and an objective polarity. Every frame it measures that goal's metric and runs a small Hebbian learning rule on an internal `control` value: when the metric moves in the direction it wants it pushes harder, otherwise it backs off. That `control` becomes a signed **attract (+) / repel (−)** intent — but urges do **not** push matter directly. Instead they *recruit* nearby neurons.
 
-- **Neurons** — each neuron is a *kind of control*: it has a mode (**attract / repel / self-attract**) and a target color. When a neuron gets close to an urge (within its radius) it nudges that urge's `control` in real time. Crucially, **the more neurons are around an urge, the more authority they grant it** — an isolated urge is only weakly modulated, while a well-wired one can swing its field hard. Neuron "activity" (how many urges it's wired to) also drives how brightly it glows.
+- **Neurons** — each neuron is an *actuator* for exactly one color (`m % numTypes`, fixed for its lifetime). In its own step it scans for the urges within `neuronRadius` **of the neuron**, sums their previous-frame signed `control` (falloff-weighted) into a `drive`, then pulls or pushes **only** matter of that single color by that drive. So an urge's effect on matter is always mediated through neurons: it drives them, and they do the pushing/pulling on a per-color basis. A neuron's activity (the magnitude of its drive) also drives how brightly it glows.
 
 - **Single-pass memory** — each particle carries its `control` and `signal` state in the particle buffer, so *the next iteration reads the values written by the previous one*. No second pass is needed: the electrical state simply persists across frames as the simulation sorts and advances.
 
-- **Live visuals** — urges glow brighter as their `|control|` grows (you can literally watch them "learn"), and neurons pulse with their activity. Toggle **Debug links** to draw light dotted lines from each urge to the neurons within its radius, so you can see which control nodes are wired to which urge.
+- **Live visuals** — urges glow brighter as their `|control|` grows (you can literally watch them "learn"), and neurons pulse with their activity. Toggle **Debug links** to draw light dotted lines from each neuron to the urges within its radius, so you can see which urges are driving it.
 
-> This layer is experimental and tuned for play. Start with the defaults (≈60 urges / ≈60 neurons) and adjust *Urge Field Strength*, *Control Gain* and *Neuron Influence/Authority* to taste — very high values can make the simulation unstable.
+> This layer is experimental and tuned for play. Start with the defaults (≈60 urges / ≈60 neurons) and adjust *Urge Field Strength* and *Control Gain* to taste — very high values can make the simulation unstable. (*Neuron Influence/Authority* are legacy knobs kept for compatibility and no longer affect the model.*)
 
 ## 🎯 Goals
 

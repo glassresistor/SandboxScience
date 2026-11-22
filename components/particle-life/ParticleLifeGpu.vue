@@ -145,7 +145,7 @@
                             </RangeInput>
                         </Collapse>
                         <Collapse label="Quantum / Electrical" icon="i-tabler-bolt text-lime-400"
-                                  tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each maximise a metric (e.g. the local density of one color) and exert an attract/repel field on matter that is <b>additive when they clump</b>. <br> <b>Neurons</b> are kinds of control: within range they let an urge modify its attraction/repulsion in real time, and <b>more neurons = more control</b>. <br> State persists across frames (the next step reads the previous one), so there is no second pass.">
+                                  tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each have their own goal (derived from their index) and learn an attract/repel intent. They do NOT push matter directly — they recruit nearby neurons. <br> <b>Neurons</b> are actuators for a single color: within range of an urge they are driven by it and then pull or push only that one color. <br> State persists across frames (the next step reads the previous one), so there is no second pass.">
                             <div flex items-center justify-between gap-2 mb-1>
                                 <p class="w-2/3 text-2sm">
                                     Enable layer
@@ -155,40 +155,41 @@
                             </div>
 
                             <RangeInput input label="Urge Count"
-                                        tooltip="Number of urge particles. Each urge is a distinct type with its own objective (it targets color = index % species)."
+                                        tooltip="Number of urge particles. Each urge is a distinct type with its OWN goal: it acts on color = index % species, and the objective (attract vs repel, density vs fraction) is derived from its index so the population is diverse."
                                         :min="0" :max="2000" :step="1" v-model="particleLife.numUrges">
                             </RangeInput>
                             <RangeInput input label="Neuron Count" mt-2
-                                        tooltip="Number of neuron particles. Each neuron is a distinct control: mode = index % 3 (attract / repel / self-attract) on a target color."
+                                        tooltip="Number of neuron particles. Each neuron is an actuator for a single color = index % species. It is driven by the urges near it and then pulls or pushes only that one color."
                                         :min="0" :max="2000" :step="1" v-model="particleLife.numNeurons">
                             </RangeInput>
 
                             <div flex items-center justify-between gap-2 mt-2>
                                 <p class="w-1/3 text-2sm shrink-0">
-                                    Urge Metric
-                                    <TooltipInfo container="#mainContainer" tooltip="The value each urge tries to maximise. <br> <b>Local density</b>: number of its target color nearby. <br> <b>Local fraction</b>: share of its target color among nearby matter. <br> <b>Own density</b>: how many other urges are nearby (encourages clumping)." />
+                                    Urge Goal Family
+                                    <TooltipInfo container="#mainContainer" tooltip="The family of goals each urge is drawn from. Within a family the exact goal (attract vs repel, density vs fraction) still varies per urge by its index, so the population stays diverse. <br> <b>Mixed Density</b>: attract/repel by local density. <br> <b>Mixed Fraction</b>: attract/repel by local fraction. <br> <b>Density/Fraction</b>: attract by density, repel by fraction. <br> <b>Cycle All</b>: cycles all four combinations across the population." />
                                 </p>
                                 <SelectInput name="urge-metric-mode" class="max-w-full!"
                                              v-model="particleLife.metricMode"
                                              :options="[
-                                                 { id: 0, name: 'Local Density', category: 'Metric' },
-                                                 { id: 1, name: 'Local Fraction', category: 'Metric' },
-                                                 { id: 2, name: 'Own Density', category: 'Metric' },
+                                                 { id: 0, name: 'Mixed Density', category: 'Goal' },
+                                                 { id: 1, name: 'Mixed Fraction', category: 'Goal' },
+                                                 { id: 2, name: 'Density / Fraction', category: 'Goal' },
+                                                 { id: 3, name: 'Cycle All', category: 'Goal' },
                                              ]">
                                 </SelectInput>
                             </div>
 
                             <hr border-gray-500 my-2>
                             <RangeInput input label="Urge Radius"
-                                        tooltip="Radius over which an urge measures its metric and pushes matter. Larger = wider influence."
+                                        tooltip="Radius over which an urge measures its goal metric, and the range at which a neuron pushes/pulls its color. Larger = wider influence."
                                         :min="4" :max="160" :step="1" v-model="particleLife.urgeRadius">
                             </RangeInput>
                             <RangeInput input label="Neuron Radius" mt-2
-                                        tooltip="Radius over which a neuron can modulate an urge's control."
+                                        tooltip="Radius (measured from the neuron) within which an urge drives it. Closer urges have more influence on its drive."
                                         :min="4" :max="160" :step="1" v-model="particleLife.neuronRadius">
                             </RangeInput>
                             <RangeInput input label="Urge Field Strength" mt-2
-                                        tooltip="Strength of an urge's attract/repel field on matter. Clumped urges add up, so this can get strong fast."
+                                        tooltip="Strength of a neuron's field on its color, scaled by the drive it receives from nearby urges. Neurons near many strong urges push/pull harder."
                                         :min="0" :max="4" :step="0.01" v-model="particleLife.urgeForce">
                             </RangeInput>
 
@@ -206,15 +207,15 @@
                             <hr border-gray-500 my-2>
                             <p underline text-gray-300 class="-mt-0.5" mb-1>Neuron Control :</p>
                             <RangeInput input label="Neuron Influence"
-                                        tooltip="How strongly a single nearby neuron nudges an urge's control (attract/repel vote)."
+                                        tooltip="(Legacy) How strongly a single nearby neuron nudged an urge's control. In the current model urges drive neurons, so this no longer has an effect."
                                         :min="0" :max="3" :step="0.01" v-model="particleLife.neuronInfluence">
                             </RangeInput>
                             <RangeInput input label="Authority / Neuron" mt-2
-                                        tooltip="Extra authority gained per nearby neuron. More neurons around an urge = it can change its control more (the 'more neurons, more control' effect)."
+                                        tooltip="(Legacy) Extra authority gained per nearby neuron. In the current model urges drive neurons, so this no longer has an effect."
                                         :min="0" :max="2" :step="0.01" v-model="particleLife.neuronAuthority">
                             </RangeInput>
                             <RangeInput input label="Max Authority" mt-2
-                                        tooltip="Cap on the total neuron authority an urge can accumulate."
+                                        tooltip="(Legacy) Cap on the total neuron authority an urge could accumulate. No longer used."
                                         :min="1" :max="12" :step="0.5" v-model="particleLife.maxAuthority">
                             </RangeInput>
 
@@ -228,7 +229,7 @@
                             <div flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Debug links
-                                    <TooltipInfo container="#mainContainer" tooltip="Draw light dotted lines from each urge to the neurons within its radius, so you can see which control nodes are wired to which urge." />
+                                    <TooltipInfo container="#mainContainer" tooltip="Draw light dotted lines from each neuron to the urges within its radius — i.e. the urges currently driving it, so you can see which neurons an urge is recruiting." />
                                 </p>
                                 <ToggleSwitch label="On" colorful-label v-model="particleLife.isDebugConnections" />
                             </div>
@@ -244,11 +245,13 @@
                             </div>
 
                             <UrgeInspector v-if="urgeInspectorOpen"
+                                           v-model:selected-id="selectedUrgeId"
                                            :stats="urgeStats"
                                            :params="electricalParams"
                                            :control-max="particleLife.controlMax"
                                            :target-colors="colorRgbStrings"
-                                           :num-types="particleLife.numColors" />
+                                           :num-types="particleLife.numColors"
+                                           :objective-label-for="objectiveLabelFor" />
                         </Collapse>
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500">
                             <RangeInput input label="Particle Size"
@@ -445,6 +448,27 @@
             </template>
         </SidebarLeft>
         <canvas ref="canvasRef" id="canvasRef" @contextmenu.prevent w-full h-full cursor-crosshair></canvas>
+        <!-- Urge tracking overlay: the marker position is set imperatively every frame (no GPU work);
+             it simply projects the selected urge's last-known world position through the camera. -->
+        <div class="absolute inset-0 pointer-events-none z-20 overflow-hidden" aria-hidden="true">
+            <div v-show="selectedUrgeId >= 0 && particleLife.isElectricalEnabled"
+                 ref="urgeMarkerEl" class="absolute left-0 top-0 will-change-transform" style="opacity: 0; transform: translate(-9999px, -9999px)">
+                <!-- ring centred on the point -->
+                <div class="-translate-x-1/2 -translate-y-1/2">
+                    <div class="w-4 h-4 rounded-full border-2 animate-pulse"
+                         :style="{ borderColor: markerColor, boxShadow: `0 0 9px ${markerColor}` }"></div>
+                </div>
+                <!-- label offset to the right of the point -->
+                <div class="absolute left-3.5 top-0 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900/85 backdrop-blur-sm px-2 py-1 ring-1 text-[0.7rem] leading-tight"
+                     :style="{ borderColor: markerColor }">
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-mono font-semibold text-zinc-100">#{{ selectedUrgeId }}</span>
+                        <span class="text-amber-300">{{ markerObjective }}</span>
+                    </div>
+                    <div ref="urgeMarkerStatEl" class="font-mono text-[0.62rem] text-emerald-300"></div>
+                </div>
+            </div>
+        </div>
         <ClientOnly>
             <TrackerOverlay v-if="particleLife.isTrackerSelectionActive" @tracker-zone-selected="onTrackerZoneSelected"></TrackerOverlay>
         </ClientOnly>
@@ -1402,6 +1426,7 @@ export default defineComponent({
             // ++pendingFrames
             // device.queue.onSubmittedWorkDone().then(() => { --pendingFrames })
 
+            updateUrgeMarker() // Move the on-canvas marker for the tracked urge (no GPU work).
             animationFrameId = requestAnimationFrame(frame)
         }
         // -------------------------------------------------------------------------------------------------------------
@@ -1632,7 +1657,9 @@ export default defineComponent({
 
             // Debug: draw dotted lines connecting each urge to the neurons wired to it.
             // Capped so maxing both sliders can't trigger an O(urges*neurons) compute blowup.
-            if (isDebugConnections && numUrges > 0 && numNeurons > 0 && numUrges * numNeurons <= 60000) {
+            // Capped so maxing the sliders can't trigger an O(urges×neurons) compute blowup, and
+            // so the by-type scan (O(urges×particles)) stays cheap even at large particle counts.
+            if (isDebugConnections && numUrges > 0 && numNeurons > 0 && numUrges * numNeurons <= 60000 && numUrges * NUM_PARTICLES <= 32_000_000) {
                 encoder.clearBuffer(connCountBuffer!, 0, 4)
                 const connPass = encoder.beginComputePass()
                 connPass.setPipeline(debugConnectionsPipeline)
@@ -3788,6 +3815,14 @@ export default defineComponent({
         // Previous per-urge values (keyed by urge id) so we can show a trend between readbacks.
         let prevUrgeValues = new Map<number, { control: number, signal: number }>()
 
+        // ---- On-canvas tracking of a single selected urge -------------------------------
+        const selectedUrgeId = ref<number>(-1) // which urge (local index) to highlight on the canvas (-1 = none)
+        const urgeMarkerEl = ref<HTMLElement | null>(null) // moving marker element (positioned imperatively)
+        const urgeMarkerStatEl = ref<HTMLElement | null>(null) // live control/metric readout in the marker label
+        // Last-known world position + velocity of every urge, refreshed on each throttled readback.
+        let urgeWorldPos = new Map<number, { x: number, y: number, vx: number, vy: number }>()
+        let lastReadTimeMs = 0 // wall-clock time of the most recent readback (for velocity extrapolation)
+
         // Snapshot of the global electrical parameters for the parameter card (reactive).
         const electricalParams = computed<ElectricalParams>(() => ({
             metricMode: particleLife.metricMode,
@@ -3801,6 +3836,51 @@ export default defineComponent({
             maxAuthority: particleLife.maxAuthority,
             cohesion: particleLife.cohesion,
         }))
+
+        // Per-urge goal (mirrors the shader's urgeGoal): diversity by index k, no extra state.
+        const urgeGoalFor = (k: number) => {
+            let polarity = 1
+            let useCount = true
+            switch (((particleLife.metricMode % 4) + 4) % 4) {
+                case 0:
+                    if ((k % 2) !== 0) polarity = -1
+                    break
+                case 1:
+                    if ((k % 2) !== 0) polarity = -1
+                    useCount = false
+                    break
+                case 2:
+                    if ((k % 2) !== 0) { polarity = -1; useCount = false }
+                    break
+                default: {
+                    const quad = Math.floor(k / 2) % 4
+                    if (quad === 1 || quad === 3) polarity = -1
+                    if (quad === 1 || quad === 2) useCount = false
+                    break
+                }
+            }
+            return { polarity, useCount }
+        }
+        const objectiveLabelFor = (k: number): string => {
+            const g = urgeGoalFor(k)
+            const n = (k % NUM_TYPES) + 1
+            const verb = g.polarity >= 0 ? 'attract' : 'repel'
+            const metric = g.useCount ? 'density' : 'fraction'
+            return `drive nearby neurons to ${verb} Color ${n} (${metric})`
+        }
+
+        // Colour + short objective for the on-canvas marker (reactive; only changes on selection/metric change).
+        const markerColor = computed(() => {
+            const id = selectedUrgeId.value
+            if (id < 0) return '#ffffff'
+            const idx = ((id % particleLife.numColors) + particleLife.numColors) % particleLife.numColors
+            return colorRgbStrings.value[idx] ?? '#ffffff'
+        })
+        const markerObjective = computed(() => {
+            const id = selectedUrgeId.value
+            if (id < 0) return ''
+            return objectiveLabelFor(id)
+        })
 
         // A single guarded readback. Never runs while a resize/erase is mutating buffers.
         const readUrgeStats = async () => {
@@ -3823,7 +3903,7 @@ export default defineComponent({
                 if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting) return
 
                 const particles = new Float32Array(arrayBuffer)
-                const urgesRaw: { k: number, x: number, y: number, control: number, signal: number }[] = []
+                const urgesRaw: { k: number, x: number, y: number, vx: number, vy: number, control: number, signal: number }[] = []
                 const neuronPos: { x: number, y: number }[] = []
 
                 // The spatial-hash sort scatters urges/neurons through the buffer, so scan all.
@@ -3833,11 +3913,17 @@ export default defineComponent({
                     if (ptype < NUM_TYPES) continue // matter (control/signal are always 0)
                     const localType = ptype - NUM_TYPES
                     if (localType < numUrges) {
-                        urgesRaw.push({ k: localType, x: particles[idx], y: particles[idx + 1], control: particles[idx + 5], signal: particles[idx + 6] })
+                        urgesRaw.push({ k: localType, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], control: particles[idx + 5], signal: particles[idx + 6] })
                     } else if (localType - numUrges < numNeurons) {
                         neuronPos.push({ x: particles[idx], y: particles[idx + 1] })
                     }
                 }
+
+                // Refresh the on-canvas tracking data (positions + velocities) for every urge.
+                const posMap = new Map<number, { x: number, y: number, vx: number, vy: number }>()
+                for (const u of urgesRaw) posMap.set(u.k, { x: u.x, y: u.y, vx: u.vx, vy: u.vy })
+                urgeWorldPos = posMap
+                lastReadTimeMs = performance.now()
 
                 // Optional stretch: count each urge's "wired" neurons (within neuronRadius).
                 const r2 = particleLife.neuronRadius * particleLife.neuronRadius
@@ -3864,6 +3950,12 @@ export default defineComponent({
                 }
                 prevUrgeValues = newPrev // prunes ids that no longer exist
                 urgeStats.value = next
+
+                // Refresh the live control/metric readout in the on-canvas marker (if one is tracked).
+                if (urgeMarkerStatEl.value && selectedUrgeId.value >= 0) {
+                    const sel = next.find((s) => s.id === selectedUrgeId.value)
+                    urgeMarkerStatEl.value.textContent = sel ? `control ${sel.control >= 0 ? '+' : ''}${sel.control.toFixed(2)} · metric ${sel.signal.toFixed(2)}` : ''
+                }
             } catch {
                 // Ignore transient readback failures (e.g. a buffer swap mid-flight); the next tick retries.
             } finally {
@@ -3885,12 +3977,48 @@ export default defineComponent({
             urgeReadbackTimer = window.setInterval(() => { void readUrgeStats() }, URGE_READBACK_INTERVAL_MS)
         }
 
+        // Project the selected urge onto the canvas and move its marker. Runs every frame (cheap:
+        // pure math + one style write, no GPU work). Position is extrapolated with velocity so the
+        // marker glides smoothly between throttled readbacks.
+        const updateUrgeMarker = () => {
+            const el = urgeMarkerEl.value
+            if (!el) return
+            const id = selectedUrgeId.value
+            // Hide when nothing is selected, the layer is off, or the camera is GPU-tracked
+            // (its centre lives on the GPU and we don't read it back every frame).
+            if (id < 0 || !particleLife.isElectricalEnabled || isCameraTracking) {
+                el.style.opacity = '0'
+                return
+            }
+            const p = urgeWorldPos.get(id)
+            if (!p) { el.style.opacity = '0'; return } // not yet read back (or count changed)
+
+            let dt = (performance.now() - lastReadTimeMs) / 1000
+            if (dt < 0) dt = 0
+            else if (dt > 0.3) dt = 0.3 // don't extrapolate too far ahead of the last sample
+            const wx = p.x + p.vx * dt
+            const wy = p.y + p.vy * dt
+
+            // World -> NDC, exactly matching render_normal.wgsl (note: scale.y is negated there).
+            const clipX = (wx - cameraCenter.x) * cameraScaleX
+            const clipY = (wy - cameraCenter.y) * (-cameraScaleY)
+            // NDC -> device pixels -> CSS pixels (the canvas backing store is DPR-scaled).
+            const dpr = DEVICE_PIXEL_RATIO || 1
+            const px = ((clipX + 1) / 2 * CANVAS_WIDTH) / dpr
+            const py = ((1 - clipY) / 2 * CANVAS_HEIGHT) / dpr
+            el.style.opacity = '1'
+            el.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`
+        }
+
         watch(urgeInspectorOpen, (open) => {
             if (open) startUrgeReadback()
             else {
                 stopUrgeReadback()
                 urgeStats.value = []
                 prevUrgeValues.clear()
+                // Drop on-canvas tracking state so nothing lingers once the panel is closed.
+                selectedUrgeId.value = -1
+                urgeWorldPos = new Map()
             }
         })
 
@@ -4134,7 +4262,7 @@ export default defineComponent({
 
             return {
                 particleLife, canvasRef, fps, executionTime, displayedDeltaTime, showLiveDeltaTime, colorRgbStrings,
-                urgeInspectorOpen, urgeStats, electricalParams,
+                urgeInspectorOpen, urgeStats, electricalParams, selectedUrgeId, urgeMarkerEl, urgeMarkerStatEl, markerColor, markerObjective, objectiveLabelFor,
                 handleZoom, toggleFullscreen, isFullscreen, smoothCenterView, regenerateLife, step, randomizeRadius, randomizeRulesAndRadius,
                 updateSimWidth, updateSimHeight, updateNumParticles, setNewNumParticles, setNewNumTypes,
                 updateRulesMatrixValue, updateMinMatrixValue, updateMaxMatrixValue, newRandomRulesMatrix,

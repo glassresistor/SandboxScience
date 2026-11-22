@@ -42,25 +42,34 @@
                     <span class="ml-auto px-1.5 py-0.5 rounded ring-1 text-[0.6rem] uppercase tracking-wide bg-emerald-500/15 text-emerald-300 ring-emerald-500/40 font-mono">per urge</span>
                 </div>
                 <p class="text-[0.72rem] leading-snug text-zinc-400 mb-2">
-                    <span class="text-emerald-300">Control</span> bar is centred at 0 —
-                    <span class="text-rose-300">left = repel</span>,
-                    <span class="text-emerald-300">right = attract</span>. The arrow shows the change since the last readback.
+                    Each row’s top line is its <b>objective</b> (what it wants) — fixed unless you change the
+                    metric or species count. The <span class="text-emerald-300">control</span> bar is centred at 0:
+                    <span class="text-rose-300">left = repel</span>, <span class="text-emerald-300">right = attract</span>.<br>
+                    <span class="text-sky-300">Click a row to track that urge on the canvas.</span>
                 </p>
 
                 <ul class="flex flex-col gap-1.5">
                     <li v-for="s in stats" :key="s.id"
-                        class="rounded bg-slate-900/50 px-2 py-1.5 ring-1 ring-slate-700/40 hover:ring-slate-500/60 transition-all">
-                        <!-- header row: swatch + id + target + wired neurons -->
+                        @click="select(s.id)"
+                        class="cursor-pointer rounded bg-slate-900/50 px-2 py-1.5 ring-1 transition-all"
+                        :class="selectedId === s.id ? 'ring-2 ring-sky-400/80 bg-sky-500/10' : 'ring-slate-700/40 hover:ring-slate-500/60'">
+                        <!-- objective (stable) + identity -->
                         <div class="flex items-center gap-2">
                             <span class="w-3.5 h-3.5 rounded-full ring-1 ring-white/40 shrink-0"
                                   :style="{ backgroundColor: colorFor(s.targetColor) }"></span>
                             <span class="font-mono text-2sm text-zinc-100">#{{ s.id }}</span>
-                            <span class="text-[0.7rem] text-zinc-500">→ color {{ s.targetColor + 1 }}/{{ numTypes }}</span>
+                            <span v-if="selectedId === s.id" class="i-tabler-crosshair text-sky-400 shrink-0" title="Tracking on canvas"></span>
                             <span v-if="s.wiredNeurons !== undefined"
                                   class="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded bg-fuchsia-500/10 ring-1 ring-fuchsia-500/30 text-fuchsia-200 text-[0.68rem] font-mono" :title="'Neurons within neuronRadius driving this urge’s authority'">
-                                <span class="i-tabler-circuit-forward"></span>{{ s.wiredNeurons }}
+                                <span class="i-tabler-brain"></span>{{ s.wiredNeurons }}
                             </span>
                         </div>
+
+                        <!-- what it wants (STABLE over time; derived from this urge's index) -->
+                        <p class="mt-1 flex items-center gap-1.5 text-[0.74rem] leading-tight text-zinc-200">
+                            <span class="i-tabler-target text-amber-400 shrink-0"></span>
+                            <span>{{ objectiveLabelFor(s.id) }}</span>
+                        </p>
 
                         <!-- control signed bar -->
                         <div class="mt-1.5 flex items-center gap-2">
@@ -82,7 +91,7 @@
                             </span>
                         </div>
 
-                        <!-- metric / signal value -->
+                        <!-- metric / signal value (the live number) -->
                         <div class="mt-1 flex items-center gap-2">
                             <span class="text-[0.68rem] text-zinc-400 w-12 shrink-0">Metric</span>
                             <div class="relative flex-1 h-1.5 rounded-full bg-slate-700/70 overflow-hidden">
@@ -141,22 +150,29 @@ interface ParamMeta {
 
 // One-line "what it does" for each shared parameter (mirrors the Quantum/Electrical docs).
 const PARAM_META: ParamMeta[] = [
-    { key: 'metricMode', label: 'Metric Mode', isSelect: true, desc: 'The objective each urge maximises.' },
-    { key: 'urgeRadius', label: 'Urge Radius', desc: 'Radius over which an urge measures its metric and pushes matter.' },
-    { key: 'neuronRadius', label: 'Neuron Radius', desc: 'Radius over which a neuron can modulate an urge’s control.' },
-    { key: 'urgeForce', label: 'Urge Field Strength', desc: 'Strength of an urge’s attract/repel field on matter. Additive when urges clump.' },
-    { key: 'controlGain', label: 'Control Gain', desc: 'Learning rate: how strongly the metric change (vs last frame) pushes an urge’s control.' },
+    { key: 'metricMode', label: 'Goal Family', isSelect: true, desc: 'The family of per-urge goals; the exact goal (attract/repel, density/fraction) still varies by index.' },
+    { key: 'urgeRadius', label: 'Urge Radius', desc: 'Radius over which an urge measures its goal metric and a neuron pushes/pulls its color.' },
+    { key: 'neuronRadius', label: 'Neuron Radius', desc: 'Radius (from the neuron) within which an urge drives it.' },
+    { key: 'urgeForce', label: 'Urge Field Strength', desc: 'Strength of a neuron’s field on its color, scaled by the drive it receives from nearby urges.' },
+    { key: 'controlGain', label: 'Control Gain', desc: 'Learning rate: how strongly the metric change (vs last frame) pushes an urge’s control toward its goal sign.' },
     { key: 'controlMax', label: 'Control Max', desc: 'Clamp on |control| — attract is +, repel is −.' },
-    { key: 'neuronInfluence', label: 'Neuron Influence', desc: 'How strongly a single nearby neuron nudges an urge’s control.' },
-    { key: 'neuronAuthority', label: 'Authority / Neuron', desc: 'Extra authority gained per nearby neuron (more neurons = more control).' },
-    { key: 'maxAuthority', label: 'Max Authority', desc: 'Cap on the total accumulated neuron authority for an urge.' },
+    { key: 'neuronInfluence', label: 'Neuron Influence', desc: '(Legacy, unused) How strongly a nearby neuron nudged an urge’s control.' },
+    { key: 'neuronAuthority', label: 'Authority / Neuron', desc: '(Legacy, unused) Extra authority gained per nearby neuron.' },
+    { key: 'maxAuthority', label: 'Max Authority', desc: '(Legacy, unused) Cap on the accumulated neuron authority.' },
     { key: 'cohesion', label: 'Cohesion', desc: 'How strongly urges/neurons cling to the body and avoid overlapping each other.' },
 ]
 
-const METRIC_MODE_NAMES: Record<number, string> = { 0: 'Local Density', 1: 'Local Fraction', 2: 'Own Density' }
+const METRIC_MODE_NAMES: Record<number, string> = {
+    0: 'Mixed Density',
+    1: 'Mixed Fraction',
+    2: 'Density / Fraction',
+    3: 'Cycle All',
+}
 
 // Below this |Δ| a trend is shown as "flat" to avoid flicker from float noise.
 const TREND_EPS = 1e-3
+
+type ObjectiveLabelFn = (k: number) => string
 
 export default defineComponent({
     name: 'UrgeInspector',
@@ -166,10 +182,18 @@ export default defineComponent({
         controlMax: { type: Number, required: true },
         targetColors: { type: Array as () => string[], required: true }, // rgb() strings, index = matter color id
         numTypes: { type: Number, required: true },
+        selectedId: { type: Number, required: false, default: -1 }, // urge id currently tracked on the canvas (-1 = none)
+        objectiveLabelFor: { type: Function as unknown as () => ObjectiveLabelFn, required: true }, // per-urge goal label by index k
     },
-    setup(props) {
+    emits: ['update:selectedId'],
+    setup(props, { emit }) {
         const TREND_EPS_LOCAL = TREND_EPS
         const paramMeta = PARAM_META
+
+        // Toggle tracking of a single urge on the canvas (click again to deselect).
+        const select = (id: number) => {
+            emit('update:selectedId', props.selectedId === id ? -1 : id)
+        }
 
         const fmt = (n: number | undefined, digits = 2): string => {
             if (n === undefined || Number.isNaN(n)) return '—'
@@ -208,7 +232,11 @@ export default defineComponent({
             return props.targetColors[idx] ?? '#ffffff'
         }
 
-        return { paramMeta, displayValue, fmt, barFill, signalFill, colorFor, TREND_EPS: TREND_EPS_LOCAL }
+        // Per-urge goal label, supplied by the parent (it mirrors the shader's urgeGoal so the
+        // text always matches what the GPU is actually doing). STABLE over time for a given index.
+        const objectiveLabelFor = (k: number): string => props.objectiveLabelFor(k)
+
+        return { paramMeta, displayValue, fmt, barFill, signalFill, colorFor, objectiveLabelFor, select, TREND_EPS: TREND_EPS_LOCAL }
     },
 })
 </script>

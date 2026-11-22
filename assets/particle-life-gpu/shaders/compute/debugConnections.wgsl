@@ -72,22 +72,30 @@ const NEURON_COL = vec3<f32>(1.0, 0.62, 0.20); // warm orange (matches neurons)
 fn emitConnections(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= electrical.numUrges) { return; }
 
-    let matterCount = options.numParticles - electrical.numUrges - electrical.numNeurons;
-    let urgeIdx = matterCount + id.x;
-    let neuronStart = matterCount + electrical.numUrges;
+    // Urges & neurons are scattered through the buffer by the spatial sort, so locate this
+    // urge by its type code (exactly one particle per urge index) instead of a fixed slot.
+    let urgeType = f32(options.numTypes + id.x);
+    var ax = 0.0;
+    var ay = 0.0;
+    var found = false;
+    for (var i = 0u; i < options.numParticles; i += 1u) {
+        let p = particles[i];
+        if (p.particleType == urgeType) { ax = p.x; ay = p.y; found = true; break; }
+    }
+    if (!found) { return; }
 
-    let a = particles[urgeIdx];
-    let ax = a.x;
-    let ay = a.y;
-
+    // Neurons are the type codes at/above numTypes + numUrges; they too are scattered, so we
+    // scan every particle and skip anything that is not a neuron.
+    let neuronBase = f32(options.numTypes + electrical.numUrges);
     let halfW = options.simWidth * 0.5;
     let halfH = options.simHeight * 0.5;
     let wrapping = options.isWallWrap == 1u;
     let nR = max(electrical.neuronRadius, 1.0);
     let nR2 = nR * nR;
 
-    for (var n = neuronStart; n < options.numParticles; n += 1u) {
+    for (var n = 0u; n < options.numParticles; n += 1u) {
         let b = particles[n];
+        if (b.particleType < neuronBase) { continue; } // matter or urge -> not a neuron
         var dx = b.x - ax;
         var dy = b.y - ay;
         if (wrapping) {
