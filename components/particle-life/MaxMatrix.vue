@@ -277,29 +277,35 @@ export default defineComponent({
 
             return `rgb(${r}, ${g}, ${b})`
         }
+        // Map a matrix type index to the correct currentColors array index.
+        const matrixToColorIndex = (id: number): number => {
+            const nc = particleLife.numColors
+            if (id < nc) return id
+            if (id === nc) return nc // first urge
+            return nc + particleLife.numUrges // first neuron
+        }
         function getColorStyleById(id: number): string {
             const colors = particleLife.currentColors
             if (!colors) return "rgb(12,12,12)"
-            // WebGPU : Float32Array RGBA
+            const ci = matrixToColorIndex(id)
             if (colors instanceof Float32Array) {
-                const i = id * 4
+                const i = ci * 4
                 const r = Math.round(colors[i] * 255)
                 const g = Math.round(colors[i + 1] * 255)
                 const b = Math.round(colors[i + 2] * 255)
                 return `rgb(${r}, ${g}, ${b})`
             }
-            // Normal Array of HSL values
-            return colors[id] ? `hsl(${colors[id][0]}, ${colors[id][1]}%, ${colors[id][2]}%)` : "hsl(0, 0%, 5%)"
-
+            return colors[ci] ? `hsl(${colors[ci][0]}, ${colors[ci][1]}%, ${colors[ci][2]}%)` : "hsl(0, 0%, 5%)"
         }
         function getColorHexById(id: number): string {
             const colors = particleLife.currentColors
             if (!colors) return '#0C0C0C'
+            const ci = matrixToColorIndex(id)
             if (colors instanceof Float32Array) {
-                const i = id * 4
+                const i = ci * 4
                 return rgbToHex(Math.round(colors[i] * 255), Math.round(colors[i + 1] * 255), Math.round(colors[i + 2] * 255))
             }
-            const [h, s, l] = colors[id]
+            const [h, s, l] = colors[ci]
             const [r, g, b] = hslToRgb(h, s, l)
             return rgbToHex(Math.round(r * 255), Math.round(g * 255), Math.round(b * 255))
         }

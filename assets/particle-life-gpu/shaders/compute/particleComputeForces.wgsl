@@ -54,6 +54,7 @@ struct SimOptions {
     gridOffsetY: u32,
     mirrorWrapCount: u32,
     cellSubdivisions: u32,
+    matrixStride: u32,  // stride of the interaction matrix (= numTypes + 2: matter + urge + neuron rows)
 };
 struct Particle {
     x : f32,
@@ -106,18 +107,6 @@ fn getBinInfo(position: vec2f, options: SimOptions) -> BinInfo {
 }
 fn get_interaction(index: u32) -> vec3<f32> {
     let word = interactions.data[index];
-    let rule = fma(f32((word >> 0u) & 0xFFu), 1.0 / 127.5, -1.0);
-    let minR = f32((word >> 8u) & 0xFFu);
-    let maxR = f32((word >> 16u) & 0xFFFFu);
-    return vec3<f32>(rule, minR, maxR);
-}
-
-// Extended interaction matrix for the electrical layer. Same 4-byte (rule u8, minR u8, maxR u16)
-// encoding as `interactions`, laid out as [numUrges rows × numTypes cols] followed by
-// [numNeurons rows × numTypes cols]. kind: 0 = urge rows, 1 = neuron rows.
-fn get_electrical_interaction(kind: u32, localIndex: u32, targetColor: u32) -> vec3<f32> {
-    let offset = select(0u, electrical.numUrges, kind == 1u);
-    let word = electricalInteractions.data[(offset + localIndex) * options.numTypes + targetColor];
     let rule = fma(f32((word >> 0u) & 0xFFu), 1.0 / 127.5, -1.0);
     let minR = f32((word >> 8u) & 0xFFu);
     let maxR = f32((word >> 16u) & 0xFFFFu);
@@ -192,9 +181,6 @@ fn urgeGoal(k: u32) -> UrgeGoal {
 @group(0) @binding(1) var<storage, read_write> particlesDestination : array<Particle>;
 @group(0) @binding(2) var<storage, read> binOffset : array<u32>;
 @group(0) @binding(3) var<storage, read> interactions: InteractionMatrix;
-// Extended interaction matrix for urges/neurons vs matter (see get_electrical_interaction).
-// Lives in group 0 (not a 5th group) because WebGPU's default maxBindGroups is 4.
-@group(0) @binding(4) var<storage, read> electricalInteractions: InteractionMatrix;
 
 @group(1) @binding(0) var<uniform> options : SimOptions;
 @group(2) @binding(0) var<uniform> deltaTime : f32;
@@ -287,23 +273,21 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
 
                 // ---- 1) classic matter <-> matter rule -----------------------------------
                 if (isMatter && oCat == 0u) {
-                    let myTypeOffset = myType * options.numTypes;
+                    let myTypeOffset = myType * options.matrixStride;
                     let interaction = get_interaction(myTypeOffset + oType);
                     totalForce += dir * interaction_force(interaction, dist);
                 }
 
                 if (!eOn) { continue; } // electrical layer off -> only classic forces apply
 
-                // ---- 1b) electrical <-> matter via the extended interaction matrix --------
-                // Urges and neurons push/pull matter with the SAME rule math as matter↔matter,
-                // using their own per-particle row (local index) vs the matter color column.
-                // Convention: only the ROW particle's entry is used, so a special particle
-                // contributes its force to totalForce while the matter side gets the reaction in
-                // ITS OWN pass (Newton's third law emerges from the two independent reads).
+                // ---- 1b) electrical <-> matter via the main interaction matrix ------------
+                // Urges and neurons push/pull matter using a shared row in the main matrix:
+                //   row numTypes = "urge" (applies to ALL urges), row numTypes+1 = "neuron".
+                // Convention: only the ROW particle's entry is used (Newton's 3rd law via
+                // the matter side reading its own row in ITS pass).
                 if ((isUrge && oCat == 0u) || (isNeuron && oCat == 0u)) {
-                    let kind = select(0u, 1u, isNeuron);
-                    let localIndex = select(kIdx, mIdx, isNeuron);
-                    let interaction = get_electrical_interaction(kind, localIndex, oType);
+                    let rowIdx = options.numTypes + select(0u, 1u, isNeuron);
+                    let interaction = get_interaction(rowIdx * options.matrixStride + oType);
                     totalForce += dir * interaction_force(interaction, dist);
                 }
                 // Note: special<->special interactions are handled by the cohesion force;

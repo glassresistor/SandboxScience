@@ -24,6 +24,8 @@ struct SimOptions {
     gridOffsetX: u32,
     gridOffsetY: u32,
     mirrorWrapCount: u32,
+    cellSubdivisions: u32,  // (unused in brute force, present for struct layout alignment)
+    matrixStride: u32,  // stride of the interaction matrix (= numTypes + 2)
 };
 struct Particle {
     x : f32,
@@ -81,18 +83,6 @@ fn get_interaction(index: u32, numTypes: u32) -> vec3<f32> {
     return vec3<f32>(rule, minR, maxR);
 }
 
-// Extended interaction matrix for the electrical layer. Same 4-byte (rule u8, minR u8, maxR u16)
-// encoding as `interactions`, laid out as [numUrges rows × numTypes cols] followed by
-// [numNeurons rows × numTypes cols]. kind: 0 = urge rows, 1 = neuron rows.
-fn get_electrical_interaction(kind: u32, localIndex: u32, targetColor: u32) -> vec3<f32> {
-    let offset = select(0u, electrical.numUrges, kind == 1u);
-    let word = electricalInteractions.data[(offset + localIndex) * options.numTypes + targetColor];
-    let rule = fma(f32((word >> 0u) & 0xFFu), 1.0 / 127.5, -1.0);
-    let minR = f32((word >> 8u) & 0xFFu);
-    let maxR = f32((word >> 16u) & 0xFFFFu);
-    return vec3<f32>(rule, minR, maxR);
-}
-
 // Classic (rule, minR, maxR) force for a distance `dist` — identical math to the matter branch.
 // Returns the scalar along the direction from self toward the other particle
 // (positive = attract, negative = repel). Caller adds `dir * force`.
@@ -128,9 +118,6 @@ fn cat(t: u32) -> u32 {
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<storage, read_write> particlesDestination : array<Particle>;
 @group(0) @binding(2) var<storage, read> interactions: InteractionMatrix;
-// Extended interaction matrix for urges/neurons vs matter (see get_electrical_interaction).
-// Lives in group 0 (not a 5th group) because WebGPU's default maxBindGroups is 4.
-@group(0) @binding(3) var<storage, read> electricalInteractions: InteractionMatrix;
 @group(1) @binding(0) var<uniform> options: SimOptions;
 @group(2) @binding(0) var<uniform> deltaTime: f32;
 @group(3) @binding(0) var<uniform> electrical : ElectricalOptions;
@@ -192,20 +179,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         // ---- classic matter <-> matter rule --------------------------------------------
         if (isMatter && oCat == 0u) {
-            let index = typeA * options.numTypes + typeB;
+            let index = typeA * options.matrixStride + typeB;
             let params = get_interaction(index, options.numTypes);
             velocitySum += dir * interaction_force(params, dist);
         }
 
         if (!eOn) { continue; }
 
-        // ---- electrical <-> matter via the extended interaction matrix ------------------
-        // Same rule math as matter↔matter. Convention: only the ROW particle's entry is used;
-        // the matter side gets the reaction in its own pass (Newton's third law).
+        // ---- electrical <-> matter via the main interaction matrix -----------------------
+        // Shared rows: row numTypes = "urge", row numTypes+1 = "neuron" (applies to all).
         if ((isUrge && oCat == 0u) || (isNeuron && oCat == 0u)) {
-            let kind = select(0u, 1u, isNeuron);
-            let localIndex = select(kIdx, mIdx, isNeuron);
-            let params = get_electrical_interaction(kind, localIndex, typeB);
+            let rowIdx = options.numTypes + select(0u, 1u, isNeuron);
+            let params = get_interaction(rowIdx * options.matrixStride + typeB, options.numTypes);
             velocitySum += dir * interaction_force(params, dist);
         }
         // Note: special<->special interactions are handled by the cohesion force below;
