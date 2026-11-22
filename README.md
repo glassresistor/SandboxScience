@@ -4,6 +4,8 @@
 
 ---
 
+Check it out here: https://glassresistor.github.io/SandboxScience/particle-life
+
 ## 🚀 Features
 
 - **Game of Life**: Explore cellular automata and understand the basics of computational biology.
@@ -11,6 +13,8 @@
 - **More Simulations**: Dive into various scientific simulations, with more being added regularly.
 
 ## 🧬 Quantum / Electrical Layer (Particle Life)
+
+* Only shows up in 2D mode with GPU *
 
 On top of the usual matter colors, the **2D GPU** engine can spawn two extra particle types that act on the bodies in a more "quantum & electrical" way. They live in the left sidebar under the **Quantum / Electrical** panel.
 
