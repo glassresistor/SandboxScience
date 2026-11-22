@@ -143,11 +143,12 @@ fn interaction_force(interaction: vec3<f32>, dist: f32) -> f32 {
     return force;
 }
 
-// particle category: 0 matter, 1 urge, 2 neuron
+// particle category: 0 matter, 1 urge, 2 neuron, 3 dormant (clone pool slot)
 fn cat(t: u32) -> u32 {
     if (t < options.numTypes) { return 0u; }
     if (t < options.numTypes + electrical.numUrges) { return 1u; }
-    return 2u;
+    if (t < options.numTypes + electrical.numUrges + electrical.numNeurons) { return 2u; }
+    return 3u; // dormant clone slot — no forces, invisible
 }
 
 // Per-urge goal, derived deterministically from the urge's local index k so the population is
@@ -206,6 +207,7 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     var particle = particlesSource[id.x];
     let myType = u32(particle.particleType);
     let myCat = cat(myType);
+    if (myCat == 3u) { particlesDestination[id.x] = particle; return; } // dormant: pass through unchanged
     let isMatter = myCat == 0u;
     let isUrge = myCat == 1u;
     let isNeuron = myCat == 2u;
@@ -265,6 +267,7 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
                 let other = particlesSource[j];
                 let oType = u32(other.particleType);
                 let oCat = cat(oType);
+                if (oCat == 3u) { continue; } // dormant clone slot — skip
 
                 var r = vec2f(other.x, other.y) - particlePosition;
                 if (is_wrapping) {

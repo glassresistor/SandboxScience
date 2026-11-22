@@ -112,10 +112,12 @@ fn interaction_force(interaction: vec3<f32>, dist: f32) -> f32 {
     return force;
 }
 
+// particle category: 0 matter, 1 urge, 2 neuron, 3 dormant (clone pool slot)
 fn cat(t: u32) -> u32 {
     if (t < options.numTypes) { return 0u; }
     if (t < options.numTypes + electrical.numUrges) { return 1u; }
-    return 2u;
+    if (t < options.numTypes + electrical.numUrges + electrical.numNeurons) { return 2u; }
+    return 3u; // dormant clone slot — no forces, invisible
 }
 
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
@@ -139,6 +141,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var particle = particles[i];
     let typeA = u32(particle.particleType);
     let myCat = cat(typeA);
+    if (myCat == 3u) { particlesDestination[i] = particle; return; } // dormant: pass through unchanged
     let isMatter = myCat == 0u;
     let isUrge = myCat == 1u;
     let isNeuron = myCat == 2u;
@@ -166,6 +169,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         var other = particles[j];
         let typeB = u32(other.particleType);
         let oCat = cat(typeB);
+        if (oCat == 3u) { continue; } // dormant clone slot — skip
         var dx = other.x - particle.x;
         var dy = other.y - particle.y;
 

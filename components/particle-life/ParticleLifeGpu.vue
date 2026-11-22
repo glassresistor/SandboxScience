@@ -226,6 +226,30 @@
                             </RangeInput>
 
                             <hr border-gray-500 my-2>
+                            <div flex items-center justify-between gap-2 mb-1>
+                                <p class="w-2/3 text-2sm">
+                                    Urge Cloning
+                                    <TooltipInfo container="#mainContainer" tooltip="When an urge's metric exceeds the threshold, a dormant clone-pool particle is activated as a copy of that urge (same type → same goal & matrix row) plus its nearest neuron. The clone is shot outward with an impulse to exit the original's radius but stay in the general area. Clones are permanent." />
+                                </p>
+                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isCloningEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                            </div>
+
+                            <template v-if="particleLife.isCloningEnabled">
+                                <RangeInput input label="Metric Threshold"
+                                            tooltip="An urge triggers a clone when its running metric (signal) exceeds this value. Higher = rarer clones. Typical metrics range 0–20 depending on local density."
+                                            :min="1" :max="50" :step="0.5" v-model="particleLife.cloneMetricThreshold" mt-1>
+                                </RangeInput>
+                                <RangeInput input label="Clone Impulse"
+                                            tooltip="Initial velocity given to a clone so it shoots outside the original's radius but stays in the general area. Higher = flies further. Typical sim sizes are ~800–2000 px."
+                                            :min="200" :max="5000" :step="50" v-model="particleLife.cloneImpulse" mt-1>
+                                </RangeInput>
+                                <RangeInput input label="Clone Pool Size"
+                                            tooltip="Number of dormant slots reserved for cloning. Each clone permanently consumes one slot. Total particles = matter + urges + neurons + pool. Changing this re-labels the population."
+                                            :min="0" :max="1000" :step="10" v-model="particleLife.numClonePool" mt-1>
+                                </RangeInput>
+                            </template>
+
+                            <hr border-gray-500 my-2>
                             <p underline text-gray-300 class="-mt-0.5" mb-1>Urge ↔ Matter Matrix</p>
                             <p class="text-2sm text-gray-400 -mt-0.5 mb-1">Per-urge attraction/repulsion and radii toward each MATTER color (same model as the main matrix). Rows = urge index, columns = matter colors.</p>
                             <UrgeMatrix v-if="particleLife.numUrges > 0" :store="particleLife"
@@ -704,6 +728,7 @@ export default defineComponent({
         // Quantum / electrical layer counts (each urge/neuron is a distinct type above the matter range)
         let numUrges: number = particleLife.numUrges
         let numNeurons: number = particleLife.numNeurons
+        let numClonePool: number = particleLife.numClonePool // dormant slots for the cloning system
         let isParticleGlow: boolean = particleLife.isParticleGlow // Enable glow effect for the particles
         let isDebugConnections: boolean = particleLife.isDebugConnections // Debug: draw urge<->neuron dotted lines
         let isAdditiveBlending = particleLife.isAdditiveBlending // Use additive blending for rendering particles
@@ -3617,11 +3642,11 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
-        // Build a full color table covering matter + urges + neurons so the render pass can
+        // Build a full color table covering matter + urges + neurons + dormant so the render pass can
         // look up colors[u32(particleType)] for every type. Matter uses the chosen palette;
-        // urges are a cyan->white ramp and neurons a magenta->orange ramp.
+        // urges are a cyan->white ramp, neurons a magenta->orange ramp, dormant is invisible (alpha=0).
         function generateExtendedColors(paletteId: number): Float32Array {
-            const total = NUM_TYPES + numUrges + numNeurons
+            const total = NUM_TYPES + numUrges + numNeurons + 1 // +1 for the dormant type entry
             const out = new Float32Array(total * 4)
             const base = generateColors(paletteId, NUM_TYPES)
             out.set(base.subarray(0, Math.min(base.length, NUM_TYPES * 4)), 0)
@@ -3639,18 +3664,25 @@ export default defineComponent({
                 out[(NUM_TYPES + numUrges + m) * 4 + 2] = 0.15 * (1 - t)
                 out[(NUM_TYPES + numUrges + m) * 4 + 3] = 1
             }
+            // Dormant type: invisible (alpha=0) — clone pool slots when not activated
+            const dormantIdx = NUM_TYPES + numUrges + numNeurons
+            out[dormantIdx * 4] = 0; out[dormantIdx * 4 + 1] = 0; out[dormantIdx * 4 + 2] = 0; out[dormantIdx * 4 + 3] = 0
             return out
         }
-        // Assign every particle a type according to the matter/urge/neuron layout and reset its
-        // electrical state. Layout: [0, matterCount) matter (cycled colors), then urges, then neurons.
+        // Assign every particle a type according to the matter/urge/neuron/clone-pool layout and
+        // reset its electrical state.
+        // Layout: [0, matterCount) matter (cycled colors), then urges, then neurons, then clone pool.
+        // Clone pool particles get DORMANT_TYPE = NUM_TYPES + numUrges + numNeurons (invisible, no forces).
         function applyTypeLayout(arr: Float32Array): void {
-            const matterCount = Math.max(0, NUM_PARTICLES - numUrges - numNeurons)
+            const dormantType = NUM_TYPES + numUrges + numNeurons
+            const matterCount = Math.max(0, NUM_PARTICLES - numUrges - numNeurons - numClonePool)
             for (let i = 0; i < NUM_PARTICLES; i++) {
                 const k = i * 7
                 let t: number
                 if (i < matterCount) t = i % NUM_TYPES
                 else if (i < matterCount + numUrges) t = NUM_TYPES + (i - matterCount)
-                else t = NUM_TYPES + numUrges + (i - matterCount - numUrges)
+                else if (i < matterCount + numUrges + numNeurons) t = NUM_TYPES + numUrges + (i - matterCount - numUrges)
+                else t = dormantType // clone pool: dormant
                 arr[k + 4] = t
                 arr[k + 5] = 0 // control
                 arr[k + 6] = 0 // signal
@@ -4252,6 +4284,171 @@ export default defineComponent({
                 // Drop on-canvas tracking state so nothing lingers once the panel is closed.
                 selectedUrgeId.value = -1
                 urgeWorldPos = new Map()
+            }
+        })
+
+        // ---- Urge Cloning system ---------------------------------------------------------
+        // When an urge's metric (signal) exceeds cloneMetricThreshold, activate a dormant clone-pool
+        // slot as a copy of that urge (same type → same behavior) and optionally its nearest neuron.
+        // The clone is given an initial velocity impulse to shoot it outside the original's radius
+        // but keep it in the general area. Clones are permanent (they don't expire).
+        const CLONE_CHECK_INTERVAL_MS = 500
+        let cloneCheckTimer: number | null = null
+        let isCloningInFlight = false // concurrency guard
+        // Track which urges have already triggered a clone (avoid re-cloning every tick)
+        let clonedUrges = new Set<number>()
+
+        const checkAndClone = async () => {
+            if (!particleLife.isCloningEnabled || !particleLife.isElectricalEnabled) return
+            if (numUrges <= 0 || numClonePool <= 0) return
+            if (isCloningInFlight || isUpdatingParticles || isEraseCompleting) return
+            if (!particleBuffer || !device) return
+
+            isCloningInFlight = true
+            try {
+                const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * 7 * 4)
+                if (isUpdatingParticles || isEraseCompleting) return // guard after await
+                const particles = new Float32Array(arrayBuffer)
+                const dormantType = NUM_TYPES + numUrges + numNeurons
+                const threshold = particleLife.cloneMetricThreshold
+                const impulse = particleLife.cloneImpulse
+                const urgeRadius = Math.max(particleLife.urgeRadius, 10)
+
+                // Collect urges with high metrics and find dormant slots
+                const highMetricUrges: { k: number, x: number, y: number }[] = []
+                const dormantSlots: number[] = [] // buffer indices of dormant particles
+                const neuronPositions: { idx: number, localM: number, x: number, y: number }[] = []
+
+                for (let i = 0; i < NUM_PARTICLES; i++) {
+                    const idx7 = i * 7
+                    const ptype = Math.round(particles[idx7 + 4])
+                    if (ptype === dormantType) {
+                        dormantSlots.push(i)
+                    } else if (ptype >= NUM_TYPES && ptype < NUM_TYPES + numUrges) {
+                        const localK = ptype - NUM_TYPES
+                        const signal = particles[idx7 + 6]
+                        if (signal > threshold && !clonedUrges.has(localK)) {
+                            highMetricUrges.push({ k: localK, x: particles[idx7], y: particles[idx7 + 1] })
+                        }
+                    } else if (ptype >= NUM_TYPES + numUrges && ptype < dormantType) {
+                        const localM = ptype - NUM_TYPES - numUrges
+                        neuronPositions.push({ idx: i, localM, x: particles[idx7], y: particles[idx7 + 1] })
+                    }
+                }
+
+                if (highMetricUrges.length === 0 || dormantSlots.length === 0) return
+
+                // Activate up to min(highMetricUrges.length, dormantSlots.length) clones
+                const numToClone = Math.min(highMetricUrges.length, dormantSlots.length)
+                let slotPtr = 0
+
+                for (let c = 0; c < numToClone; c++) {
+                    const urge = highMetricUrges[c]
+                    const slotIdx = dormantSlots[slotPtr++]
+                    const s7 = slotIdx * 7
+
+                    // Clone the urge: same type → identical behavior (same goal, same matrix row)
+                    particles[s7 + 4] = NUM_TYPES + urge.k // type = same as source urge
+                    particles[s7 + 5] = 0 // control starts fresh (will learn independently)
+                    particles[s7 + 6] = 0 // signal starts fresh
+
+                    // Position: near the original urge with a small random offset
+                    const angle = Math.random() * Math.PI * 2
+                    const offsetDist = urgeRadius * 0.3 + Math.random() * urgeRadius * 0.3
+                    particles[s7]     = urge.x + Math.cos(angle) * offsetDist
+                    particles[s7 + 1] = urge.y + Math.sin(angle) * offsetDist
+
+                    // Velocity: shoot outward from the original, magnitude = cloneImpulse.
+                    // Direction is away from the original urge's position (radial), with some randomness.
+                    const shootAngle = angle + (Math.random() - 0.5) * 1.0 // ±30° scatter
+                    particles[s7 + 2] = Math.cos(shootAngle) * impulse
+                    particles[s7 + 3] = Math.sin(shootAngle) * impulse
+
+                    clonedUrges.add(urge.k)
+
+                    // Also clone the nearest neuron to this urge (if available and pool has room)
+                    if (slotPtr < dormantSlots.length && neuronPositions.length > 0) {
+                        const nSlotIdx = dormantSlots[slotPtr++]
+                        const n7 = nSlotIdx * 7
+                        // Find nearest neuron to the cloned urge position
+                        let bestN = -1, bestDist = Infinity
+                        for (let ni = 0; ni < neuronPositions.length; ni++) {
+                            const dx = neuronPositions[ni].x - particles[s7]
+                            const dy = neuronPositions[ni].y - particles[s7 + 1]
+                            const d2 = dx * dx + dy * dy
+                            if (d2 < bestDist) { bestDist = d2; bestN = ni }
+                        }
+                        if (bestN >= 0) {
+                            const srcNeuron = neuronPositions[bestN]
+                            particles[n7 + 4] = NUM_TYPES + numUrges + srcNeuron.localM // same neuron type
+                            particles[n7 + 5] = 0
+                            particles[n7 + 6] = 0
+                            // Position: near the cloned urge, slightly offset
+                            const nAngle = Math.random() * Math.PI * 2
+                            const nOffset = urgeRadius * 0.2 + Math.random() * urgeRadius * 0.2
+                            particles[n7]     = particles[s7] + Math.cos(nAngle) * nOffset
+                            particles[n7 + 1] = particles[s7 + 1] + Math.sin(nAngle) * nOffset
+                            // Velocity: same direction as the urge clone, slightly less
+                            particles[n7 + 2] = particles[s7 + 2] * 0.7
+                            particles[n7 + 3] = particles[s7 + 3] * 0.7
+                        }
+                    }
+                }
+
+                // Upload the modified buffer back to the GPU
+                device.queue.writeBuffer(particleBuffer, 0, particles)
+            } catch {
+                // Ignore transient readback failures
+            } finally {
+                isCloningInFlight = false
+            }
+        }
+
+        const startCloneCheck = () => {
+            stopCloneCheck()
+            if (!particleLife.isCloningEnabled) return
+            clonedUrges.clear() // reset when re-enabling
+            void checkAndClone()
+            cloneCheckTimer = window.setInterval(() => { void checkAndClone() }, CLONE_CHECK_INTERVAL_MS)
+        }
+        const stopCloneCheck = () => {
+            if (cloneCheckTimer !== null) {
+                window.clearInterval(cloneCheckTimer)
+                cloneCheckTimer = null
+            }
+        }
+
+        watch(() => particleLife.isCloningEnabled, (enabled) => {
+            if (enabled) startCloneCheck()
+            else stopCloneCheck()
+        })
+        // Reset cloned set when urge count changes (indices are no longer valid)
+        watch(() => particleLife.numUrges, () => { clonedUrges.clear() })
+
+        // Handle numClonePool changes: resize the buffer to include/exclude pool particles
+        const setNewClonePool = () => { isUpdateNumParticlesPending = true; NEW_NUM_PARTICLES = particleLife.numParticles }
+        watch(() => particleLife.numClonePool, (newPool) => {
+            numClonePool = newPool
+            // The total buffer size doesn't change — we just re-interpret the layout.
+            // Re-label to assign dormant types to the pool slots.
+            if (!isUpdatingParticles && particleBuffer && device) {
+                void (async () => {
+                    isUpdatingParticles = true
+                    await device.queue.onSubmittedWorkDone()
+                    try {
+                        const data = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 7 * 4)
+                        const arr = new Float32Array(data)
+                        applyTypeLayout(arr)
+                        // Preserve activated clones: re-apply dormant only to slots that are currently dormant
+                        // (simpler: just relabel everything; active clones will be re-triggered next tick)
+                        device.queue.writeBuffer(particleBuffer!, 0, arr)
+                        colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
+                        particleLife.currentColors = new Float32Array(colors)
+                        updateColorBuffer()
+                    } finally {
+                        isUpdatingParticles = false
+                    }
+                })()
             }
         })
 

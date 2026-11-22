@@ -88,6 +88,12 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
     const isDebugConnections = ref<boolean>(false) // Debug: draw dotted lines between urges and the neurons wired to them
 
+    // ---- Urge Cloning system -----------------------------------------------------------
+    const isCloningEnabled = ref<boolean>(false) // Master switch for the clone-on-high-metric system
+    const cloneMetricThreshold = ref<number>(5.0) // Metric value above which an urge triggers a clone
+    const cloneImpulse = ref<number>(1500) // Initial velocity magnitude for clones (enough to exit radius, stay in area)
+    const numClonePool = ref<number>(100) // Number of dormant slots available for cloning (added to total particle count)
+
     const showLiveDeltaTime = ref<boolean>(false) // Show live Δt in the HUD (for debugging and performance monitoring)
     const manualDeltaTimeEnabled = ref<boolean>(false) // Override the automatic (framerate-independent) Δt with a fixed value
     const manualDeltaTime = ref<number>(0.0166) // Manual simulation time step in seconds (used only when manualDeltaTimeEnabled)
@@ -140,6 +146,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
         minRadiusRange, maxRadiusRange, currentMaxRadius,
         repel, forceFactor, frictionFactor, useSpatialHash,
         isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, neuronInfluence, neuronAuthority, maxAuthority, cohesion, isDebugConnections,
+        isCloningEnabled, cloneMetricThreshold, cloneImpulse, numClonePool,
         urgeRulesMatrix, urgeMinRadiusMatrix, urgeMaxRadiusMatrix, neuronRulesMatrix, neuronMinRadiusMatrix, neuronMaxRadiusMatrix,
         showLiveDeltaTime, manualDeltaTimeEnabled, manualDeltaTime,
         isBrushActive, brushes, brushRadius, brushIntensity, brushType, attractForce, repulseForce, brushDirectionalForce, showBrushCircle,
