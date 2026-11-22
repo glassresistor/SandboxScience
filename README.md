@@ -1,16 +1,13 @@
 # <img src="./public/icon.svg" alt="Sandbox Science Icon" width="40" style="vertical-align: middle;" /> Sandbox Science
 
-**Sandbox Science** is an interactive platform designed to make learning and exploring scientific concepts fun and accessible. The platform offers a variety of simulations, from cellular automata like Game of Life to complex particle interactions in Particle Life, allowing users to dive deep into the fascinating world of science through hands-on, visual experiences.
+**Sandbox Science**  ***DEMIURGE EDITION*** is an interactive platform designed to make learning and exploring scientific concepts fun and accessible. The platform offers a variety of simulations, from cellular automata like Game of Life to complex particle interactions in Particle Life, allowing users to dive deep into the fascinating world of science through hands-on, visual experiences.
+It alos gives urgs and neurons to some matter and sees what happens!
+
 
 ---
 
 Check it out here: https://glassresistor.github.io/SandboxScience/particle-life
 
-## 🚀 Features
-
-- **Game of Life**: Explore cellular automata and understand the basics of computational biology.
-- **Particle Life**: Simulate and observe the behavior of particle systems — including an experimental **Quantum / Electrical** layer that adds *urge* and *neuron* particles on top of the classic bodies (see below).
-- **More Simulations**: Dive into various scientific simulations, with more being added regularly.
 
 ## 🧬 Quantum / Electrical Layer (Particle Life)
 
@@ -26,7 +23,14 @@ On top of the usual matter colors, the **2D GPU** engine can spawn two extra par
 
 - **Live visuals** — urges glow brighter as their `|control|` grows (you can literally watch them "learn"), and neurons pulse with their activity. Toggle **Debug links** to draw light dotted lines from each neuron to the urges within its radius, so you can see which urges are driving it.
 
-> This layer is experimental and tuned for play. Start with the defaults (≈60 urges / ≈60 neurons) and adjust *Urge Field Strength* and *Control Gain* to taste — very high values can make the simulation unstable. (*Neuron Influence/Authority* are legacy knobs kept for compatibility and no longer affect the model.*)
+> This layer is experimental and tuned for play. Start with the defaults (≈60 urges / ≈60 neurons) and adjust *Urge Field Strength* and *Control Gain* to taste — very high values can make the simulation unstable. (*Neuron Influence/Authority* are legacy knobs kept for compat
+
+## 🚀 Features
+
+- **Game of Life**: Explore cellular automata and understand the basics of computational biology.
+- **Particle Life**: Simulate and observe the behavior of particle systems — including an experimental **Quantum / Electrical** layer that adds *urge* and *neuron* particles on top of the classic bodies (see below).
+- **More Simulations**: Dive into various scientific simulations, with more being added regularly.
+ibility and no longer affect the model.*)
 
 ## 🎯 Goals
 
