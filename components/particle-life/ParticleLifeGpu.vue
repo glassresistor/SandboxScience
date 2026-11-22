@@ -233,6 +233,23 @@
                                 <ToggleSwitch label="On" colorful-label v-model="particleLife.isDebugConnections" />
                             </div>
                         </Collapse>
+                        <Collapse label="Urge Inspector" icon="i-tabler-telescope text-sky-400"
+                                  tooltip="Read-only telemetry for the Quantum / Electrical layer. <br> Flip <b>Live readback</b> on to sample each urge’s <b>control</b> and <b>metric</b> from the GPU a few times per second — off means zero overhead."> 
+                            <div flex items-center justify-between gap-2 mb-1>
+                                <p class="w-2/3 text-2sm">
+                                    Live readback
+                                    <TooltipInfo container="#mainContainer" tooltip="Throttled GPU readback of every urge’s control & metric. Never runs while a resize/erase is mutating buffers, and stops immediately when off." />
+                                </p>
+                                <ToggleSwitch label="On" colorful-label v-model="urgeInspectorOpen" :disabled="!particleLife.isElectricalEnabled" />
+                            </div>
+
+                            <UrgeInspector v-if="urgeInspectorOpen"
+                                           :stats="urgeStats"
+                                           :params="electricalParams"
+                                           :control-max="particleLife.controlMax"
+                                           :target-colors="colorRgbStrings"
+                                           :num-types="particleLife.numColors" />
+                        </Collapse>
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500">
                             <RangeInput input label="Particle Size"
                                         tooltip="Controls the overall size of the particles in the simulation, allowing you to make them larger or smaller depending on your preference. This setting does not impact performance."
@@ -478,6 +495,7 @@ import TrackerOverlay from "~/components/particle-life/TrackerOverlay.vue";
 import TrackerToggle from "~/components/particle-life/TrackerToggle.vue";
 import CenterViewButton from "~/components/particle-life/CenterViewButton.vue";
 import RadiusVisualizer from "~/components/particle-life/RadiusVisualizer.vue";
+import UrgeInspector, { type UrgeStat, type ElectricalParams } from "~/components/particle-life/UrgeInspector.vue";
 import { RULES_OPTIONS, generateRules } from '~/helpers/utils/rulesGenerator';
 import { PALETTE_OPTIONS, generateColors } from "~/helpers/utils/colorsGenerator";
 import { POSITION_OPTIONS, generatePositions } from "~/helpers/utils/positionsGenerator";
@@ -515,7 +533,7 @@ import renderConnectionsShaderCode from 'assets/particle-life-gpu/shaders/render
 
 export default defineComponent({
     name: 'ParticleLifeGpu',
-    components: { PresetPanel, SaveModal, BrushSettings, MatrixSettings, WrapModeSelection, TrackerOverlay, TrackerToggle, CenterViewButton, RadiusVisualizer },
+    components: { PresetPanel, SaveModal, BrushSettings, MatrixSettings, WrapModeSelection, TrackerOverlay, TrackerToggle, CenterViewButton, RadiusVisualizer, UrgeInspector },
     emits: ['switch-renderer'],
     setup(props, { emit }) {
         // Define refs and variables
@@ -3759,6 +3777,123 @@ export default defineComponent({
         watch(() => particleLife.urgeRadius, () => { if (particleLife.isElectricalEnabled) recomputeCellSize() })
         watch(() => particleLife.isElectricalEnabled, () => recomputeCellSize())
 
+        // ---- Urge Inspector: throttled, READ-ONLY GPU telemetry ---------------------------
+        // Off by default and zero-cost when off: no interval, no allocation, no readback.
+        // It only ever reads `particleBuffer` — it never mutates particle state or the buffer.
+        const URGE_READBACK_INTERVAL_MS = 200
+        const urgeInspectorOpen = ref<boolean>(false)
+        const urgeStats = ref<UrgeStat[]>([])
+        let isReadingBackUrges = false // concurrency guard: one readback in flight at a time
+        let urgeReadbackTimer: number | null = null
+        // Previous per-urge values (keyed by urge id) so we can show a trend between readbacks.
+        let prevUrgeValues = new Map<number, { control: number, signal: number }>()
+
+        // Snapshot of the global electrical parameters for the parameter card (reactive).
+        const electricalParams = computed<ElectricalParams>(() => ({
+            metricMode: particleLife.metricMode,
+            urgeRadius: particleLife.urgeRadius,
+            neuronRadius: particleLife.neuronRadius,
+            urgeForce: particleLife.urgeForce,
+            controlGain: particleLife.controlGain,
+            controlMax: particleLife.controlMax,
+            neuronInfluence: particleLife.neuronInfluence,
+            neuronAuthority: particleLife.neuronAuthority,
+            maxAuthority: particleLife.maxAuthority,
+            cohesion: particleLife.cohesion,
+        }))
+
+        // A single guarded readback. Never runs while a resize/erase is mutating buffers.
+        const readUrgeStats = async () => {
+            if (!urgeInspectorOpen.value) return
+            if (isReadingBackUrges) return
+            if (isUpdatingParticles || isEraseCompleting) return
+            if (!particleBuffer || !device) return
+
+            // No urges to sample: show the empty state and stop here (no GPU work).
+            if (!particleLife.isElectricalEnabled || numUrges <= 0) {
+                if (urgeStats.value.length !== 0) urgeStats.value = [] // avoid reactive churn when already empty
+                prevUrgeValues.clear()
+                return
+            }
+
+            isReadingBackUrges = true
+            try {
+                const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * 7 * 4)
+                // Re-check guards after the await — a resize/erase may have started meanwhile.
+                if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting) return
+
+                const particles = new Float32Array(arrayBuffer)
+                const urgesRaw: { k: number, x: number, y: number, control: number, signal: number }[] = []
+                const neuronPos: { x: number, y: number }[] = []
+
+                // The spatial-hash sort scatters urges/neurons through the buffer, so scan all.
+                for (let i = 0; i < NUM_PARTICLES; i++) {
+                    const idx = i * 7
+                    const ptype = Math.round(particles[idx + 4])
+                    if (ptype < NUM_TYPES) continue // matter (control/signal are always 0)
+                    const localType = ptype - NUM_TYPES
+                    if (localType < numUrges) {
+                        urgesRaw.push({ k: localType, x: particles[idx], y: particles[idx + 1], control: particles[idx + 5], signal: particles[idx + 6] })
+                    } else if (localType - numUrges < numNeurons) {
+                        neuronPos.push({ x: particles[idx], y: particles[idx + 1] })
+                    }
+                }
+
+                // Optional stretch: count each urge's "wired" neurons (within neuronRadius).
+                const r2 = particleLife.neuronRadius * particleLife.neuronRadius
+                const next: UrgeStat[] = urgesRaw.map((u) => {
+                    let wired = 0
+                    for (let n = 0; n < neuronPos.length; n++) {
+                        const dx = u.x - neuronPos[n].x
+                        const dy = u.y - neuronPos[n].y
+                        if (dx * dx + dy * dy <= r2) wired++
+                    }
+                    return { id: u.k, type: NUM_TYPES + u.k, targetColor: u.k % NUM_TYPES, control: u.control, signal: u.signal, trendControl: 0, trendSignal: 0, wiredNeurons: wired }
+                })
+
+                // Keep rows stable (by urge id) and compute the trend vs the previous readback.
+                next.sort((a, b) => a.id - b.id)
+                const newPrev = new Map<number, { control: number, signal: number }>()
+                for (const s of next) {
+                    const prev = prevUrgeValues.get(s.id)
+                    if (prev) {
+                        s.trendControl = s.control - prev.control
+                        s.trendSignal = s.signal - prev.signal
+                    }
+                    newPrev.set(s.id, { control: s.control, signal: s.signal })
+                }
+                prevUrgeValues = newPrev // prunes ids that no longer exist
+                urgeStats.value = next
+            } catch {
+                // Ignore transient readback failures (e.g. a buffer swap mid-flight); the next tick retries.
+            } finally {
+                isReadingBackUrges = false
+            }
+        }
+
+        const stopUrgeReadback = () => {
+            if (urgeReadbackTimer !== null) {
+                window.clearInterval(urgeReadbackTimer)
+                urgeReadbackTimer = null
+            }
+        }
+        const startUrgeReadback = () => {
+            stopUrgeReadback()
+            if (!urgeInspectorOpen.value) return
+            prevUrgeValues.clear()
+            void readUrgeStats() // immediate first sample so the panel isn't blank
+            urgeReadbackTimer = window.setInterval(() => { void readUrgeStats() }, URGE_READBACK_INTERVAL_MS)
+        }
+
+        watch(urgeInspectorOpen, (open) => {
+            if (open) startUrgeReadback()
+            else {
+                stopUrgeReadback()
+                urgeStats.value = []
+                prevUrgeValues.clear()
+            }
+        })
+
         watch(() => particleLife.showLiveDeltaTime, (value: boolean) => showLiveDeltaTime = value)
         watch(() => particleLife.manualDeltaTimeEnabled, (value: boolean) => {
             manualDeltaTimeEnabled = value
@@ -3974,6 +4109,7 @@ export default defineComponent({
             }
         })
         onUnmounted(() => {
+            stopUrgeReadback()
             cancelAnimationLoop()
             destroyPipelinesAndBindGroups()
             destroyBuffers()
@@ -3998,6 +4134,7 @@ export default defineComponent({
 
             return {
                 particleLife, canvasRef, fps, executionTime, displayedDeltaTime, showLiveDeltaTime, colorRgbStrings,
+                urgeInspectorOpen, urgeStats, electricalParams,
                 handleZoom, toggleFullscreen, isFullscreen, smoothCenterView, regenerateLife, step, randomizeRadius, randomizeRulesAndRadius,
                 updateSimWidth, updateSimHeight, updateNumParticles, setNewNumParticles, setNewNumTypes,
                 updateRulesMatrixValue, updateMinMatrixValue, updateMaxMatrixValue, newRandomRulesMatrix,
