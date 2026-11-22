@@ -107,6 +107,12 @@ export default defineNuxtConfig({
         zeroRuntime: true
     },
 
+    robots: {
+        // @nuxtjs/seo cannot auto-generate robots.txt when app.baseURL is set
+        // (GitHub Pages project site). Serve a static public/robots.txt instead.
+        robotsTxt: false,
+    },
+
     nitro: {
         esbuild: {
             options: {
