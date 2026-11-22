@@ -1366,6 +1366,8 @@ export default defineComponent({
 
                             const colorA = colors[indexA]
                             const colorB = colors[indexB]
+                            // Electrical particles (urges/neurons) are 2D-only; skip them in the 3D force pass
+                            if (colorA >= numColors || colorB >= numColors) continue
                             const colorMaxRadius = maxRadiusMatrix[colorA][colorB]
 
                             // Apply force if the particles are close enough
@@ -1470,6 +1472,8 @@ export default defineComponent({
 
                             const colorA = colors[indexA]
                             const colorB = colors[indexB]
+                            // Electrical particles (urges/neurons) are 2D-only; skip them in the 3D force pass
+                            if (colorA >= numColors || colorB >= numColors) continue
                             const colorMaxRadius = maxRadiusMatrix[colorA][colorB]
 
                             // Apply force if the particles are close enough
