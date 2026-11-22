@@ -6,28 +6,32 @@ type PosGen = (NUM_PARTICLES: number, NUM_TYPES: number, SIM_WIDTH: number, SIM_
 // ==== HELPERS ========================================================================================================
 // ---------------------------------------------------------------------------------------------------------------------
 const writeParticle = (arr: Float32Array, i: number, x: number, y: number, type: number) => {
-    const k = i * 5
+    const k = i * 7
     arr[k] = x
     arr[k + 1] = y
     arr[k + 2] = 0 // vx
     arr[k + 3] = 0 // vy
     arr[k + 4] = type
+    arr[k + 5] = 0 // control (electrical bias)
+    arr[k + 6] = 0 // signal (stored metric / activity)
 }
 // ---------------------------------------------------------------------------------------------------------------------
 // ==== GENERATORS =====================================================================================================
 // ---------------------------------------------------------------------------------------------------------------------
 export function randomGenerator(NUM_PARTICLES: number, NUM_TYPES: number, SIM_WIDTH: number, SIM_HEIGHT: number): ParticlesArray {
-    const positions = new Float32Array(NUM_PARTICLES * 5)
+    const positions = new Float32Array(NUM_PARTICLES * 7)
     for (let i = 0; i < NUM_PARTICLES; ++i) {
-        const baseIndex = i * 5
+        const baseIndex = i * 7
         positions[baseIndex] = Math.random() * SIM_WIDTH
         positions[baseIndex + 1] = Math.random() * SIM_HEIGHT
         positions[baseIndex + 4] = Math.floor(Math.random() * NUM_TYPES)
+        positions[baseIndex + 5] = 0 // control
+        positions[baseIndex + 6] = 0 // signal
     }
     return positions
 }
 export const random: PosGen = (NUM_PARTICLES, NUM_TYPES, SIM_WIDTH, SIM_HEIGHT) => {
-    const A = new Float32Array(NUM_PARTICLES * 5)
+    const A = new Float32Array(NUM_PARTICLES * 7)
     let t = 0
     for (let i = 0; i < NUM_PARTICLES; i++) {
         const x = Math.random() * SIM_WIDTH
@@ -39,7 +43,7 @@ export const random: PosGen = (NUM_PARTICLES, NUM_TYPES, SIM_WIDTH, SIM_HEIGHT) 
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const disk: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     const cx = W * 0.5, cy = H * 0.5
     const R = 0.46 * Math.min(W, H) // disk radius
     let t = 0
@@ -54,7 +58,7 @@ export const disk: PosGen = (N, T, W, H) => {
     return A
 }
 export const rainbowDisk: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const m = Math.min(W, H)
@@ -88,7 +92,7 @@ export const rainbowDisk: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const ring: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const R_FRAC = 0.46      // outer ring radius as fraction of min(W,H)
@@ -118,7 +122,7 @@ export const ring: PosGen = (N, T, W, H) => {
 }
 
 export const rainbowRing: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const R_FRAC = 0.46      // outer ring radius as fraction of min(W,H)
@@ -156,7 +160,7 @@ export const rainbowRing: PosGen = (N, T, W, H) => {
 
 // ---------------------------------------------------------------------------------------------------------------------
 export const rings: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const MIN_RINGS = 2               // minimum number of rings
@@ -192,7 +196,7 @@ export const rings: PosGen = (N, T, W, H) => {
     return A
 }
 export const rainbowRings: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const R_MIN_FRAC = 0.23   // minimum ring radius × max radius
@@ -225,7 +229,7 @@ export const rainbowRings: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const spiral: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const THICK_FRAC = 0.0175             // arm thickness × min(W,H)
@@ -259,7 +263,7 @@ export const spiral: PosGen = (N, T, W, H) => {
     return A
 }
 export const rainbowSpiral: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const THICK_FRAC = 0.0175             // arm thickness × min(W,H)
@@ -296,7 +300,7 @@ export const rainbowSpiral: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const line: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const LENGTH_FRAC = 0.92   // line length as fraction of width
@@ -318,7 +322,7 @@ export const line: PosGen = (N, T, W, H) => {
     return A
 }
 export const rainbowLine: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const LENGTH_FRAC = 0.92   // line length as fraction of width
@@ -350,7 +354,7 @@ export const rainbowLine: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const stripes: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const EDGE_MARGIN_FRAC = 0.0  // perpendicular margin (0..0.5)
@@ -396,7 +400,7 @@ export const stripes: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const border: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const inset = 1
@@ -423,7 +427,7 @@ export const border: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const grid: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const margin = 0.00 // outer margin (0..1)
@@ -450,7 +454,7 @@ export const grid: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const softClusters: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const CLUSTER_SPACING = -0.075 // minimal gap between clusters (× min(W,H))
@@ -521,7 +525,7 @@ export const softClusters: PosGen = (N, T, W, H) => {
     return A
 }
 export const linkedClusters: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const MIN_CLUSTERS = Math.max(2, Math.floor(T / 2)) // min clusters
@@ -663,7 +667,7 @@ export const linkedClusters: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const twinSpirals: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const THICK = 0.015 * Math.min(W, H)   // arm thickness
@@ -716,7 +720,7 @@ export const twinSpirals: PosGen = (N, T, W, H) => {
     return A
 }
 export const spiralArms: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const TURNS = 2.5                 // spiral turns
@@ -763,7 +767,7 @@ export const spiralArms: PosGen = (N, T, W, H) => {
 }
 
 export const yinYang: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const R_FRAC = 0.46   // outer radius (fraction of min(W,H))
@@ -809,7 +813,7 @@ export const yinYang: PosGen = (N, T, W, H) => {
     return A
 }
 export const chromaticFlower: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const PETALS_MIN = 2        // shared petals min
@@ -916,7 +920,7 @@ export const chromaticFlower: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const wavyBands: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const segH = H / T
@@ -963,7 +967,7 @@ export const wavyBands: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const polarMaze: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const mwh = Math.min(W, H)
@@ -1047,7 +1051,7 @@ export const polarMaze: PosGen = (N, T, W, H) => {
 }
 
 export const chaoticBands: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const intersectLineRect = (cx: number, cy: number, ux: number, uy: number, minX: number, minY: number, maxX: number, maxY: number): { t0: number; t1: number } | null => {
@@ -1126,7 +1130,7 @@ export const chaoticBands: PosGen = (N, T, W, H) => {
     return A
 }
 export const orbitalBelts: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (T === 0) return A
 
     const R = 0.46 * Math.min(W, H) // outer radius
@@ -1182,7 +1186,7 @@ export const orbitalBelts: PosGen = (N, T, W, H) => {
     return A
 }
 export const braidedBelts: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     const R = 0.46 * Math.min(W, H) // outer radius
     const ecc = 0.36 // eccentricity
     const belts = Math.floor(2 + Math.random() * 4) // number of belts [2..5]
@@ -1257,7 +1261,7 @@ export const braidedBelts: PosGen = (N, T, W, H) => {
     return A
 }
 export const twinCrescents: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const m = Math.min(W, H)
@@ -1343,7 +1347,7 @@ export const twinCrescents: PosGen = (N, T, W, H) => {
     return A
 }
 export const simpleFlower: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const PETALS_MIN = 2            // minimum petals
@@ -1370,7 +1374,7 @@ export const simpleFlower: PosGen = (N, T, W, H) => {
     return A
 }
 export const radiantFans: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 5)
+    const A = new Float32Array(N * 7)
     if (N <= 0 || T <= 0) return A
 
     const FANS = Math.max(3, Math.min(10, T)) // number of fans

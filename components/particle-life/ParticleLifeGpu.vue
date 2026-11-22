@@ -144,6 +144,86 @@
                                         :min="0.0041" :max="0.05" :step="0.0001" v-model="particleLife.manualDeltaTime" mt-2>
                             </RangeInput>
                         </Collapse>
+                        <Collapse label="Quantum / Electrical" icon="i-tabler-bolt text-lime-400"
+                                  tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each maximise a metric (e.g. the local density of one color) and exert an attract/repel field on matter that is <b>additive when they clump</b>. <br> <b>Neurons</b> are kinds of control: within range they let an urge modify its attraction/repulsion in real time, and <b>more neurons = more control</b>. <br> State persists across frames (the next step reads the previous one), so there is no second pass.">
+                            <div flex items-center justify-between gap-2 mb-1>
+                                <p class="w-2/3 text-2sm">
+                                    Enable layer
+                                    <TooltipInfo container="#mainContainer" tooltip="Master switch. When off, urges and neurons freeze in place and exert no field." />
+                                </p>
+                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isElectricalEnabled" />
+                            </div>
+
+                            <RangeInput input label="Urge Count"
+                                        tooltip="Number of urge particles. Each urge is a distinct type with its own objective (it targets color = index % species)."
+                                        :min="0" :max="2000" :step="1" v-model="particleLife.numUrges">
+                            </RangeInput>
+                            <RangeInput input label="Neuron Count" mt-2
+                                        tooltip="Number of neuron particles. Each neuron is a distinct control: mode = index % 3 (attract / repel / self-attract) on a target color."
+                                        :min="0" :max="2000" :step="1" v-model="particleLife.numNeurons">
+                            </RangeInput>
+
+                            <div flex items-center justify-between gap-2 mt-2>
+                                <p class="w-1/3 text-2sm shrink-0">
+                                    Urge Metric
+                                    <TooltipInfo container="#mainContainer" tooltip="The value each urge tries to maximise. <br> <b>Local density</b>: number of its target color nearby. <br> <b>Local fraction</b>: share of its target color among nearby matter. <br> <b>Own density</b>: how many other urges are nearby (encourages clumping)." />
+                                </p>
+                                <SelectInput name="urge-metric-mode" class="max-w-full!"
+                                             v-model="particleLife.metricMode"
+                                             :options="[
+                                                 { id: 0, name: 'Local Density', category: 'Metric' },
+                                                 { id: 1, name: 'Local Fraction', category: 'Metric' },
+                                                 { id: 2, name: 'Own Density', category: 'Metric' },
+                                             ]">
+                                </SelectInput>
+                            </div>
+
+                            <hr border-gray-500 my-2>
+                            <RangeInput input label="Urge Radius"
+                                        tooltip="Radius over which an urge measures its metric and pushes matter. Larger = wider influence."
+                                        :min="4" :max="160" :step="1" v-model="particleLife.urgeRadius">
+                            </RangeInput>
+                            <RangeInput input label="Neuron Radius" mt-2
+                                        tooltip="Radius over which a neuron can modulate an urge's control."
+                                        :min="4" :max="160" :step="1" v-model="particleLife.neuronRadius">
+                            </RangeInput>
+                            <RangeInput input label="Urge Field Strength" mt-2
+                                        tooltip="Strength of an urge's attract/repel field on matter. Clumped urges add up, so this can get strong fast."
+                                        :min="0" :max="4" :step="0.01" v-model="particleLife.urgeForce">
+                            </RangeInput>
+
+                            <hr border-gray-500 my-2>
+                            <p underline text-gray-300 class="-mt-0.5" mb-1>Urge Learning :</p>
+                            <RangeInput input label="Control Gain"
+                                        tooltip="Learning rate: how strongly the change in the urge's metric (vs the previous frame) pushes its attract/repel control. Higher = faster adaptation."
+                                        :min="0" :max="1" :step="0.005" v-model="particleLife.controlGain">
+                            </RangeInput>
+                            <RangeInput input label="Control Max" mt-2
+                                        tooltip="Clamp on an urge's control magnitude (attract +, repel -)."
+                                        :min="0.1" :max="6" :step="0.1" v-model="particleLife.controlMax">
+                            </RangeInput>
+
+                            <hr border-gray-500 my-2>
+                            <p underline text-gray-300 class="-mt-0.5" mb-1>Neuron Control :</p>
+                            <RangeInput input label="Neuron Influence"
+                                        tooltip="How strongly a single nearby neuron nudges an urge's control (attract/repel vote)."
+                                        :min="0" :max="3" :step="0.01" v-model="particleLife.neuronInfluence">
+                            </RangeInput>
+                            <RangeInput input label="Authority / Neuron" mt-2
+                                        tooltip="Extra authority gained per nearby neuron. More neurons around an urge = it can change its control more (the 'more neurons, more control' effect)."
+                                        :min="0" :max="2" :step="0.01" v-model="particleLife.neuronAuthority">
+                            </RangeInput>
+                            <RangeInput input label="Max Authority" mt-2
+                                        tooltip="Cap on the total neuron authority an urge can accumulate."
+                                        :min="1" :max="12" :step="0.5" v-model="particleLife.maxAuthority">
+                            </RangeInput>
+
+                            <hr border-gray-500 my-2>
+                            <RangeInput input label="Cohesion"
+                                        tooltip="How strongly urges and neurons cling to the body (so they coat it) and avoid overlapping each other. 0 = they drift freely."
+                                        :min="0" :max="3" :step="0.01" v-model="particleLife.cohesion">
+                            </RangeInput>
+                        </Collapse>
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500">
                             <RangeInput input label="Particle Size"
                                         tooltip="Controls the overall size of the particles in the simulation, allowing you to make them larger or smaller depending on your preference. This setting does not impact performance."
@@ -447,6 +527,7 @@ export default defineComponent({
         let isUpdatingParticles: boolean = false // Flag to prevent multiple additions at once
         let isUpdateNumParticlesPending: boolean = false
         let isUpdateNumTypesPending: boolean = false
+        let isUpdateElectricalPending: boolean = false
         let hasUpdateNumParticles: boolean = false
 
         const displayedDeltaTime = ref<number>(1 / 60) // Reactive readout of the live auto Δt (refreshed only a few times/sec)
@@ -530,8 +611,11 @@ export default defineComponent({
         let NUM_PARTICLES: number = particleLife.numParticles
         let NEW_NUM_PARTICLES: number = NUM_PARTICLES
         let PARTICLE_SIZE: number = particleLife.particleSize
-        let NUM_TYPES: number = particleLife.numColors
+        let NUM_TYPES: number = particleLife.numColors // matter colors only
         let NEW_NUM_TYPES: number = NUM_TYPES
+        // Quantum / electrical layer counts (each urge/neuron is a distinct type above the matter range)
+        let numUrges: number = particleLife.numUrges
+        let numNeurons: number = particleLife.numNeurons
         let isParticleGlow: boolean = particleLife.isParticleGlow // Enable glow effect for the particles
         let isAdditiveBlending = particleLife.isAdditiveBlending // Use additive blending for rendering particles
         let isWallRepel: boolean = particleLife.isWallRepel // Enable walls X and Y for the particles
@@ -575,6 +659,7 @@ export default defineComponent({
         let deltaTimeBuffer: GPUBuffer | undefined
         let cameraBuffer: GPUBuffer | undefined
         let interactionMatrixBuffer: GPUBuffer | undefined
+        let electricalOptionsBuffer: GPUBuffer | undefined // Urge/neuron (quantum-electrical) layer parameters
         let simOptionsBuffer: GPUBuffer | undefined
         let particleHashesBuffer: GPUBuffer | undefined
         let cellHeadsBuffer: GPUBuffer | undefined
@@ -641,6 +726,7 @@ export default defineComponent({
         let glowOptionsBindGroup: GPUBindGroup
         let infiniteRenderOptionsBindGroup: GPUBindGroup
         let brushOptionsBindGroup: GPUBindGroup
+        let electricalBindGroup: GPUBindGroup
 
         let particleBufferBindGroupLayout: GPUBindGroupLayout
         let binPrefixSumBindGroupLayout: GPUBindGroupLayout
@@ -651,6 +737,7 @@ export default defineComponent({
         let particleComputeForcesBindGroupLayout: GPUBindGroupLayout
         let simOptionsBindGroupLayout: GPUBindGroupLayout
         let deltaTimeBindGroupLayout: GPUBindGroupLayout
+        let electricalBindGroupLayout: GPUBindGroupLayout
         let cameraBindGroupLayout: GPUBindGroupLayout
         let offscreenTextureBindGroupLayout: GPUBindGroupLayout
         let composeHdrBindGroupLayout: GPUBindGroupLayout
@@ -1068,7 +1155,7 @@ export default defineComponent({
         // Initialize tracker state based on a user-selected zone, calculating the center of mass
         const initializeTrackerFromZone = async (zone: { x: number, y: number, width: number, height: number }): Promise<boolean> => {
             // Read the current particle positions and velocities from the GPU to calculate the center of mass and average
-            const arrayBuffer = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 5 * 4)
+            const arrayBuffer = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 7 * 4)
             const particles = new Float32Array(arrayBuffer)
 
             const zoneHalfW = zone.width * 0.5
@@ -1077,7 +1164,7 @@ export default defineComponent({
 
             // Get the center of mass and average velocity of particles within the selected zone
             for (let i = 0; i < NUM_PARTICLES; i++) {
-                const idx = i * 5
+                const idx = i * 7
                 const px = particles[idx]
                 const py = particles[idx + 1]
 
@@ -1252,6 +1339,7 @@ export default defineComponent({
                 else if (isBrushDrawing) drawWithBrush()
                 else if (isUpdateNumParticlesPending) await updateNumParticles(NEW_NUM_PARTICLES)
                 else if (isUpdateNumTypesPending) await updateNumTypes(NEW_NUM_TYPES)
+                else if (isUpdateElectricalPending) await updateElectricalCounts()
             }
 
             const startExecutionTime = performance.now()
@@ -1329,6 +1417,7 @@ export default defineComponent({
             computePass.setBindGroup(0, bruteForceBindGroup)
             computePass.setBindGroup(1, simOptionsBindGroup)
             computePass.setBindGroup(2, deltaTimeBindGroup)
+            computePass.setBindGroup(3, electricalBindGroup)
             computePass.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 64))
             computePass.end()
         }
@@ -1362,6 +1451,7 @@ export default defineComponent({
             forcesComputePass.setBindGroup(0, particleComputeForcesBindGroup)
             forcesComputePass.setBindGroup(1, simOptionsBindGroup)
             forcesComputePass.setBindGroup(2, deltaTimeBindGroup)
+            forcesComputePass.setBindGroup(3, electricalBindGroup)
             forcesComputePass.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 64))
             forcesComputePass.end()
         }
@@ -1586,9 +1676,39 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
+        const updateElectricalOptionsBuffer = () => {
+            const data = new ArrayBuffer(56)
+            const v = new DataView(data)
+            v.setUint32(0, particleLife.isElectricalEnabled ? 1 : 0, true)
+            v.setUint32(4, particleLife.metricMode, true)
+            v.setUint32(8, numUrges, true)
+            v.setUint32(12, numNeurons, true)
+            v.setFloat32(16, particleLife.urgeRadius, true)
+            v.setFloat32(20, particleLife.neuronRadius, true)
+            v.setFloat32(24, particleLife.urgeForce, true)
+            v.setFloat32(28, particleLife.controlGain, true)
+            v.setFloat32(32, particleLife.controlMax, true)
+            v.setFloat32(36, particleLife.neuronInfluence, true)
+            v.setFloat32(40, particleLife.neuronAuthority, true)
+            v.setFloat32(44, particleLife.maxAuthority, true)
+            v.setFloat32(48, particleLife.cohesion, true)
+
+            if (!electricalOptionsBuffer) {
+                electricalOptionsBuffer = device.createBuffer({
+                    size: data.byteLength,
+                    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                    mappedAtCreation: true,
+                })
+                new Uint8Array(electricalOptionsBuffer.getMappedRange()).set(new Uint8Array(data))
+                electricalOptionsBuffer.unmap()
+            } else {
+                device.queue.writeBuffer(electricalOptionsBuffer, 0, data)
+            }
+        }
         const createBuffers = () => {
             updateSimOptionsBuffer() // Set simulation options based on the store state
             updateInteractionMatrixBuffer() // Set interaction matrices based on the store state
+            updateElectricalOptionsBuffer() // Urge/neuron (quantum-electrical) layer parameters
             updateParticleBuffers(true)
             updateEraseCompactBuffers()
             updateBinningBuffers()
@@ -1657,7 +1777,7 @@ export default defineComponent({
             if (particleTempBuffer) particleTempBuffer?.destroy(); particleTempBuffer = undefined;
 
             particleBuffer = device.createBuffer({
-                size: NUM_PARTICLES * 20,
+                size: NUM_PARTICLES * 28, // 7 floats: x,y,vx,vy,type,control,signal
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.STORAGE,
                 mappedAtCreation: hasInitialParticles,
             })
@@ -1678,7 +1798,7 @@ export default defineComponent({
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             })
             particleCompactBuffer = device.createBuffer({
-                size: NUM_PARTICLES * 5 * 4,
+                size: NUM_PARTICLES * 7 * 4,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             })
         }
@@ -1931,6 +2051,12 @@ export default defineComponent({
                     { binding: 0, resource: { buffer: deltaTimeBuffer! } },
                 ],
             })
+            electricalBindGroup = device.createBindGroup({
+                layout: electricalBindGroupLayout,
+                entries: [
+                    { binding: 0, resource: { buffer: electricalOptionsBuffer! } },
+                ],
+            })
             cameraBindGroup = device.createBindGroup({
                 layout: cameraBindGroupLayout,
                 entries: [
@@ -2170,6 +2296,11 @@ export default defineComponent({
                     { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // interactionMatrixBuffer
                 ],
             })
+            electricalBindGroupLayout = device.createBindGroupLayout({
+                entries: [
+                    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }, // electricalOptionsBuffer
+                ],
+            })
             bruteForceBindGroupLayout = device.createBindGroupLayout({
                 entries: [
                     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particleTempBuffer
@@ -2342,6 +2473,7 @@ export default defineComponent({
                         particleComputeForcesBindGroupLayout,
                         simOptionsBindGroupLayout,
                         deltaTimeBindGroupLayout,
+                        electricalBindGroupLayout,
                     ],
                 }),
                 compute: { module: particleComputeForcesShader, entryPoint: 'computeForces' }
@@ -2353,6 +2485,7 @@ export default defineComponent({
                         bruteForceBindGroupLayout,
                         simOptionsBindGroupLayout,
                         deltaTimeBindGroupLayout,
+                        electricalBindGroupLayout,
                     ],
                 }),
                 compute: { module: bruteForceShader, entryPoint: 'main' }
@@ -2801,12 +2934,12 @@ export default defineComponent({
                 const newNumParticles = oldNumParticles + numParticlesToAdd
 
                 const newParticleBuffer = device.createBuffer({
-                    size: newNumParticles * 20,
+                    size: newNumParticles * 28,
                     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
                 })
 
                 const encoder = device.createCommandEncoder({ label: 'Draw Brush Encoder' })
-                encoder.copyBufferToBuffer(particleBuffer!, 0, newParticleBuffer, 0, oldNumParticles * 20)
+                encoder.copyBufferToBuffer(particleBuffer!, 0, newParticleBuffer, 0, oldNumParticles * 28)
 
                 const oldParticleBuffer = particleBuffer
                 particleBuffer = newParticleBuffer
@@ -2872,7 +3005,7 @@ export default defineComponent({
                 compactPass.end()
 
                 // Copy compacted particles back to particleBuffer (full old size)
-                encoder.copyBufferToBuffer(particleCompactBuffer!, 0, particleBuffer!, 0, NUM_PARTICLES * 20)
+                encoder.copyBufferToBuffer(particleCompactBuffer!, 0, particleBuffer!, 0, NUM_PARTICLES * 28)
                 // Update GPU-side numParticles from the atomic counter (no CPU readback needed)
                 encoder.copyBufferToBuffer(newParticleCountBuffer!, 0, simOptionsBuffer!, 20, 4)
 
@@ -2905,12 +3038,12 @@ export default defineComponent({
                     particleLife.numParticles = newCount
 
                     particleBuffer = device.createBuffer({
-                        size: newCount * 20,
+                        size: newCount * 28,
                         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.STORAGE,
                     })
 
                     const copyEncoder = device.createCommandEncoder({ label: 'Copy to Resized Buffer' })
-                    copyEncoder.copyBufferToBuffer(oldParticleBuffer!, 0, particleBuffer!, 0, newCount * 20)
+                    copyEncoder.copyBufferToBuffer(oldParticleBuffer!, 0, particleBuffer!, 0, newCount * 28)
                     device.queue.submit([copyEncoder.finish()])
                     oldParticleBuffer?.destroy()
 
@@ -2948,35 +3081,31 @@ export default defineComponent({
 
             try {
                 const oldCount = NUM_PARTICLES
-                const oldParticlesData = await readBufferFromGPU(particleBuffer!, oldCount * 5 * 4)
+                const oldParticlesData = await readBufferFromGPU(particleBuffer!, oldCount * 7 * 4)
                 const oldParticles = new Float32Array(oldParticlesData)
-                initialParticles = new Float32Array(newCount * 5)
+                initialParticles = new Float32Array(newCount * 7)
 
                 if (newCount > oldCount) { // If increasing the number of particles
                     initialParticles.set(oldParticles)
                     for (let i = oldCount; i < newCount; i++) {
-                        const baseIndex = i * 5
+                        const baseIndex = i * 7
                         initialParticles[baseIndex]     = Math.random() * SIM_WIDTH  // x
                         initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT // y
-                        initialParticles[baseIndex + 4] = Math.floor(Math.random() * NUM_TYPES) // type
                     }
                 } else { // If decreasing the number of particles
-                    initialParticles.set(oldParticles.subarray(0, newCount * 5))
+                    initialParticles.set(oldParticles.subarray(0, newCount * 7))
                     for (let i = newCount; i < oldCount; i++) {
                         const j = Math.floor(Math.random() * (i + 1))
                         if (j < newCount) {
-                            const oldStartIndex = i * 5
-                            const newIndex = j * 5
-                            initialParticles[newIndex]     = oldParticles[oldStartIndex]     // x
-                            initialParticles[newIndex + 1] = oldParticles[oldStartIndex + 1] // y
-                            initialParticles[newIndex + 2] = oldParticles[oldStartIndex + 2] // vx
-                            initialParticles[newIndex + 3] = oldParticles[oldStartIndex + 3] // vy
-                            initialParticles[newIndex + 4] = oldParticles[oldStartIndex + 4] // type
+                            const oldStartIndex = i * 7
+                            const newIndex = j * 7
+                            for (let c = 0; c < 7; c++) initialParticles[newIndex + c] = oldParticles[oldStartIndex + c]
                         }
                     }
                 }
 
                 NUM_PARTICLES = newCount
+                applyTypeLayout(initialParticles) // re-assign matter/urge/neuron types for the new population
                 updateParticleBuffers(true) // Destroy and recreate particle buffers
                 updateEraseCompactBuffers()
                 updateParticleBindGroups() // Recreate bind groups that depend on particle buffers
@@ -3005,9 +3134,6 @@ export default defineComponent({
                 const oldNumTypes = NUM_TYPES
                 NUM_TYPES = newNumTypes
 
-                await adjustColors(colors, oldNumTypes, newNumTypes)
-                await adjustParticleTypes(oldNumTypes, newNumTypes)
-
                 setRulesMatrix(resizeMatrix(rulesMatrix, oldNumTypes, newNumTypes, () => {
                     return Math.round((Math.random() * 2 - 1) * 100) / 100
                 }))
@@ -3019,12 +3145,34 @@ export default defineComponent({
                 }))
 
                 updateInteractionMatrixBuffer()
-                updateSimOptionsBuffer()
+                await relabelPopulation() // re-assign matter/urge/neuron types for the new color count
+                colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
+                particleLife.currentColors = new Float32Array(colors)
                 updateColorBuffer()
+                updateSimOptionsBuffer()
                 updateParticleBindGroups()
             } finally {
                 isUpdatingParticles = false
                 isUpdateNumTypesPending = NEW_NUM_TYPES !== NUM_TYPES
+            }
+        }
+        const setNewElectricalCounts = () => { isUpdateElectricalPending = true }
+        const updateElectricalCounts = async () => {
+            if (isUpdatingParticles) return
+            isUpdatingParticles = true
+            await device.queue.onSubmittedWorkDone()
+            try {
+                numUrges = particleLife.numUrges
+                numNeurons = particleLife.numNeurons
+                await relabelPopulation()
+                colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
+                particleLife.currentColors = new Float32Array(colors)
+                updateColorBuffer()
+                updateElectricalOptionsBuffer()
+                updateSimOptionsBuffer()
+            } finally {
+                isUpdatingParticles = false
+                isUpdateElectricalPending = false
             }
         }
         const loadPreset = async (options: { presetRules?: number[][], presetMinRadius?: number[][], presetMaxRadius?: number[][], presetColors?: Float32Array }, presetTypeCount: number, matchPresetCount: boolean) => {
@@ -3082,6 +3230,11 @@ export default defineComponent({
 
                 updateColorBuffer()
                 updateInteractionMatrixBuffer()
+                // Keep the quantum/electrical layout consistent after a preset load
+                await relabelPopulation()
+                colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
+                particleLife.currentColors = new Float32Array(colors)
+                updateColorBuffer()
                 if (matchPresetCount && (newNumTypes !== oldNumTypes)) updateParticleBindGroups()
             } finally {
                 isUpdatingParticles = false
@@ -3114,20 +3267,21 @@ export default defineComponent({
             particleLife.currentColors = colors // Ensure the store is updated with the new colors
         }
         const adjustParticleTypes = async (oldNumTypes: number, newNumTypes: number) => {
-            const particleDataBuffer = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 5 * 4)
+            const particleDataBuffer = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 7 * 4)
             const particles = new Float32Array(particleDataBuffer)
 
             if (newNumTypes < oldNumTypes) {
                 for (let i = 0; i < NUM_PARTICLES; i++) {
-                    const typeIndex = i * 5 + 4
-                    if (particles[typeIndex] >= newNumTypes) {
+                    const typeIndex = i * 7 + 4
+                    if (particles[typeIndex] >= newNumTypes && particles[typeIndex] < oldNumTypes) {
                         particles[typeIndex] = Math.floor(Math.random() * newNumTypes)
                     }
                 }
             } else if (newNumTypes > oldNumTypes) {
                 for (let i = 0; i < NUM_PARTICLES; i++) {
-                    if (Math.random() < (newNumTypes - oldNumTypes) / newNumTypes) {
-                        const typeIndex = i * 5 + 4
+                    const typeIndex = i * 7 + 4
+                    const t = particles[typeIndex]
+                    if (t < oldNumTypes && Math.random() < (newNumTypes - oldNumTypes) / newNumTypes) {
                         particles[typeIndex] = oldNumTypes + Math.floor(Math.random() * (newNumTypes - oldNumTypes))
                     }
                 }
@@ -3167,12 +3321,59 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
+        // Build a full color table covering matter + urges + neurons so the render pass can
+        // look up colors[u32(particleType)] for every type. Matter uses the chosen palette;
+        // urges are a cyan->white ramp and neurons a magenta->orange ramp.
+        function generateExtendedColors(paletteId: number): Float32Array {
+            const total = NUM_TYPES + numUrges + numNeurons
+            const out = new Float32Array(total * 4)
+            const base = generateColors(paletteId, NUM_TYPES)
+            out.set(base.subarray(0, Math.min(base.length, NUM_TYPES * 4)), 0)
+            for (let k = 0; k < numUrges; k++) {
+                const t = numUrges <= 1 ? 0 : k / (numUrges - 1)
+                out[(NUM_TYPES + k) * 4]     = 0.35 + 0.65 * t
+                out[(NUM_TYPES + k) * 4 + 1] = 0.85
+                out[(NUM_TYPES + k) * 4 + 2] = 1.0
+                out[(NUM_TYPES + k) * 4 + 3] = 1
+            }
+            for (let m = 0; m < numNeurons; m++) {
+                const t = numNeurons <= 1 ? 0 : m / (numNeurons - 1)
+                out[(NUM_TYPES + numUrges + m) * 4]     = 1.0
+                out[(NUM_TYPES + numUrges + m) * 4 + 1] = 0.25 + 0.5 * t
+                out[(NUM_TYPES + numUrges + m) * 4 + 2] = 0.15 * (1 - t)
+                out[(NUM_TYPES + numUrges + m) * 4 + 3] = 1
+            }
+            return out
+        }
+        // Assign every particle a type according to the matter/urge/neuron layout and reset its
+        // electrical state. Layout: [0, matterCount) matter (cycled colors), then urges, then neurons.
+        function applyTypeLayout(arr: Float32Array): void {
+            const matterCount = Math.max(0, NUM_PARTICLES - numUrges - numNeurons)
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const k = i * 7
+                let t: number
+                if (i < matterCount) t = i % NUM_TYPES
+                else if (i < matterCount + numUrges) t = NUM_TYPES + (i - matterCount)
+                else t = NUM_TYPES + numUrges + (i - matterCount - numUrges)
+                arr[k + 4] = t
+                arr[k + 5] = 0 // control
+                arr[k + 6] = 0 // signal
+            }
+        }
+        // Re-label the live population to the current layout, preserving positions/velocities.
+        async function relabelPopulation(): Promise<void> {
+            const data = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 7 * 4)
+            const arr = new Float32Array(data)
+            applyTypeLayout(arr)
+            device.queue.writeBuffer(particleBuffer!, 0, arr)
+        }
         function initColors() {
-            colors = generateColors(particleLife.selectedColorPaletteOption, NUM_TYPES)
-            particleLife.currentColors = colors // Ensure the store is updated with the initial colors
+            colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
+            particleLife.currentColors = new Float32Array(colors) // Ensure the store is updated with the initial colors
         }
         function initParticles() {
             initialParticles = generatePositions(particleLife.selectedSpawnPositionOption, NUM_PARTICLES, NUM_TYPES, SIM_WIDTH, SIM_HEIGHT)
+            applyTypeLayout(initialParticles)
         }
         function makeRandomMinRadiusMatrix() {
             let matrix: number[][] = []
@@ -3215,8 +3416,8 @@ export default defineComponent({
             const shouldRandom = typeof useRandomGenerator === 'boolean' ? useRandomGenerator : false
             if (shouldRandom) particleLife.selectedColorPaletteOption = paletteOptions[Math.floor(Math.random() * paletteOptions.length)].id
 
-            colors = generateColors(particleLife.selectedColorPaletteOption, NUM_TYPES)
-            particleLife.currentColors = colors
+            colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
+            particleLife.currentColors = new Float32Array(colors)
             updateColorBuffer()
         }
         const updateRulesMatrix = async (useRandomGenerator: boolean | Event = false) => {
@@ -3413,6 +3614,24 @@ export default defineComponent({
             frictionFactor = value
             updateDeltaTimeBuffer(manualDeltaTimeEnabled ? manualDeltaTime : smoothedDeltaTime)
         })
+
+        // ---- Quantum / Electrical layer watchers -----------------------------------------
+        // Changing the counts re-labels the population (matter/urge/neuron layout).
+        watch(() => particleLife.numUrges, () => setNewElectricalCounts())
+        watch(() => particleLife.numNeurons, () => setNewElectricalCounts())
+        // Changing a parameter just rewrites the electrical uniform.
+        const watchElectrical = (effect: any) => watch(effect, () => updateElectricalOptionsBuffer())
+        watchElectrical(() => particleLife.isElectricalEnabled)
+        watchElectrical(() => particleLife.metricMode)
+        watchElectrical(() => particleLife.urgeRadius)
+        watchElectrical(() => particleLife.neuronRadius)
+        watchElectrical(() => particleLife.urgeForce)
+        watchElectrical(() => particleLife.controlGain)
+        watchElectrical(() => particleLife.controlMax)
+        watchElectrical(() => particleLife.neuronInfluence)
+        watchElectrical(() => particleLife.neuronAuthority)
+        watchElectrical(() => particleLife.maxAuthority)
+        watchElectrical(() => particleLife.cohesion)
 
         watch(() => particleLife.showLiveDeltaTime, (value: boolean) => showLiveDeltaTime = value)
         watch(() => particleLife.manualDeltaTimeEnabled, (value: boolean) => {

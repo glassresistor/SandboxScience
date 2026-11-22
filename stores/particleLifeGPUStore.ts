@@ -62,6 +62,21 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const forceFactor = ref<number>(1.0) // Adjust the overall force applied between particles (can't be 0)
     const frictionFactor = ref<number>(0.3) // Slow down the particles (0 to 1, where 0 is no friction)
 
+    // ---- Quantum / Electrical layer: Urge & Neuron particles -------------------------
+    const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
+    const numUrges = ref<number>(60) // Number of urge particles (each has its own objective)
+    const numNeurons = ref<number>(60) // Number of neuron particles (each is a kind of control)
+    const metricMode = ref<number>(0) // 0 local density of target color / 1 local fraction / 2 own-type density
+    const urgeRadius = ref<number>(45) // Radius over which an urge acts on matter & measures its metric
+    const neuronRadius = ref<number>(30) // Radius over which a neuron modulates an urge's control
+    const urgeForce = ref<number>(1.2) // Strength of an urge's attract/repel field on matter (additive when clumped)
+    const controlGain = ref<number>(0.05) // Learning rate: how strongly dM/dt pushes an urge's control
+    const controlMax = ref<number>(2.0) // Clamp on |control|
+    const neuronInfluence = ref<number>(0.6) // Strength of a single neuron's vote on an urge's control
+    const neuronAuthority = ref<number>(0.4) // Extra authority gained per nearby neuron (more neurons = more control)
+    const maxAuthority = ref<number>(3.0) // Cap on the accumulated neuron authority
+    const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
+
     const showLiveDeltaTime = ref<boolean>(false) // Show live Δt in the HUD (for debugging and performance monitoring)
     const manualDeltaTimeEnabled = ref<boolean>(false) // Override the automatic (framerate-independent) Δt with a fixed value
     const manualDeltaTime = ref<number>(0.0166) // Manual simulation time step in seconds (used only when manualDeltaTimeEnabled)
@@ -113,6 +128,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
         isTrackerActive, isTrackerSelectionActive, isTrackerCameraActive, isTrackerIndicatorVisible, trackerCameraSmoothing,
         minRadiusRange, maxRadiusRange, currentMaxRadius,
         repel, forceFactor, frictionFactor, useSpatialHash,
+        isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, neuronInfluence, neuronAuthority, maxAuthority, cohesion,
         showLiveDeltaTime, manualDeltaTimeEnabled, manualDeltaTime,
         isBrushActive, brushes, brushRadius, brushIntensity, brushType, attractForce, repulseForce, brushDirectionalForce, showBrushCircle,
         glowSize, glowIntensity, glowSteepness, particleOpacity,

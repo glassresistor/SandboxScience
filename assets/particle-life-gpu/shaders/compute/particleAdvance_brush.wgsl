@@ -25,6 +25,8 @@ struct Particle {
     vx : f32,
     vy : f32,
     particleType : f32,
+    control : f32,
+    signal  : f32,
 }
 struct BrushOptions {
     brushClipX: f32,

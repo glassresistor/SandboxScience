@@ -25,6 +25,8 @@ struct Particle {
     vx : f32,
     vy : f32,
     particleType : f32,
+    control : f32,
+    signal  : f32,
 }
 struct BrushOptions {
     brushClipX: f32,
@@ -88,5 +90,5 @@ fn drawParticles(@builtin(global_invocation_id) global_id: vec3<u32>) {
         particleType = f32(brushTypes.types[typeIndex]);
     }
 
-    particleBuffer[index] = Particle(posX, posY, 0.0, 0.0, particleType);
+    particleBuffer[index] = Particle(posX, posY, 0.0, 0.0, particleType, 0.0, 0.0);
 }
