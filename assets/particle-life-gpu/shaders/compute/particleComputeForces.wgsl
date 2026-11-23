@@ -64,6 +64,7 @@ struct Particle {
     particleType : f32,
     control : f32, // urge: learned attract(+) / repel(-) intent — read by nearby neurons. Persists.
     signal  : f32, // urge: prior-frame objective metric (for dM/dt). neuron: firing activity. Persists.
+    goalB   : f32, // secondary goal index (local k), -1 if none. Set on merge.
 }
 struct ElectricalOptions {
     enabled: u32,        // master switch for the whole electrical layer
@@ -229,10 +230,20 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
 
     // accumulators used by the electrical layer
     var metricCount: f32 = 0.0;   // this urge's target-color matter within urgeRadius (density metric)
+    var metricCountB: f32 = 0.0;  // secondary goal target-color count (for merged urges)
     var matterTotal: f32 = 0.0;   // all matter within urgeRadius (denominator for the fraction metric)
     var drive: f32 = 0.0;         // neuron: signed sum of nearby urges' previous-frame control
     var firing: f32 = 0.0;        // neuron: magnitude of that drive (its "firing activity")
     var cohesionForce = vec2f(0.0, 0.0);
+
+    // Secondary goal setup (for merged urges): resolve the secondary target color.
+    let hasGoalB = particle.goalB >= 0.0;
+    var goalB_kIdx: u32 = 0u;
+    var goalB_target: u32 = 0u;
+    if (hasGoalB) {
+        goalB_kIdx = u32(particle.goalB);
+        goalB_target = goalB_kIdx % options.numTypes;
+    }
 
     let eOn = electrical.enabled != 0u;
     let eR = max(electrical.urgeRadius, 1.0);
@@ -299,6 +310,7 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
                 if (isUrge && oCat == 0u && dist < eR) {
                     matterTotal += 1.0;
                     if (oType == urgeTarget) { metricCount += 1.0; }
+                    if (hasGoalB && oType == goalB_target) { metricCountB += 1.0; }
                 }
 
                 // ---- 3) a neuron driven by nearby urges, measured FROM THE NEURON ----------
@@ -351,14 +363,23 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
             // The metric value for this urge's OWN goal, evaluated from the previous frame.
             let M = select(metricCount, select(0.0, metricCount / matterTotal, matterTotal > 0.0), goal.useCount == 1u);
 
+            // Combined metric: if a secondary goal exists (merged urge), add its contribution.
+            // Same goal → double the metric (stronger). Different goals → sum of both metrics.
+            var M_combined = M;
+            if (hasGoalB) {
+                let goalB_struct = urgeGoal(goalB_kIdx);
+                let M_B = select(metricCountB, select(0.0, metricCountB / matterTotal, matterTotal > 0.0), goalB_struct.useCount == 1u);
+                M_combined = M + M_B;
+            }
+
             // Hebbian rule toward the goal's polarity: when the metric moves in the direction the
             // urge wants (dM has the sign of its polarity) it pushes harder; otherwise it backs off.
-            let dM = M - particle.signal; // gradient vs the previous frame's stored value
+            let dM = M_combined - particle.signal; // gradient vs the previous frame's stored value
             var newControl = particle.control + electrical.controlGain * goal.polarity * dM;
             newControl = clamp(newControl, -electrical.controlMax, electrical.controlMax);
 
             particle.control = newControl;
-            particle.signal = mix(particle.signal, M, 0.15); // smooth the stored metric
+            particle.signal = mix(particle.signal, M_combined, 0.15); // smooth the stored metric
         } else { // neuron: activity = magnitude of the drive it is under (it "fires" when recruited)
             firing = abs(drive);
             particle.signal = mix(particle.signal, firing, 0.2);

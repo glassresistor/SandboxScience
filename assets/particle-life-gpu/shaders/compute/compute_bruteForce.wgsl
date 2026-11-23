@@ -35,6 +35,7 @@ struct Particle {
     particleType : f32,
     control : f32,
     signal  : f32,
+    goalB   : f32, // secondary goal index (local k), -1 if none
 }
 struct ElectricalOptions {
     enabled: u32,
@@ -147,10 +148,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     var velocitySum = vec2<f32>(0.0, 0.0);
     var metricCount: f32 = 0.0;
+    var metricCountB: f32 = 0.0; // secondary goal target-color count (for merged urges)
     var matterTotal: f32 = 0.0;
     var drive: f32 = 0.0;      // neuron: signed sum of nearby urges' previous-frame control
     var firing: f32 = 0.0;     // neuron: magnitude of that drive (its "firing activity")
     var cohesionForce = vec2<f32>(0.0, 0.0);
+
+    // Secondary goal setup (for merged urges)
+    let hasGoalB = particle.goalB >= 0.0;
+    var goalB_kIdx: u32 = 0u;
+    var goalB_target: u32 = 0u;
+    if (hasGoalB) {
+        goalB_kIdx = u32(particle.goalB);
+        goalB_target = goalB_kIdx % options.numTypes;
+    }
 
     let eOn = electrical.enabled != 0u;
     let eR = max(electrical.urgeRadius, 1.0);
@@ -201,6 +212,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         if (isUrge && oCat == 0u && dist < eR) {
             matterTotal += 1.0;
             if (typeB == urgeTarget) { metricCount += 1.0; }
+            if (hasGoalB && typeB == goalB_target) { metricCountB += 1.0; }
         }
 
         // ---- a neuron driven by nearby urges, measured FROM THE NEURON ------------------
@@ -241,11 +253,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         if (isUrge) {
             let M = select(metricCount, select(0.0, metricCount / matterTotal, matterTotal > 0.0), goal.useCount == 1u);
-            let dM = M - particle.signal;
+
+            // Combined metric: if a secondary goal exists (merged urge), add its contribution.
+            var M_combined = M;
+            if (hasGoalB) {
+                let goalB_struct = urgeGoal(goalB_kIdx);
+                let M_B = select(metricCountB, select(0.0, metricCountB / matterTotal, matterTotal > 0.0), goalB_struct.useCount == 1u);
+                M_combined = M + M_B;
+            }
+
+            let dM = M_combined - particle.signal;
             var newControl = particle.control + electrical.controlGain * goal.polarity * dM;
             newControl = clamp(newControl, -electrical.controlMax, electrical.controlMax);
             particle.control = newControl;
-            particle.signal = mix(particle.signal, M, 0.15);
+            particle.signal = mix(particle.signal, M_combined, 0.15);
         } else {
             firing = abs(drive);
             particle.signal = mix(particle.signal, firing, 0.2);

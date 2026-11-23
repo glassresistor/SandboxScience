@@ -27,6 +27,7 @@ struct Particle {
     particleType : f32,
     control : f32,
     signal  : f32,
+    goalB   : f32, // secondary goal index (local k), -1 if none
 }
 struct BrushOptions {
     brushClipX: f32,

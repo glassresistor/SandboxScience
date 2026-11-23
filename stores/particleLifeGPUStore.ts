@@ -83,6 +83,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     // ---- Urge Cloning system -----------------------------------------------------------
     const isCloningEnabled = ref<boolean>(false) // Master switch for the clone-on-high-metric system
     const cloneMetricThreshold = ref<number>(0.5) // Metric value above which an urge triggers a clone
+    const birthSustainedTicks = ref<number>(2) // Consecutive 500 ms ticks above threshold before a birth (1 = immediately whenever above)
     const cloneImpulse = ref<number>(1500) // Initial velocity magnitude for clones (enough to exit radius, stay in area)
     const numClonePool = ref<number>(100) // Number of dormant slots available for cloning (added to total particle count)
 
@@ -151,7 +152,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
         minRadiusRange, maxRadiusRange, currentMaxRadius,
         repel, forceFactor, frictionFactor, useSpatialHash,
         isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, neuronInfluence, neuronAuthority, maxAuthority, cohesion, isDebugConnections,
-        isCloningEnabled, cloneMetricThreshold, cloneImpulse, numClonePool,
+        isCloningEnabled, cloneMetricThreshold, birthSustainedTicks, cloneImpulse, numClonePool,
         isDeathEnabled, deathMetricThreshold, deathSustainedTicks,
         isMergeEnabled, mergeRadius, mergeSustainedTicks,
         isMurderEnabled, murderRadius, murderPowerMargin,

@@ -72,11 +72,19 @@
                             </span>
                         </div>
 
-                        <!-- what it wants (STABLE over time; derived from the parent urge's index) -->
-                        <p class="mt-1 flex items-center gap-1.5 text-[0.74rem] leading-tight text-zinc-200">
-                            <span class="i-tabler-target text-amber-400 shrink-0"></span>
-                            <span>{{ objectiveLabelFor(s.cloneOf ?? s.id) }}</span>
-                        </p>
+                        <!-- what it wants (primary goal + secondary if merged) -->
+                        <div class="mt-1 flex flex-col gap-0.5">
+                            <p class="flex items-center gap-1.5 text-[0.74rem] leading-tight text-zinc-200">
+                                <span class="i-tabler-target text-amber-400 shrink-0"></span>
+                                <span>{{ objectiveLabelFor(s.cloneOf ?? s.id) }}</span>
+                            </p>
+                            <!-- Secondary goal from a merge: shows what the absorbed urge wanted -->
+                            <p v-if="s.goalB !== undefined" class="flex items-center gap-1.5 text-[0.74rem] leading-tight text-zinc-300 ml-5">
+                                <span class="i-tabler-target text-violet-400 shrink-0"></span>
+                                <span :class="s.goalB === (s.cloneOf ?? s.id) ? 'text-amber-300 font-semibold' : ''">{{ objectiveLabelFor(s.goalB) }}</span>
+                                <span v-if="s.goalB === (s.cloneOf ?? s.id)" class="text-[0.62rem] text-amber-400/70 font-mono">×2</span>
+                            </p>
+                        </div>
 
                         <!-- control signed bar -->
                         <div class="mt-1.5 flex items-center gap-2">
@@ -135,6 +143,7 @@ export interface UrgeStat {
     isClone?: boolean     // true if this row represents a clone particle
     cloneOf?: number      // parent urge k (only set when isClone)
     cloneId?: number      // per-parent sequential clone number (1 = first clone of that parent)
+    goalB?: number        // secondary goal index (local k) from a merge; undefined if none
 }
 
 // Snapshot of the global electrical parameters that apply to all urges/neurons.
