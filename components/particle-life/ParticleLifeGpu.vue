@@ -4466,11 +4466,12 @@ export default defineComponent({
                     return
 
                 const particles = new Float32Array(arrayBuffer)
-                // Collect urges (originals + clones) and neurons. Clones are identified by the
-                // fractional part of their type float (set to .5 at activation; the shader truncates
-                // via u32() so it sees the same integer type → identical physics behavior).
+                // Collect urges (originals + clones), motor neurons, and sense neurons.
+                // Clones are identified by the fractional part of their type float (set to .5 at
+                // activation; the shader truncates via u32() so it sees the same integer type).
                 const urgeEntries: { k: number, isClone: boolean, x: number, y: number, vx: number, vy: number, control: number, signal: number, goalB: number }[] = []
-                const neuronPos: { x: number, y: number }[] = []
+                const motorNeuronPos: { x: number, y: number }[] = []
+                const senseNeuronPos: { x: number, y: number, mode: number }[] = [] // mode: 0=sight, 1=smell, 2=sound
 
                 for (let i = 0; i < NUM_PARTICLES; i++) {
                     const idx = i * 8
@@ -4485,21 +4486,48 @@ export default defineComponent({
                         urgeEntries.push({ k: localType, isClone, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], control: particles[idx + 5], signal: particles[idx + 6], goalB: goalB >= 0 ? goalB : -1 })
                     }
                     else if (localType - numUrges < numNeurons) {
-                        neuronPos.push({ x: particles[idx], y: particles[idx + 1] })
+                        // Motor neuron (muscle)
+                        motorNeuronPos.push({ x: particles[idx], y: particles[idx + 1] })
+                    }
+                    else if (localType - numUrges - numNeurons < numSenseNeurons) {
+                        // Sense neuron: determine its sense mode (mirrors shader logic)
+                        const sIdx = localType - numUrges - numNeurons
+                        let sMode: number
+                        switch (particleLife.senseMode % 4) {
+                            case 0: sMode = sIdx % 3; break // cycle all three
+                            case 1: sMode = 0; break // all sight
+                            case 2: sMode = 1; break // all smell
+                            default: sMode = 2; break // all sound
+                        }
+                        senseNeuronPos.push({ x: particles[idx], y: particles[idx + 1], mode: sMode })
                     }
                 }
 
                 // Build rows with unique ids: originals get id = k, clones get a stable negative id
                 // derived from the parent's k (-(k+1)*10 - 1) so they're unique per clone identity.
-                const r2 = particleLife.neuronRadius * particleLife.neuronRadius
+                const muscleR2 = particleLife.neuronRadius * particleLife.neuronRadius
+                const senseR2 = particleLife.senseRadius * particleLife.senseRadius
                 const next: UrgeStat[] = urgeEntries.map((u) => {
-                    let wired = 0
-                    for (let n = 0; n < neuronPos.length; n++) {
-                        const dx = u.x - neuronPos[n].x
-                        const dy = u.y - neuronPos[n].y
-                        if (dx * dx + dy * dy <= r2)
-                            wired++
+                    let muscles = 0, eyes = 0, ears = 0, nose = 0
+                    for (let n = 0; n < motorNeuronPos.length; n++) {
+                        const dx = u.x - motorNeuronPos[n].x
+                        const dy = u.y - motorNeuronPos[n].y
+                        if (dx * dx + dy * dy <= muscleR2)
+                            muscles++
                     }
+                    for (let s = 0; s < senseNeuronPos.length; s++) {
+                        const dx = u.x - senseNeuronPos[s].x
+                        const dy = u.y - senseNeuronPos[s].y
+                        if (dx * dx + dy * dy <= senseR2) {
+                            if (senseNeuronPos[s].mode === 0)
+                                eyes++
+                            else if (senseNeuronPos[s].mode === 1)
+                                nose++
+                            else
+                                ears++
+                        }
+                    }
+                    const wired = muscles + eyes + ears + nose
                     const id = u.isClone ? -((u.k + 1) * 10 + 1) : u.k
                     return {
                         id,
@@ -4510,6 +4538,10 @@ export default defineComponent({
                         trendControl: 0,
                         trendSignal: 0,
                         wiredNeurons: wired,
+                        wiredMuscles: muscles,
+                        wiredEyes: eyes,
+                        wiredEars: ears,
+                        wiredNose: nose,
                         goalB: u.goalB >= 0 ? u.goalB : undefined,
                         ...(u.isClone ? { isClone: true as const, cloneOf: u.k, cloneId: 1 } : {}),
                     }

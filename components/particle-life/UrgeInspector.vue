@@ -82,11 +82,24 @@
                                 from #{{ s.cloneOf }}
                             </span>
                             <span v-if="selectedId === s.id" class="i-tabler-crosshair shrink-0 text-sky-400" title="Tracking on canvas" />
+                            <!-- Neuron breakdown: muscles (motor) + senses (eyes/ears/nose) -->
                             <span
-                                v-if="s.wiredNeurons !== undefined"
-                                class="ml-auto flex items-center gap-1 rounded bg-fuchsia-500/10 px-1.5 py-0.5 text-[0.68rem] text-fuchsia-200 font-mono ring-1 ring-fuchsia-500/30" title="Neurons within neuronRadius driving this urge’s authority"
+                                v-if="s.wiredMuscles !== undefined || s.wiredEyes !== undefined"
+                                class="ml-auto flex items-center gap-1.5 rounded bg-fuchsia-500/10 px-1.5 py-0.5 text-[0.68rem] font-mono ring-1 ring-fuchsia-500/30"
                             >
-                                <span class="i-tabler-brain" />{{ s.wiredNeurons }}
+                                <span v-if="(s.wiredMuscles ?? 0) > 0" class="flex items-center gap-0.5 text-fuchsia-200" title="Motor neurons (muscles) within neuronRadius">
+                                    <span class="i-tabler-bolt" />{{ s.wiredMuscles }}
+                                </span>
+                                <span v-if="(s.wiredEyes ?? 0) > 0" class="flex items-center gap-0.5 text-sky-300" title="Sight neurons (eyes) within senseRadius">
+                                    <span class="i-tabler-eye" />{{ s.wiredEyes }}
+                                </span>
+                                <span v-if="(s.wiredEars ?? 0) > 0" class="flex items-center gap-0.5 text-violet-300" title="Sound neurons (ears) within senseRadius">
+                                    <span class="i-tabler-ear" />{{ s.wiredEars }}
+                                </span>
+                                <span v-if="(s.wiredNose ?? 0) > 0" class="flex items-center gap-0.5 text-emerald-300" title="Smell neurons (nose) within senseRadius">
+                                    <span class="i-tabler-nose" />{{ s.wiredNose }}
+                                </span>
+                                <span v-if="!(s.wiredMuscles ?? 0) && !(s.wiredEyes ?? 0) && !(s.wiredEars ?? 0) && !(s.wiredNose ?? 0)" class="text-fuchsia-300/50">—</span>
                             </span>
                         </div>
 
@@ -165,7 +178,11 @@ export interface UrgeStat {
     signal: number // smoothed objective metric value
     trendControl: number // control - prevControl (0 if no prior readback)
     trendSignal?: number // signal - prevSignal (0/undefined if no prior readback)
-    wiredNeurons?: number // optional: neurons within neuronRadius of this urge
+    wiredNeurons?: number // optional: total neurons within neuronRadius of this urge
+    wiredMuscles?: number // motor neurons within neuronRadius ("muscles")
+    wiredEyes?: number // sense neurons with mode=sight within senseRadius ("eyes")
+    wiredEars?: number // sense neurons with mode=sound within senseRadius ("ears")
+    wiredNose?: number // sense neurons with mode=smell within senseRadius ("nose")
     isClone?: boolean // true if this row represents a clone particle
     cloneOf?: number // parent urge k (only set when isClone)
     cloneId?: number // per-parent sequential clone number (1 = first clone of that parent)
