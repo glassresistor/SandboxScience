@@ -159,6 +159,21 @@
                                 {{ s.trendSignal > 0 ? '+' : '' }}{{ fmt(s.trendSignal) }}
                             </span>
                         </div>
+
+                        <!-- brain drive model: this urge's target / scale / gain (stable per index) -->
+                        <div
+                            v-if="brainDriveFor(s)"
+                            class="mt-1.5 flex items-center gap-1.5 rounded bg-indigo-500/5 px-1.5 py-1 ring-1 ring-indigo-500/20"
+                            title="Brain drive model: the recurrent network reads this urge's error = (target - metric) / scale, weighted by gain."
+                        >
+                            <span class="i-tabler-brain shrink-0 text-indigo-300" />
+                            <span class="text-[0.62rem] uppercase tracking-wide font-mono text-indigo-300/80">drive</span>
+                            <span class="ml-auto flex items-center gap-2 font-mono tabular-nums text-[0.7rem]">
+                                <span class="text-indigo-200" title="Target: the metric value this urge wants to reach (homeostasis setpoint)">t&nbsp;{{ fmt(brainDriveFor(s)!.target) }}</span>
+                                <span class="text-sky-300" title="Scale: error normalisation — smaller = more sensitive to deviation">s&nbsp;{{ fmt(brainDriveFor(s)!.scale) }}</span>
+                                <span class="text-emerald-300" title="Gain: how strongly this urge's error feeds the brain (its importance)">g&nbsp;{{ fmt(brainDriveFor(s)!.gain) }}</span>
+                            </span>
+                        </div>
                     </li>
                 </ul>
             </div>
@@ -187,6 +202,14 @@ export interface UrgeStat {
     cloneOf?: number // parent urge k (only set when isClone)
     cloneId?: number // per-parent sequential clone number (1 = first clone of that parent)
     goalB?: number // secondary goal index (local k) from a merge; undefined if none
+}
+
+// One urge's brain drive model parameters (the per-urge "constitution" the recurrent
+// network reads). target = desired metric value, scale = error sensitivity, gain = weight.
+export interface BrainDrive {
+    target: number
+    scale: number
+    gain: number
 }
 
 // Snapshot of the global electrical parameters that apply to all urges/neurons.
@@ -246,6 +269,7 @@ export default defineComponent({
         numTypes: { type: Number, required: true },
         selectedId: { type: Number, required: false, default: -1 }, // urge id currently tracked on the canvas (-1 = none)
         objectiveLabelFor: { type: Function as unknown as () => ObjectiveLabelFn, required: true }, // per-urge goal label by index k
+        brainDrives: { type: Array as () => BrainDrive[], required: false, default: () => [] }, // per-urge brain drive model (index = local urge k)
     },
     emits: ['update:selectedId'],
     setup(props, { emit }) {
@@ -304,7 +328,15 @@ export default defineComponent({
         // text always matches what the GPU is actually doing). STABLE over time for a given index.
         const objectiveLabelFor = (k: number): string => props.objectiveLabelFor(k)
 
-        return { paramMeta, displayValue, fmt, barFill, signalFill, colorFor, objectiveLabelFor, select, TREND_EPS: TREND_EPS_LOCAL }
+        // Resolve this urge's brain drive params by local index (clones inherit their parent's).
+        const brainDriveFor = (s: UrgeStat): BrainDrive | undefined => {
+            if (!props.brainDrives || !props.brainDrives.length)
+                return undefined
+            const idx = s.cloneOf ?? s.id
+            return props.brainDrives[idx]
+        }
+
+        return { paramMeta, displayValue, fmt, barFill, signalFill, colorFor, objectiveLabelFor, brainDriveFor, select, TREND_EPS: TREND_EPS_LOCAL }
     },
 })
 </script>

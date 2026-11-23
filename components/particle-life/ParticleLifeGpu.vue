@@ -424,6 +424,7 @@
                                 :target-colors="colorRgbStrings"
                                 :num-types="particleLife.numColors"
                                 :objective-label-for="objectiveLabelFor"
+                                :brain-drives="brainDrives"
                             />
                         </Collapse>
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500">
@@ -2259,12 +2260,28 @@ export default defineComponent({
             for (let i = 584; i < 712; i++) w[i] = (Math.random() - 0.5) * 0.6
             // biases [MAX_NEURONS] = next 128
             for (let i = 712; i < 840; i++) w[i] = (Math.random() - 0.5) * 0.3
-            // driveTargets [64]: deterministic per-urge targets in [0.6, 1.4]
-            for (let i = 840; i < 904; i++) w[i] = 0.6 + ((i * 7919) % 100) / 125
-            // driveScales [64]: all 0.5
-            for (let i = 904; i < 968; i++) w[i] = 0.5
-            // driveGains [64]: all 1.0
-            for (let i = 968; i < 1032; i++) w[i] = 1.0
+            // Per-urge drive model parameters — deterministic pseudo-random per index so each
+            // urge has a distinct "personality": what density it wants (target), how sensitive
+            // its error is (scale), and how much it matters to the brain (gain). Built once here
+            // and also exposed to the Urge Inspector via brainDrives.
+            const drives: { target: number, scale: number, gain: number }[] = []
+            for (let i = 0; i < BRAIN_MAX_URGES; i++) {
+                const h = (n: number) => {
+                    const x = Math.sin(i * 127.1 + n * 311.7) * 43758.5453
+                    return x - Math.floor(x)
+                }
+                drives.push({
+                    target: 0.6 + h(1) * 0.8, // [0.6, 1.4] desired metric value
+                    scale: 0.3 + h(2) * 0.5,  // [0.3, 0.8] error normalisation (sensitivity)
+                    gain: 0.5 + h(3) * 1.0,   // [0.5, 1.5] weight into the brain's input vector
+                })
+            }
+            for (let i = 0; i < BRAIN_MAX_URGES; i++) {
+                w[840 + i] = drives[i].target
+                w[904 + i] = drives[i].scale
+                w[968 + i] = drives[i].gain
+            }
+            brainDrives.value = drives
 
             brainWeightsBuffer = device.createBuffer({
                 size: BRAIN_WEIGHTS_SIZE,
@@ -4485,6 +4502,9 @@ export default defineComponent({
         const URGE_READBACK_INTERVAL_MS = 200
         const urgeInspectorOpen = ref<boolean>(false)
         const urgeStats = ref<UrgeStat[]>([])
+        // Per-urge brain drive parameters (target/scale/gain), built deterministically at init
+        // and shown in the Urge Inspector. Index = local urge index k.
+        const brainDrives = ref<{ target: number, scale: number, gain: number }[]>([])
         let isReadingBackUrges = false // concurrency guard: one readback in flight at a time
         let urgeReadbackTimer: number | null = null
         // Previous per-urge values (keyed by urge id) so we can show a trend between readbacks.
@@ -5533,6 +5553,7 @@ export default defineComponent({
             colorRgbStrings,
             urgeInspectorOpen,
             urgeStats,
+            brainDrives,
             electricalParams,
             selectedUrgeId,
             urgeMarkerEl,
