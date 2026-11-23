@@ -52,7 +52,7 @@ var<workgroup> wg_hPrev  : array<f32, 8>;
 @group(0) @binding(0) var<storage, read> particles : array<Particle>;       // previous frame (temp buffer)
 @group(0) @binding(1) var<storage, read_write> brainState : array<f32, 8>;  // persistent hidden state [H]
 @group(0) @binding(2) var<storage, read> weights : BrainWeights;            // all network parameters
-@group(0) @binding(3) var<storage, write> neuronMods : array<f32, MAX_NEURONS>; // output: per-neuron modulation
+@group(0) @binding(3) var<storage, read_write> neuronMods : array<f32, MAX_NEURONS>; // output: per-neuron modulation
 
 @group(1) @binding(0) var<uniform> brainOpts : BrainOpts;
 

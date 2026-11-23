@@ -3060,10 +3060,10 @@ export default defineComponent({
                     bindGroupLayouts: [
                         device.createBindGroupLayout({
                             entries: [
-                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // particles (read)
-                                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // brainState (read_write)
-                                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // weights (read)
-                                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // neuronMods (write)
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particles
+                                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // brainState (read_write)
+                                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // weights
+                                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // neuronMods (read_write)
                             ],
                         }),
                         device.createBindGroupLayout({
