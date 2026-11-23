@@ -68,12 +68,12 @@ fn main(@builtin(local_invocation_id) lid : vec3<u32>) {
         let pIdx = brainOpts.numTypes + tid;
         let signal = particles[pIdx].signal; // previous frame's smoothed metric
 
-        let target = weights.driveTargets[tid];
-        let scale  = max(weights.driveScales[tid], 0.1);
+        let tgtVal = weights.driveTargets[tid];
+        let scl    = max(weights.driveScales[tid], 0.1);
         let gain   = weights.driveGains[tid];
 
         // Error: how far is current metric from target? Positive = "too little" (want more)
-        let error = clamp((target - signal) / scale, -1.0, 1.0);
+        let error = clamp((tgtVal - signal) / scl, -1.0, 1.0);
         wg_errors[tid] = error * gain;
     } else {
         wg_errors[tid] = 0.0;

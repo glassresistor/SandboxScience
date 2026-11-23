@@ -1008,7 +1008,8 @@ export default defineComponent({
         let particleSortPipeline: GPUComputePipeline
         let bruteForceComputePipeline: GPUComputePipeline
         let particleComputeForcesPipeline: GPUComputePipeline
-        let brainStepPipeline: GPUComputePipeline
+        let brainStepPipeline: GPUComputePipeline | undefined
+        let brainValid = false // set true only after successful pipeline creation
         let brainStateBuffer: GPUBuffer | undefined
         let brainWeightsBuffer: GPUBuffer | undefined
         let neuronModsBuffer: GPUBuffer | undefined
@@ -1774,9 +1775,9 @@ export default defineComponent({
             // ---- BRAIN STEP: recurrent network maps urge errors → neuron modulations ----
             // Runs first so the force pass can read the output. Reads particleBuffer
             // (previous-frame state in original order) and writes neuronModsBuffer.
-            if (particleLife.isElectricalEnabled && numUrges > 0 && numNeurons > 0) {
+            if (brainValid && particleLife.isElectricalEnabled && numUrges > 0 && numNeurons > 0) {
                 const brainPass = encoder.beginComputePass()
-                brainPass.setPipeline(brainStepPipeline)
+                brainPass.setPipeline(brainStepPipeline!)
                 brainPass.setBindGroup(0, brainBindGroup)
                 brainPass.setBindGroup(1, brainOptsBindGroup)
                 brainPass.dispatchWorkgroups(1) // single workgroup of 64 threads
@@ -2727,22 +2728,24 @@ export default defineComponent({
                     { binding: 4, resource: { buffer: neuronModsBuffer! } }, // brain output
                 ],
             })
-            // ---- Brain bind groups ----
-            brainBindGroup = device.createBindGroup({
-                layout: brainStepPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: particleBuffer! } },        // read particles (prev frame, original order)
-                    { binding: 1, resource: { buffer: brainStateBuffer! } },      // persistent hidden state
-                    { binding: 2, resource: { buffer: brainWeightsBuffer! } },    // network weights
-                    { binding: 3, resource: { buffer: neuronModsBuffer! } },      // output modulations
-                ],
-            })
-            brainOptsBindGroup = device.createBindGroup({
-                layout: brainStepPipeline.getBindGroupLayout(1),
-                entries: [
-                    { binding: 0, resource: { buffer: brainOptsBuffer! } },       // numUrges, numNeurons, numTypes
-                ],
-            })
+            // ---- Brain bind groups (only if pipeline was created successfully) ----
+            if (brainValid && brainStepPipeline) {
+                brainBindGroup = device.createBindGroup({
+                    layout: brainStepPipeline.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: { buffer: particleBuffer! } },        // read particles (prev frame, original order)
+                        { binding: 1, resource: { buffer: brainStateBuffer! } },      // persistent hidden state
+                        { binding: 2, resource: { buffer: brainWeightsBuffer! } },    // network weights
+                        { binding: 3, resource: { buffer: neuronModsBuffer! } },      // output modulations
+                    ],
+                })
+                brainOptsBindGroup = device.createBindGroup({
+                    layout: brainStepPipeline.getBindGroupLayout(1),
+                    entries: [
+                        { binding: 0, resource: { buffer: brainOptsBuffer! } },       // numUrges, numNeurons, numTypes
+                    ],
+                })
+            }
             bruteForceBindGroup = device.createBindGroup({
                 layout: bruteForceBindGroupLayout,
                 entries: [
@@ -3050,6 +3053,7 @@ export default defineComponent({
                 compute: { module: particleComputeForcesShader, entryPoint: 'computeForces' },
             })
             // ---- Brain step pipeline (single workgroup recurrent network) ----
+            try {
             const brainStepShader = device.createShaderModule({ code: brainStepShaderCode })
             brainStepPipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
@@ -3071,6 +3075,11 @@ export default defineComponent({
                 }),
                 compute: { module: brainStepShader, entryPoint: 'main' },
             })
+            brainValid = true
+            } catch (e) {
+                console.warn('[brain] pipeline creation failed, brain disabled:', e)
+                brainStepPipeline = undefined
+            }
             const bruteForceShader = device.createShaderModule({ code: bruteForceShaderCode })
             bruteForceComputePipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({

@@ -1,0 +1,8 @@
+{
+  "name": "brain-experiment",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "run": "node --experimental-strip-types brain.ts"
+  }
+}
