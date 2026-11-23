@@ -1,5 +1,5 @@
+import type { Preset } from "~/composables/usePresetManager"
 import { defineStore } from 'pinia'
-import type { Preset } from "~/composables/usePresetManager";
 
 export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const engineType = ref<'CPU' | 'GPU' | 'GPU3D'>('GPU') // Engine type
@@ -13,8 +13,6 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const rulesMatrix = ref<number[][]>([]) // Rules matrix for each color
     const minRadiusMatrix = ref<number[][]>([]) // Min radius matrix for each color
     const maxRadiusMatrix = ref<number[][]>([]) // Max radius matrix for each color
-
-
 
     const simWidth = ref<number>(0) // Grid width
     const simHeight = ref<number>(0) // Grid height
@@ -36,7 +34,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
         set: (value: string) => {
             isWallRepel.value = value === 'repel'
             isWallWrap.value = value === 'wrap'
-        }
+        },
     })
     const isMirrorWrap = ref<boolean>(false) // Enable mirrors for the particles (only works if isWallWrap is true)
     const isInfiniteMirrorWrap = ref<boolean>(false) // Enable infinite mirrors for the particles (only works if isWallWrap is true)
@@ -148,28 +146,107 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     }
 
     return {
-        engineType, sidebarLeftOpen, isLockedPointer, isHudLocked,
+        engineType,
+        sidebarLeftOpen,
+        isLockedPointer,
+        isHudLocked,
         isRunning,
-        rulesMatrix, minRadiusMatrix, maxRadiusMatrix, currentColors,
-        simWidth, simHeight, linkProportions,
-        numParticles, particleSize, numColors, zoomSmoothing, panSmoothing,
-        is3D, isParticleGlow, isAdditiveBlending, isWallRepel, isWallWrap, wallState, isMirrorWrap, isInfiniteMirrorWrap, mirrorWrapCount, screenMultiplierForGridSize,
-        isDebugBinsActive, debugMaxParticleCount, isDebugHeatmapActive, cellSubdivisions,
-        isDriftCamActive, driftCamResetOnPan, driftCamSpeed, driftCamAmplitude, driftCamZoomRange,
-        isTrackerActive, isTrackerSelectionActive, isTrackerCameraActive, isTrackerIndicatorVisible, trackerCameraSmoothing,
-        minRadiusRange, maxRadiusRange, currentMaxRadius,
-        repel, forceFactor, frictionFactor, useSpatialHash,
-        isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, neuronInfluence, neuronAuthority, maxAuthority, cohesion,
-        numSenseNeurons, senseRadius, senseConeHalfAngleDeg, senseMode,
+        rulesMatrix,
+        minRadiusMatrix,
+        maxRadiusMatrix,
+        currentColors,
+        simWidth,
+        simHeight,
+        linkProportions,
+        numParticles,
+        particleSize,
+        numColors,
+        zoomSmoothing,
+        panSmoothing,
+        is3D,
+        isParticleGlow,
+        isAdditiveBlending,
+        isWallRepel,
+        isWallWrap,
+        wallState,
+        isMirrorWrap,
+        isInfiniteMirrorWrap,
+        mirrorWrapCount,
+        screenMultiplierForGridSize,
+        isDebugBinsActive,
+        debugMaxParticleCount,
+        isDebugHeatmapActive,
+        cellSubdivisions,
+        isDriftCamActive,
+        driftCamResetOnPan,
+        driftCamSpeed,
+        driftCamAmplitude,
+        driftCamZoomRange,
+        isTrackerActive,
+        isTrackerSelectionActive,
+        isTrackerCameraActive,
+        isTrackerIndicatorVisible,
+        trackerCameraSmoothing,
+        minRadiusRange,
+        maxRadiusRange,
+        currentMaxRadius,
+        repel,
+        forceFactor,
+        frictionFactor,
+        useSpatialHash,
+        isElectricalEnabled,
+        numUrges,
+        numNeurons,
+        metricMode,
+        urgeRadius,
+        neuronRadius,
+        urgeForce,
+        controlGain,
+        controlMax,
+        neuronInfluence,
+        neuronAuthority,
+        maxAuthority,
+        cohesion,
+        numSenseNeurons,
+        senseRadius,
+        senseConeHalfAngleDeg,
+        senseMode,
         isDebugConnections,
-        isCloningEnabled, cloneMetricThreshold, birthSustainedTicks, cloneImpulse, numClonePool,
-        isDeathEnabled, deathMetricThreshold, deathSustainedTicks,
-        isMergeEnabled, mergeRadius, mergeSustainedTicks,
-        isMurderEnabled, murderRadius, murderPowerMargin,
-        showLiveDeltaTime, manualDeltaTimeEnabled, manualDeltaTime,
-        isBrushActive, brushes, brushRadius, brushIntensity, brushType, attractForce, repulseForce, brushDirectionalForce, showBrushCircle,
-        glowSize, glowIntensity, glowSteepness, particleOpacity,
-        selectedSpawnPositionOption, selectedRulesOption, selectedColorPaletteOption, savedPresets, isSaveModalOpen,
-        $reset
+        isCloningEnabled,
+        cloneMetricThreshold,
+        birthSustainedTicks,
+        cloneImpulse,
+        numClonePool,
+        isDeathEnabled,
+        deathMetricThreshold,
+        deathSustainedTicks,
+        isMergeEnabled,
+        mergeRadius,
+        mergeSustainedTicks,
+        isMurderEnabled,
+        murderRadius,
+        murderPowerMargin,
+        showLiveDeltaTime,
+        manualDeltaTimeEnabled,
+        manualDeltaTime,
+        isBrushActive,
+        brushes,
+        brushRadius,
+        brushIntensity,
+        brushType,
+        attractForce,
+        repulseForce,
+        brushDirectionalForce,
+        showBrushCircle,
+        glowSize,
+        glowIntensity,
+        glowSteepness,
+        particleOpacity,
+        selectedSpawnPositionOption,
+        selectedRulesOption,
+        selectedColorPaletteOption,
+        savedPresets,
+        isSaveModalOpen,
+        $reset,
     }
 })

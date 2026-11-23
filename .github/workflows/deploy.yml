@@ -23,31 +23,31 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
-              with:
-                  persist-credentials: false # required to cache packages
+                with:
+                    persist-credentials: false # required to cache packages
 
             - name: Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 24
-                  cache: npm
+                uses: actions/setup-node@v4
+                with:
+                    node-version: 24
+                    cache: npm
 
             - name: Install dependencies
-              run: npm ci
+                run: npm ci
 
             # The github_pages preset makes the build fully static (prerender),
             # adds /404.html and writes a .nojekyll file.
             # NUXT_APP_BASE_URL is required for a project site (<user>.github.io/<repo>/).
             # Remove it if you point GitHub Pages at a custom domain instead.
             - name: Build (npm run build, github_pages preset)
-              run: npm run build -- --preset github_pages
-              env:
-                  NUXT_APP_BASE_URL: /${{ github.event.repository.name }}/
+                run: npm run build -- --preset github_pages
+                env:
+                    NUXT_APP_BASE_URL: /${{ github.event.repository.name }}/
 
             - name: Upload artifact
-              uses: actions/upload-pages-artifact@v3
-              with:
-                  path: .output/public
+                uses: actions/upload-pages-artifact@v3
+                with:
+                    path: .output/public
 
     deploy:
         needs: build
@@ -57,5 +57,5 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Deploy to GitHub Pages
-              id: deployment
-              uses: actions/deploy-pages@v4
+                id: deployment
+                uses: actions/deploy-pages@v4

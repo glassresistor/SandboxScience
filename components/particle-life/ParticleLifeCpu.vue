@@ -1,372 +1,445 @@
 <template>
-    <section h-screen flex flex-col justify-center overflow-hidden relative ref="mainContainer" id="mainContainer">
+    <section id="mainContainer" relative h-screen flex flex-col justify-center overflow-hidden>
         <SidebarLeft v-model="particleLife.sidebarLeftOpen">
-            <template #controls>
-            </template>
+            <template #controls />
             <template #default>
-                <div h-full px-2 flex flex-col>
-                    <div flex justify-between items-end mb-2 px-1>
+                <div h-full flex flex-col px-2>
+                    <div mb-2 flex items-end justify-between px-1>
                         <div flex items-center class="-mb-0.5">
-                            <div i-lets-icons-bubble text-2xl mr-2 class="text-[#2a9d8f] -mt-0.5"></div>
-                            <h1 font-800 text-lg tracking-widest class="text-[#dff6f3] drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.8)]">Particle Life</h1>
-                            <p class="ml-2 px-2 py-0.5 rounded-lg ring-1 uppercase justify-center font-mono font-bold bg-sky-600/20 text-sky-400 ring-sky-500/30">
+                            <div i-lets-icons-bubble mr-2 text-2xl class="text-[#2a9d8f] -mt-0.5" />
+                            <h1 text-lg font-800 tracking-widest class="text-[#dff6f3] drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.8)]">
+                                Particle Life
+                            </h1>
+                            <p class="ml-2 justify-center rounded-lg bg-sky-600/20 px-2 py-0.5 text-sky-400 font-bold font-mono uppercase ring-1 ring-sky-500/30">
                                 CPU
                             </p>
                         </div>
-<!--                        <div rounded-lg border-2 border-white style="width: 72px;">-->
-<!--                            <div i-tabler-badge-3d style="font-size: 30px" class="-my-1"></div>-->
-<!--                        </div>-->
-                        <ToggleSwitch inactive-label="2D" label="3D" colorful-label v-model="particleLife.is3D" />
+                        <!--                        <div rounded-lg border-2 border-white style="width: 72px;"> -->
+                        <!--                            <div i-tabler-badge-3d style="font-size: 30px" class="-my-1"></div> -->
+                        <!--                        </div> -->
+                        <ToggleSwitch v-model="particleLife.is3D" inactive-label="2D" label="3D" colorful-label />
                     </div>
                     <hr border-slate-500>
-                    <div overflow-auto flex-1 mt-2 class="scrollableArea">
-                        <Collapse label="Presets" icon="i-tabler-sparkles text-amber-500"
-                                  tooltip="Choose predefined configurations to quickly set up your simulation.">
-                            <PresetPanel :store="particleLife"
-                                         @updateColors="updateColors"
-                                         @updateRulesMatrix="updateRulesMatrix"
-                                         @loadPreset="loadPreset">
-                            </PresetPanel>
+                    <div mt-2 flex-1 overflow-auto class="scrollableArea">
+                        <Collapse
+                            label="Presets" icon="i-tabler-sparkles text-amber-500"
+                            tooltip="Choose predefined configurations to quickly set up your simulation."
+                        >
+                            <PresetPanel
+                                :store="particleLife"
+                                @update-colors="updateColors"
+                                @update-rules-matrix="updateRulesMatrix"
+                                @load-preset="loadPreset"
+                            />
                         </Collapse>
 
-                        <Collapse label="Matrix Settings" icon="i-tabler-grid-4x4 text-indigo-500" mt-2
-                                  tooltip="Modify matrix values by clicking on cells in the grid. <br>
+                        <Collapse
+                            label="Matrix Settings" icon="i-tabler-grid-4x4 text-indigo-500" mt-2
+                            tooltip="Modify matrix values by clicking on cells in the grid. <br>
                                   Adjust individual cell values with the slider, or click and drag to change them directly. <br>
                                   Use Ctrl + Click to select multiple cells for group adjustments. <br>
-                                  If no cells are selected, the slider will adjust all values.">
-                            <MatrixSettings :store="particleLife"
-                                @updateRulesMatrix="updateRulesMatrixValue"
-                                @randomRulesMatrix="newRandomRulesMatrix"
-                                @updateMinMatrix="updateMinMatrixValue"
-                                @updateMaxMatrix="updateMaxMatrixValue"
-                                @updateColor="updateSingleColor">
-                            </MatrixSettings>
+                                  If no cells are selected, the slider will adjust all values."
+                        >
+                            <MatrixSettings
+                                :store="particleLife"
+                                @update-rules-matrix="updateRulesMatrixValue"
+                                @random-rules-matrix="newRandomRulesMatrix"
+                                @update-min-matrix="updateMinMatrixValue"
+                                @update-max-matrix="updateMaxMatrixValue"
+                                @update-color="updateSingleColor"
+                            />
                         </Collapse>
-                        <Collapse label="Randomizer Settings" icon="i-game-icons-perspective-dice-six-faces-random text-teal-500" mt-2
-                                  tooltip="Adjust the parameters for randomizing particle attributes. <br> Configure the ranges for minimum and maximum interaction radii.">
-                            <RadiusVisualizer v-model:min-radius-range="particleLife.minRadiusRange"
-                                              v-model:max-radius-range="particleLife.maxRadiusRange"
-                                              @randomize-radius="randomizeRadius"
-                                              @randomize-rules-and-radius="randomizeRulesAndRadius"
-                                              @randomize-all="regenerateLife">
-                            </RadiusVisualizer>
+                        <Collapse
+                            label="Randomizer Settings" icon="i-game-icons-perspective-dice-six-faces-random text-teal-500" mt-2
+                            tooltip="Adjust the parameters for randomizing particle attributes. <br> Configure the ranges for minimum and maximum interaction radii."
+                        >
+                            <RadiusVisualizer
+                                v-model:min-radius-range="particleLife.minRadiusRange"
+                                v-model:max-radius-range="particleLife.maxRadiusRange"
+                                @randomize-radius="randomizeRadius"
+                                @randomize-rules-and-radius="randomizeRulesAndRadius"
+                                @randomize-all="regenerateLife"
+                            />
                         </Collapse>
                         <Collapse label="World Settings" icon="i-tabler-world-cog text-cyan-500" opened mt-2>
-                            <RangeInput input label="Particle Number"
-                                        tooltip="Adjust the total number of particles. <br> More particles may reveal complex interactions but can increase computational demand."
-                                        :min="0" :max="20000" :step="10" v-model="particleLife.numParticles">
-                            </RangeInput>
-                            <RangeInput input label="Color Number"
-                                        tooltip="Specify the number of particle colors. <br> Each color interacts with all others, with distinct forces and interaction ranges."
-                                        :min="1" :max="20" :step="1" v-model="particleLife.numColors" @update:modelValue="setNewNumTypes" mt-2>
-                            </RangeInput>
-                            <RangeInput input label="Depth Limit"
-                                        tooltip="Set the maximum depth for particles. <br> In 3D, particles will bounce back if they exceed this limit."
-                                        :min="0" :max="1000" :step="1" v-model="particleLife.depthLimit" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.numParticles" input
+                                label="Particle Number"
+                                tooltip="Adjust the total number of particles. <br> More particles may reveal complex interactions but can increase computational demand." :min="0" :max="20000" :step="10"
+                            />
+                            <RangeInput
+                                v-model="particleLife.numColors" input
+                                label="Color Number"
+                                tooltip="Specify the number of particle colors. <br> Each color interacts with all others, with distinct forces and interaction ranges." :min="1" :max="20" :step="1" mt-2 @update:model-value="setNewNumTypes"
+                            />
+                            <RangeInput
+                                v-model="particleLife.depthLimit" input
+                                label="Depth Limit"
+                                tooltip="Set the maximum depth for particles. <br> In 3D, particles will bounce back if they exceed this limit." :min="0" :max="1000" :step="1" mt-2
+                            />
 
-                            <div flex items-start justify-between mt-3 mb-2>
-                                <p underline text-gray-300>Walls Settings :</p>
+                            <div mb-2 mt-3 flex items-start justify-between>
+                                <p text-gray-300 underline>
+                                    Walls Settings :
+                                </p>
                                 <div flex>
-                                    <SelectButton :id="0" label="Rectangle" v-model="particleLife.wallShape" mr-2 />
-                                    <SelectButton :id="1" label="Circle" v-model="particleLife.wallShape" :disabled="particleLife.isWallWrap" />
+                                    <SelectButton :id="0" v-model="particleLife.wallShape" label="Rectangle" mr-2 />
+                                    <SelectButton :id="1" v-model="particleLife.wallShape" label="Circle" :disabled="particleLife.isWallWrap" />
                                 </div>
                             </div>
 
-                            <OptionBar name="wallStateCPU" v-model="particleLife.wallState" mb-2 :options="[
-                                { id: 'none', label: 'None' },
-                                { id: 'repel', label: 'Repel' },
-                                { id: 'wrap', label: 'Wrap' }]">
-                            </OptionBar>
+                            <OptionBar
+                                v-model="particleLife.wallState" name="wallStateCPU" mb-2 :options="[
+                                    { id: 'none', label: 'None' },
+                                    { id: 'repel', label: 'Repel' },
+                                    { id: 'wrap', label: 'Wrap' }]"
+                            />
 
-                            <div flex mb-1>
-                                <SelectButton :id="1" label="Screen" v-model="particleLife.screenMultiplierForGridSize" mr-1.5 />
-                                <SelectButton :id="1.5" label="x1.5" v-model="particleLife.screenMultiplierForGridSize" mr-1.5 />
-                                <SelectButton :id="2" label="x2" v-model="particleLife.screenMultiplierForGridSize" mr-1.5 />
-                                <SelectButton :id="2.5" label="x2.5" v-model="particleLife.screenMultiplierForGridSize" mr-1.5 />
-                                <SelectButton :id="3" label="x3" v-model="particleLife.screenMultiplierForGridSize" mr-1.5 />
-                                <SelectButton :id="3.5" label="x3.5" v-model="particleLife.screenMultiplierForGridSize" mr-1.5 />
-                                <SelectButton :id="4" label="x4" v-model="particleLife.screenMultiplierForGridSize" mr-1.5 />
-                                <SelectButton :id="5" label="x5" v-model="particleLife.screenMultiplierForGridSize" />
+                            <div mb-1 flex>
+                                <SelectButton :id="1" v-model="particleLife.screenMultiplierForGridSize" label="Screen" mr-1.5 />
+                                <SelectButton :id="1.5" v-model="particleLife.screenMultiplierForGridSize" label="x1.5" mr-1.5 />
+                                <SelectButton :id="2" v-model="particleLife.screenMultiplierForGridSize" label="x2" mr-1.5 />
+                                <SelectButton :id="2.5" v-model="particleLife.screenMultiplierForGridSize" label="x2.5" mr-1.5 />
+                                <SelectButton :id="3" v-model="particleLife.screenMultiplierForGridSize" label="x3" mr-1.5 />
+                                <SelectButton :id="3.5" v-model="particleLife.screenMultiplierForGridSize" label="x3.5" mr-1.5 />
+                                <SelectButton :id="4" v-model="particleLife.screenMultiplierForGridSize" label="x4" mr-1.5 />
+                                <SelectButton :id="5" v-model="particleLife.screenMultiplierForGridSize" label="x5" />
                             </div>
-                            <div flex items-center v-if="particleLife.wallShape === 0">
-                                <p class="w-2/3 text-2sm mt-1">
+                            <div v-if="particleLife.wallShape === 0" flex items-center>
+                                <p class="mt-1 w-2/3 text-2sm">
                                     Rectangle Size
                                     <TooltipInfo container="#mainContainer" tooltip="Adjust the size of the rectangular area where particles are contained." />
                                 </p>
-                                <Input label="x" v-model="particleLife.gridWidth" @change="updateGridWidth" mr-2 />
-                                <Input label="y" v-model="particleLife.gridHeight" @change="updateGridHeight" mr-2 />
-                                <button type="button" btn rounded-full p2 flex items-center bg="zinc-900 hover:#212121" @click="particleLife.linkProportions = !particleLife.linkProportions">
-                                    <span :class="particleLife.linkProportions ? 'i-tabler-link' : 'i-tabler-unlink'" text-sm></span>
+                                <Input v-model="particleLife.gridWidth" label="x" mr-2 @change="updateGridWidth" />
+                                <Input v-model="particleLife.gridHeight" label="y" mr-2 @change="updateGridHeight" />
+                                <button type="button" btn flex items-center rounded-full p2 bg="zinc-900 hover:#212121" @click="particleLife.linkProportions = !particleLife.linkProportions">
+                                    <span :class="particleLife.linkProportions ? 'i-tabler-link' : 'i-tabler-unlink'" text-sm />
                                 </button>
                             </div>
-                            <div flex items-center justify-between mt-2 v-else>
-                                <p class="w-2/3 text-2sm mt-0.5">
+                            <div v-else mt-2 flex items-center justify-between>
+                                <p class="mt-0.5 w-2/3 text-2sm">
                                     Circle Size
                                     <TooltipInfo container="#mainContainer" tooltip="Adjust the size of the circular area where particles are contained." />
                                 </p>
-                                <Input label="Diameter" v-model="particleLife.gridHeight" @change="updateGridHeight" mr-2 />
+                                <Input v-model="particleLife.gridHeight" label="Diameter" mr-2 @change="updateGridHeight" />
                             </div>
                         </Collapse>
                         <Collapse label="Physics Settings" icon="i-tabler-atom text-fuchsia-500" opened mt-2>
-                            <RangeInput input label="Repel Force"
-                                        tooltip="Adjust the force that repels particles from each other. <br> Higher values increase the separation distance."
-                                        :min="0.01" :max="4" :step="0.01" v-model="particleLife.repel">
-                            </RangeInput>
-                            <RangeInput input label="Force Multiplier"
-                                        tooltip="Scales the interaction forces between particles. <br> Higher values make forces stronger and particles move faster."
-                                        :min="0.01" :max="2" :step="0.01" v-model="particleLife.forceFactor" mt-2>
-                            </RangeInput>
-                            <RangeInput input label="Friction"
-                                        tooltip="Controls how much friction slows particles down. <br> Higher values reduce speed and help stabilize the system."
-                                        :min="0" :max="1" :step="0.01" v-model="particleLife.frictionFactor" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.repel" input
+                                label="Repel Force"
+                                tooltip="Adjust the force that repels particles from each other. <br> Higher values increase the separation distance." :min="0.01" :max="4" :step="0.01"
+                            />
+                            <RangeInput
+                                v-model="particleLife.forceFactor" input
+                                label="Force Multiplier"
+                                tooltip="Scales the interaction forces between particles. <br> Higher values make forces stronger and particles move faster." :min="0.01" :max="2" :step="0.01" mt-2
+                            />
+                            <RangeInput
+                                v-model="particleLife.frictionFactor" input
+                                label="Friction"
+                                tooltip="Controls how much friction slows particles down. <br> Higher values reduce speed and help stabilize the system." :min="0" :max="1" :step="0.01" mt-2
+                            />
                         </Collapse>
-                        <Collapse label="Quantum / Electrical" icon="i-tabler-bolt text-lime-400" mt-2
-                                  tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each have their own goal (derived from their index) and learn an attract/repel intent. They do NOT push matter directly — they recruit nearby neurons. <br> <b>Neurons</b> are actuators for a single color: within range of an urge they are driven by it and then pull or push only that one color.">
-                            <div flex items-center justify-between gap-2 mb-1>
+                        <Collapse
+                            label="Quantum / Electrical" icon="i-tabler-bolt text-lime-400" mt-2
+                            tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each have their own goal (derived from their index) and learn an attract/repel intent. They do NOT push matter directly — they recruit nearby neurons. <br> <b>Neurons</b> are actuators for a single color: within range of an urge they are driven by it and then pull or push only that one color."
+                        >
+                            <div mb-1 flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Enable layer
                                     <TooltipInfo container="#mainContainer" tooltip="Master switch. When off, urges and neurons are removed from the simulation." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isElectricalEnabled" />
+                                <ToggleSwitch v-model="particleLife.isElectricalEnabled" label="On" colorful-label />
                             </div>
 
-                            <RangeInput input label="Urge Count"
-                                        tooltip="Number of urge particles. Each urge is a distinct type with its OWN goal: it acts on color = index % species, and the objective (attract vs repel, density vs fraction) is derived from its index so the population is diverse."
-                                        :min="0" :max="500" :step="1" v-model="particleLife.numUrges">
-                            </RangeInput>
-                            <RangeInput input label="Neuron Count" mt-2
-                                        tooltip="Number of neuron particles. Each neuron is an actuator for a single color = index % species. It is driven by the urges near it and then pulls or pushes only that one color."
-                                        :min="0" :max="500" :step="1" v-model="particleLife.numNeurons">
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.numUrges" input
+                                label="Urge Count"
+                                tooltip="Number of urge particles. Each urge is a distinct type with its OWN goal: it acts on color = index % species, and the objective (attract vs repel, density vs fraction) is derived from its index so the population is diverse." :min="0" :max="500" :step="1"
+                            />
+                            <RangeInput
+                                v-model="particleLife.numNeurons" input label="Neuron Count"
+                                mt-2
+                                tooltip="Number of neuron particles. Each neuron is an actuator for a single color = index % species. It is driven by the urges near it and then pulls or pushes only that one color." :min="0" :max="500" :step="1"
+                            />
 
-                            <div flex items-center justify-between gap-2 mt-2>
-                                <p class="w-1/3 text-2sm shrink-0">
+                            <div mt-2 flex items-center justify-between gap-2>
+                                <p class="w-1/3 shrink-0 text-2sm">
                                     Urge Goal Family
                                     <TooltipInfo container="#mainContainer" tooltip="The family of goals each urge is drawn from. Within a family the exact goal (attract vs repel, density vs fraction) still varies per urge by its index." />
                                 </p>
-                                <SelectInput name="urge-metric-mode-cpu" class="max-w-full!"
-                                             v-model="particleLife.metricMode"
-                                             :options="[
-                                                 { id: 0, name: 'Mixed Density', category: 'Goal' },
-                                                 { id: 1, name: 'Mixed Fraction', category: 'Goal' },
-                                                 { id: 2, name: 'Density / Fraction', category: 'Goal' },
-                                                 { id: 3, name: 'Cycle All', category: 'Goal' },
-                                             ]">
-                                </SelectInput>
+                                <SelectInput
+                                    v-model="particleLife.metricMode" name="urge-metric-mode-cpu"
+                                    class="max-w-full!"
+                                    :options="[
+                                        { id: 0, name: 'Mixed Density', category: 'Goal' },
+                                        { id: 1, name: 'Mixed Fraction', category: 'Goal' },
+                                        { id: 2, name: 'Density / Fraction', category: 'Goal' },
+                                        { id: 3, name: 'Cycle All', category: 'Goal' },
+                                    ]"
+                                />
                             </div>
 
-                            <hr border-gray-500 my-2>
-                            <RangeInput input label="Urge Radius"
-                                        tooltip="Radius over which an urge measures its goal metric, and the range at which a neuron pushes/pulls its color."
-                                        :min="4" :max="160" :step="1" v-model="particleLife.urgeRadius">
-                            </RangeInput>
-                            <RangeInput input label="Neuron Radius" mt-2
-                                        tooltip="Radius (measured from the neuron) within which an urge drives it."
-                                        :min="4" :max="160" :step="1" v-model="particleLife.neuronRadius">
-                            </RangeInput>
-                            <RangeInput input label="Urge Field Strength" mt-2
-                                        tooltip="Strength of a neuron's field on its color, scaled by the drive it receives from nearby urges."
-                                        :min="0" :max="4" :step="0.01" v-model="particleLife.urgeForce">
-                            </RangeInput>
+                            <hr my-2 border-gray-500>
+                            <RangeInput
+                                v-model="particleLife.urgeRadius" input
+                                label="Urge Radius"
+                                tooltip="Radius over which an urge measures its goal metric, and the range at which a neuron pushes/pulls its color." :min="4" :max="160" :step="1"
+                            />
+                            <RangeInput
+                                v-model="particleLife.neuronRadius" input label="Neuron Radius"
+                                mt-2
+                                tooltip="Radius (measured from the neuron) within which an urge drives it." :min="4" :max="160" :step="1"
+                            />
+                            <RangeInput
+                                v-model="particleLife.urgeForce" input label="Urge Field Strength"
+                                mt-2
+                                tooltip="Strength of a neuron's field on its color, scaled by the drive it receives from nearby urges." :min="0" :max="4" :step="0.01"
+                            />
 
-                            <hr border-gray-500 my-2>
-                            <p underline text-gray-300 class="-mt-0.5" mb-1>Urge Learning :</p>
-                            <RangeInput input label="Control Gain"
-                                        tooltip="Learning rate: how strongly the change in the urge's metric pushes its attract/repel control."
-                                        :min="0" :max="1" :step="0.005" v-model="particleLife.controlGain">
-                            </RangeInput>
-                            <RangeInput input label="Control Max" mt-2
-                                        tooltip="Clamp on an urge's control magnitude (attract +, repel -)."
-                                        :min="0.1" :max="6" :step="0.1" v-model="particleLife.controlMax">
-                            </RangeInput>
+                            <hr my-2 border-gray-500>
+                            <p class="-mt-0.5" mb-1 text-gray-300 underline>
+                                Urge Learning :
+                            </p>
+                            <RangeInput
+                                v-model="particleLife.controlGain" input
+                                label="Control Gain"
+                                tooltip="Learning rate: how strongly the change in the urge's metric pushes its attract/repel control." :min="0" :max="1" :step="0.005"
+                            />
+                            <RangeInput
+                                v-model="particleLife.controlMax" input label="Control Max"
+                                mt-2
+                                tooltip="Clamp on an urge's control magnitude (attract +, repel -)." :min="0.1" :max="6" :step="0.1"
+                            />
 
-                            <hr border-gray-500 my-2>
-                            <RangeInput input label="Cohesion"
-                                        tooltip="How strongly urges and neurons cling to the body and avoid overlapping each other. 0 = they drift freely."
-                                        :min="0" :max="3" :step="0.01" v-model="particleLife.cohesion">
-                            </RangeInput>
+                            <hr my-2 border-gray-500>
+                            <RangeInput
+                                v-model="particleLife.cohesion" input
+                                label="Cohesion"
+                                tooltip="How strongly urges and neurons cling to the body and avoid overlapping each other. 0 = they drift freely." :min="0" :max="3" :step="0.01"
+                            />
 
                             <!-- Sense Neurons: sensors that perceive one target color (no actuation) -->
                             <template v-if="particleLife.isElectricalEnabled">
-                                <hr border-gray-500 my-2>
-                                <p underline text-gray-300 class="-mt-0.5" mb-1>Sense Neurons :</p>
-                                <RangeInput input label="Sense Count"
-                                            tooltip="Number of sense neuron particles (sensors). Each senses EXACTLY ONE color = index % species and stores its perception in the particle's signal (magnitude 0–1) and control (bearing, radians) fields. They never push or pull matter."
-                                            :min="0" :max="500" :step="1" v-model="particleLife.numSenseNeurons">
-                                </RangeInput>
-                                <RangeInput input label="Sense Radius" mt-2
-                                            tooltip="Perception radius (world units) shared by all three senses: sight cone range, smell/sound scan disk."
-                                            :min="4" :max="160" :step="1" v-model="particleLife.senseRadius">
-                                </RangeInput>
-                                <RangeInput input label="Sight Cone Half-Angle" mt-2
-                                            tooltip="Half-angle of the sight cone in the direction of motion. Sight only counts target-color matter inside this forward cone (magnitude only, no bearing)."
-                                            :min="1" :max="90" :step="1" v-model="particleLife.senseConeHalfAngleDeg">
-                                </RangeInput>
-                                <div flex items-center justify-between gap-2 mt-2>
-                                    <p class="w-1/3 text-2sm shrink-0">
+                                <hr my-2 border-gray-500>
+                                <p class="-mt-0.5" mb-1 text-gray-300 underline>
+                                    Sense Neurons :
+                                </p>
+                                <RangeInput
+                                    v-model="particleLife.numSenseNeurons" input
+                                    label="Sense Count"
+                                    tooltip="Number of sense neuron particles (sensors). Each senses EXACTLY ONE color = index % species and stores its perception in the particle's signal (magnitude 0–1) and control (bearing, radians) fields. They never push or pull matter." :min="0" :max="500" :step="1"
+                                />
+                                <RangeInput
+                                    v-model="particleLife.senseRadius" input label="Sense Radius"
+                                    mt-2
+                                    tooltip="Perception radius (world units) shared by all three senses: sight cone range, smell/sound scan disk." :min="4" :max="160" :step="1"
+                                />
+                                <RangeInput
+                                    v-model="particleLife.senseConeHalfAngleDeg" input label="Sight Cone Half-Angle"
+                                    mt-2
+                                    tooltip="Half-angle of the sight cone in the direction of motion. Sight only counts target-color matter inside this forward cone (magnitude only, no bearing)." :min="1" :max="90" :step="1"
+                                />
+                                <div mt-2 flex items-center justify-between gap-2>
+                                    <p class="w-1/3 shrink-0 text-2sm">
                                         Sense Mode
                                         <TooltipInfo container="#mainContainer" tooltip="Which sense each sense neuron uses. <br> <b>Cycle All</b>: senses cycle sight / smell / sound by index — a diverse population. <br> <b>All Sight</b>: forward cone, magnitude only (nothing behind is seen). <br> <b>All Smell</b>: bearing toward the NEAREST high-density cluster of the target color (near-biased weighting). <br> <b>All Sound</b>: bearing + loudness with NO far/near discrimination (uniform weight)." />
                                     </p>
-                                    <SelectInput name="sense-mode-cpu" class="max-w-full!"
-                                                 v-model="particleLife.senseMode"
-                                                 :options="[
-                                                     { id: 0, name: 'Cycle All', category: 'Sense' },
-                                                     { id: 1, name: 'All Sight', category: 'Sense' },
-                                                     { id: 2, name: 'All Smell', category: 'Sense' },
-                                                     { id: 3, name: 'All Sound', category: 'Sense' },
-                                                 ]">
-                                    </SelectInput>
+                                    <SelectInput
+                                        v-model="particleLife.senseMode" name="sense-mode-cpu"
+                                        class="max-w-full!"
+                                        :options="[
+                                            { id: 0, name: 'Cycle All', category: 'Sense' },
+                                            { id: 1, name: 'All Sight', category: 'Sense' },
+                                            { id: 2, name: 'All Smell', category: 'Sense' },
+                                            { id: 3, name: 'All Sound', category: 'Sense' },
+                                        ]"
+                                    />
                                 </div>
                             </template>
                         </Collapse>
 
-                        <Collapse label="Urge Inspector" icon="i-tabler-telescope text-sky-400" mt-2
-                                  tooltip="Read-only telemetry for the Quantum / Electrical layer. Live per-urge control & metric values sampled from CPU state.">
-                            <div flex items-center justify-between gap-2 mb-1>
+                        <Collapse
+                            label="Urge Inspector" icon="i-tabler-telescope text-sky-400" mt-2
+                            tooltip="Read-only telemetry for the Quantum / Electrical layer. Live per-urge control & metric values sampled from CPU state."
+                        >
+                            <div mb-1 flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Live readback
                                     <TooltipInfo container="#mainContainer" tooltip="Samples each urge's control & metric from the simulation arrays every 500 ms." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="urgeInspectorOpen" :disabled="!particleLife.isElectricalEnabled" />
+                                <ToggleSwitch v-model="urgeInspectorOpen" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled" />
                             </div>
 
-                            <UrgeInspector v-if="urgeInspectorOpen"
-                                           v-model:selected-id="selectedUrgeId"
-                                           :stats="urgeStats"
-                                           :params="electricalParams"
-                                           :control-max="particleLife.controlMax"
-                                           :target-colors="colorRgbStrings"
-                                           :num-types="particleLife.numColors"
-                                           :objective-label-for="objectiveLabelFor" />
+                            <UrgeInspector
+                                v-if="urgeInspectorOpen"
+                                v-model:selected-id="selectedUrgeId"
+                                :stats="urgeStats"
+                                :params="electricalParams"
+                                :control-max="particleLife.controlMax"
+                                :target-colors="colorRgbStrings"
+                                :num-types="particleLife.numColors"
+                                :objective-label-for="objectiveLabelFor"
+                            />
                         </Collapse>
 
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500" mt-2>
-                            <div flex items-center justify-between mb-2>
-                                <p underline text-gray-300 class="-mt-0.5">General Settings :</p>
-                                <ToggleSwitch inactive-label="Circle Shape" v-model="particleLife.isCircle"
-                                              tooltip="Toggle between circular and square particle shapes. <br> Circular particles may slightly impact performance compared to square ones.">
-                                </ToggleSwitch>
+                            <div mb-2 flex items-center justify-between>
+                                <p text-gray-300 underline class="-mt-0.5">
+                                    General Settings :
+                                </p>
+                                <ToggleSwitch
+                                    v-model="particleLife.isCircle" inactive-label="Circle Shape"
+                                    tooltip="Toggle between circular and square particle shapes. <br> Circular particles may slightly impact performance compared to square ones."
+                                />
                             </div>
 
-                            <RangeInput input label="Particle Size"
-                                        tooltip="Controls the overall size of the particles in the simulation, allowing you to make them larger or smaller depending on your preference. This setting does not impact performance."
-                                        :min="1" :max="20" :step="1" v-model="particleLife.particleSize" mt-2>
-                            </RangeInput>
-                            <hr border-gray-500 my-2>
-                            <p underline text-gray-300 mb-2 >3D Settings :</p>
+                            <RangeInput
+                                v-model="particleLife.particleSize" input
+                                label="Particle Size"
+                                tooltip="Controls the overall size of the particles in the simulation, allowing you to make them larger or smaller depending on your preference. This setting does not impact performance." :min="1" :max="20" :step="1" mt-2
+                            />
+                            <hr my-2 border-gray-500>
+                            <p mb-2 text-gray-300 underline>
+                                3D Settings :
+                            </p>
                             <div grid grid-cols-2 gap-4>
-                                <ToggleSwitch label="Depth Size" v-model="particleLife.hasDepthSize"
-                                              tooltip="Toggles the effect where particle size changes based on their position along the Z-axis, enhancing 3D depth perception.">
-                                </ToggleSwitch>
-                                <ToggleSwitch label="Depth Opacity" v-model="particleLife.hasDepthOpacity"
-                                              tooltip="Toggles the effect where particle opacity changes based on their position along the Z-axis, enhancing 3D depth perception.">
-                                </ToggleSwitch>
+                                <ToggleSwitch
+                                    v-model="particleLife.hasDepthSize" label="Depth Size"
+                                    tooltip="Toggles the effect where particle size changes based on their position along the Z-axis, enhancing 3D depth perception."
+                                />
+                                <ToggleSwitch
+                                    v-model="particleLife.hasDepthOpacity" label="Depth Opacity"
+                                    tooltip="Toggles the effect where particle opacity changes based on their position along the Z-axis, enhancing 3D depth perception."
+                                />
                             </div>
-                            <RangeInput input label="Min. Opacity"
-                                        tooltip="Set the minimum opacity for depth effect. <br> Lower values enhance perspective, creating a stronger depth effect when depth opacity is enabled."
-                                        :min="0" :max="Math.min(1, particleLife.maxOpacity)" :step="0.01" v-model="particleLife.minOpacity" mt-2>
-                            </RangeInput>
-                            <RangeInput input label="Max. Opacity"
-                                        tooltip="Set the maximum opacity for depth effects. <br> Higher values reduce perspective, creating a subtler depth effect when depth opacity is enabled."
-                                        :min="particleLife.minOpacity" :max="2" :step="0.01" v-model="particleLife.maxOpacity" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.minOpacity" input
+                                label="Min. Opacity"
+                                tooltip="Set the minimum opacity for depth effect. <br> Lower values enhance perspective, creating a stronger depth effect when depth opacity is enabled." :min="0" :max="Math.min(1, particleLife.maxOpacity)" :step="0.01" mt-2
+                            />
+                            <RangeInput
+                                v-model="particleLife.maxOpacity" input
+                                label="Max. Opacity"
+                                tooltip="Set the maximum opacity for depth effects. <br> Higher values reduce perspective, creating a subtler depth effect when depth opacity is enabled." :min="particleLife.minOpacity" :max="2" :step="0.01" mt-2
+                            />
                         </Collapse>
-                        <Collapse label="Debug Tools" icon="i-tabler-bug text-rose-500" mt-2
-                                  tooltip="Access debugging tools to visualize and refine the simulation. <br> Manage cell boundaries, adjust cell sizes, and control particle groupings to troubleshoot and optimize performance.">
+                        <Collapse
+                            label="Debug Tools" icon="i-tabler-bug text-rose-500" mt-2
+                            tooltip="Access debugging tools to visualize and refine the simulation. <br> Manage cell boundaries, adjust cell sizes, and control particle groupings to troubleshoot and optimize performance."
+                        >
                             <div flex items-center justify-between>
                                 <div flex>
-                                    <ToggleSwitch label="Show Cells" v-model="particleLife.hasCells" mr-4
-                                                  tooltip="Toggle the visibility of cells in the spatial partitioning system. <br> When enabled, cells will be displayed to help visualize particle grouping.">
-                                    </ToggleSwitch>
-                                    <ToggleSwitch label="Follow" v-model="particleLife.isCellFollow" :disabled="!particleLife.hasCells"
-                                                  tooltip="Toggle to display cells based on their center relative to all particles within the cell. <br> This helps track groups of particles as you adjust the cell group size.">
-                                    </ToggleSwitch>
+                                    <ToggleSwitch
+                                        v-model="particleLife.hasCells" label="Show Cells" mr-4
+                                        tooltip="Toggle the visibility of cells in the spatial partitioning system. <br> When enabled, cells will be displayed to help visualize particle grouping."
+                                    />
+                                    <ToggleSwitch
+                                        v-model="particleLife.isCellFollow" label="Follow" :disabled="!particleLife.hasCells"
+                                        tooltip="Toggle to display cells based on their center relative to all particles within the cell. <br> This helps track groups of particles as you adjust the cell group size."
+                                    />
                                 </div>
                                 <div flex>
-                                    <SelectButton :id="0" icon="i-tabler-square" v-model="particleLife.cellShape" mr-2 />
-                                    <SelectButton :id="1" icon="i-tabler-circle" v-model="particleLife.cellShape" />
+                                    <SelectButton :id="0" v-model="particleLife.cellShape" icon="i-tabler-square" mr-2 />
+                                    <SelectButton :id="1" v-model="particleLife.cellShape" icon="i-tabler-circle" />
                                 </div>
                             </div>
 
-                            <RangeInput input label="Cell Group Size"
-                                        tooltip="Set the minimum number of particles required for a cell to be displayed. <br> At 0, all cells are shown; higher values filter out smaller groups."
-                                        :min="0" :max="100" :step="1" v-model="particleLife.cellGroupSize" mt-2>
-                            </RangeInput>
-                            <RangeInput input label="Cell Size Factor"
-                                        tooltip="Adjust the size of the cells used in the algorithm. <br> At 1, cells match the current max radius; higher values increase cell size. Values below 1 may prevent interactions between neighboring particles."
-                                        :min="1" :max="2" :step="0.01" v-model="particleLife.cellSizeFactor" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.cellGroupSize" input
+                                label="Cell Group Size"
+                                tooltip="Set the minimum number of particles required for a cell to be displayed. <br> At 0, all cells are shown; higher values filter out smaller groups." :min="0" :max="100" :step="1" mt-2
+                            />
+                            <RangeInput
+                                v-model="particleLife.cellSizeFactor" input
+                                label="Cell Size Factor"
+                                tooltip="Adjust the size of the cells used in the algorithm. <br> At 1, cells match the current max radius; higher values increase cell size. Values below 1 may prevent interactions between neighboring particles." :min="1" :max="2" :step="0.01" mt-2
+                            />
                         </Collapse>
 
                         <Collapse label="Save and Share" icon="i-carbon-save text-yellow-500" mt-2>
                             <div flex>
-                                <button type="button" btn rounded-full p2 flex items-center text-sm bg="zinc-900 hover:#212121" @click="toggleCaptureMode('screenshot')">
-                                    <span class="i-tabler-photo" mr-1></span>
+                                <button type="button" btn flex items-center rounded-full p2 text-sm bg="zinc-900 hover:#212121" @click="toggleCaptureMode('screenshot')">
+                                    <span class="i-tabler-photo" mr-1 />
                                     Screenshot
                                 </button>
-                                <button type="button" btn rounded-full p2 flex items-center bg="zinc-900 hover:#212121" @click="toggleCaptureMode('GIF')">
-                                    <span class="i-tabler-gif" text-sm></span>
+                                <button type="button" btn flex items-center rounded-full p2 bg="zinc-900 hover:#212121" @click="toggleCaptureMode('GIF')">
+                                    <span class="i-tabler-gif" text-sm />
                                 </button>
                             </div>
                         </Collapse>
                     </div>
                     <div absolute bottom-2 right-0 z-100 class="-mr-px">
-                        <button rounded-l-lg border border-gray-400 flex items-center p-1 bg="slate-900/85 hover:slate-950/85" @click="particleLife.sidebarLeftOpen = false">
-                            <span i-tabler-chevron-left text-2xl></span>
+                        <button flex items-center border border-gray-400 rounded-l-lg p-1 bg="slate-900/85 hover:slate-950/85" @click="particleLife.sidebarLeftOpen = false">
+                            <span i-tabler-chevron-left text-2xl />
                         </button>
                     </div>
                 </div>
             </template>
         </SidebarLeft>
 
-        <canvas id="lifeCanvas" @contextmenu.prevent w-full h-full cursor-crosshair></canvas>
-        <SaveModal :store="particleLife"></SaveModal>
-        <ParticleLifeShareOptions v-if="particleLife.isShareOptionsOpen" ref="shareOptions" :getSelectedAreaImageData="getSelectedAreaImageData" />
+        <canvas id="lifeCanvas" h-full w-full cursor-crosshair @contextmenu.prevent />
+        <SaveModal :store="particleLife" />
+        <ParticleLifeShareOptions v-if="particleLife.isShareOptionsOpen" ref="shareOptions" :get-selected-area-image-data="getSelectedAreaImageData" />
 
-        <div absolute top-0 right-0 flex flex-col items-end text-right pointer-events-none>
-            <div flex items-center text-start text-xs pl-4 pr-1 bg-gray-800 rounded-bl-xl style="padding-bottom: 1px; opacity: 75%">
-                <div flex>Fps: <div ml-1 min-w-8>{{ fps }}</div></div>
-                <div flex ml-3>Cells: <div ml-1 min-w-8>{{ cellCount }}</div></div>
-                <div flex ml-3>Process: <div ml-1 min-w-7>{{ Math.round(executionTime) }}</div></div>
+        <div pointer-events-none absolute right-0 top-0 flex flex-col items-end text-right>
+            <div flex items-center rounded-bl-xl bg-gray-800 pl-4 pr-1 text-start text-xs style="padding-bottom: 1px; opacity: 75%">
+                <div flex>
+                    Fps: <div ml-1 min-w-8>
+                        {{ fps }}
+                    </div>
+                </div>
+                <div ml-3 flex>
+                    Cells: <div ml-1 min-w-8>
+                        {{ cellCount }}
+                    </div>
+                </div>
+                <div ml-3 flex>
+                    Process: <div ml-1 min-w-7>
+                        {{ Math.round(executionTime) }}
+                    </div>
+                </div>
             </div>
-<!--            <Memory mr-1 />-->
-            <BrushSettings :store="particleLife" pointer-events-auto mt-2 mr-1 />
+            <!--            <Memory mr-1 /> -->
+            <BrushSettings :store="particleLife" pointer-events-auto mr-1 mt-2 />
 
             <div class="faded-hover-effect" pointer-events-auto mr-1>
-                <button type="button" title="Debugger" aria-label="Debugger" btn w-8 aspect-square rounded-full p1 flex items-center justify-center bg="#D62839 hover:#DC4151" mt-2
-                        @click="particleLife.hasCells = !particleLife.hasCells">
-                    <span text-sm :class="particleLife.hasCells ? 'i-tabler-bug-filled' : 'i-tabler-bug'"></span>
+                <button
+                    type="button" title="Debugger" aria-label="Debugger" bg="#D62839 hover:#DC4151" btn mt-2 aspect-square w-8 flex items-center justify-center rounded-full p1
+                    @click="particleLife.hasCells = !particleLife.hasCells"
+                >
+                    <span text-sm :class="particleLife.hasCells ? 'i-tabler-bug-filled' : 'i-tabler-bug'" />
                 </button>
-                <button type="button" title="Grid" aria-label="Grid" btn w-8 aspect-square rounded-full p1 flex items-center justify-center bg="#212121 hover:#333333" mt-2
-                        @click="particleLife.hasGrid = !particleLife.hasGrid" :disabled="!particleLife.isWallRepel && !particleLife.isWallWrap" class="disabled:cursor-not-allowed">
-                    <span text-sm :class="particleLife.hasGrid ? 'i-tabler-bread' : 'i-tabler-bread-off'"></span>
+                <button
+                    type="button" title="Grid" aria-label="Grid" bg="#212121 hover:#333333" btn mt-2 aspect-square w-8 flex items-center justify-center rounded-full p1
+                    :disabled="!particleLife.isWallRepel && !particleLife.isWallWrap" class="disabled:cursor-not-allowed" @click="particleLife.hasGrid = !particleLife.hasGrid"
+                >
+                    <span text-sm :class="particleLife.hasGrid ? 'i-tabler-bread' : 'i-tabler-bread-off'" />
                 </button>
             </div>
-
         </div>
-        <div fixed z-10 bottom-2 flex justify-center items-end class="faded-hover-effect left-1/2 transform -translate-x-1/2">
-            <button type="button" name="Randomize" aria-label="Randomize" btn p2 rounded-full mx-1 flex items-center bg="#094F5D hover:#0B5F6F" @click="regenerateLife">
-                <span i-game-icons-perspective-dice-six-faces-random></span>
+        <div fixed bottom-2 z-10 flex items-end justify-center class="faded-hover-effect left-1/2 transform -translate-x-1/2">
+            <button type="button" name="Randomize" aria-label="Randomize" btn mx-1 flex items-center rounded-full p2 bg="#094F5D hover:#0B5F6F" @click="regenerateLife">
+                <span i-game-icons-perspective-dice-six-faces-random />
             </button>
-            <button type="button" name="Toggle 3D" aria-label="Toggle 3D" btn p2 rounded-full mx-1 flex items-center bg="#E45C3A hover:#E76F51" @click="particleLife.is3D = !particleLife.is3D">
+            <button type="button" name="Toggle 3D" aria-label="Toggle 3D" btn mx-1 flex items-center rounded-full p2 bg="#E45C3A hover:#E76F51" @click="particleLife.is3D = !particleLife.is3D">
                 <span text-sm font-700 style="line-height: normal">{{ particleLife.is3D ? '2D' : '3D' }}</span>
             </button>
-            <button type="button" name="Zoom Out" aria-label="Zoom Out" btn p2 rounded-full mx-1 flex items-center bg="#212121 hover:#333333" @click="handleZoom(-1, lifeCanvas!.clientWidth / 2, lifeCanvas!.clientHeight / 2)">
-                <span i-tabler-zoom-out></span>
+            <button type="button" name="Zoom Out" aria-label="Zoom Out" btn mx-1 flex items-center rounded-full p2 bg="#212121 hover:#333333" @click="handleZoom(-1, lifeCanvas!.clientWidth / 2, lifeCanvas!.clientHeight / 2)">
+                <span i-tabler-zoom-out />
             </button>
-            <button type="button" name="Play/Pause" aria-label="Play/Pause" btn p3 rounded-full mx-1 flex items-center bg="#212121 hover:#333333" @click="particleLife.isRunning = !particleLife.isRunning">
-                <span text-xl :class="particleLife.isRunning ? 'i-tabler-player-pause-filled' : 'i-tabler-player-play-filled'"></span>
+            <button type="button" name="Play/Pause" aria-label="Play/Pause" btn mx-1 flex items-center rounded-full p3 bg="#212121 hover:#333333" @click="particleLife.isRunning = !particleLife.isRunning">
+                <span text-xl :class="particleLife.isRunning ? 'i-tabler-player-pause-filled' : 'i-tabler-player-play-filled'" />
             </button>
-            <button type="button" name="Step" aria-label="Step" btn p2 rounded-full mx-1 flex items-center bg="#212121 hover:#333333" :disabled="particleLife.isRunning" @click="step">
-                <span i-tabler-player-skip-forward-filled></span>
+            <button type="button" name="Step" aria-label="Step" btn mx-1 flex items-center rounded-full p2 bg="#212121 hover:#333333" :disabled="particleLife.isRunning" @click="step">
+                <span i-tabler-player-skip-forward-filled />
             </button>
-            <button type="button" name="Zoom In" aria-label="Zoom In" btn p2 rounded-full mx-1 flex items-center bg="#212121 hover:#333333" @click="handleZoom(1, lifeCanvas!.clientWidth / 2, lifeCanvas!.clientHeight / 2)">
-                <span i-tabler-zoom-in></span>
+            <button type="button" name="Zoom In" aria-label="Zoom In" btn mx-1 flex items-center rounded-full p2 bg="#212121 hover:#333333" @click="handleZoom(1, lifeCanvas!.clientWidth / 2, lifeCanvas!.clientHeight / 2)">
+                <span i-tabler-zoom-in />
             </button>
-            <button type="button" name="Toggle Fullscreen" aria-label="Toggle Fullscreen" btn p2 rounded-full mx-1 flex items-center bg="#212121 hover:#333333" @click="toggleFullscreen">
-                <span :class="isFullscreen ? 'i-tabler-maximize-off' : 'i-tabler-maximize'"></span>
+            <button type="button" name="Toggle Fullscreen" aria-label="Toggle Fullscreen" btn mx-1 flex items-center rounded-full p2 bg="#212121 hover:#333333" @click="toggleFullscreen">
+                <span :class="isFullscreen ? 'i-tabler-maximize-off' : 'i-tabler-maximize'" />
             </button>
         </div>
         <SocialLinks />
@@ -374,39 +447,38 @@
 </template>
 
 <script lang="ts">
-import { defineComponent } from "vue";
-import MatrixSettings from "~/components/particle-life/MatrixSettings.vue";
-import RulesMatrix from "~/components/particle-life/RulesMatrix.vue";
-import Memory from "~/components/particle-life/Memory.vue";
-import BrushSettings from "~/components/particle-life/BrushSettings.vue";
-import SidebarLeft from "~/components/SidebarLeft.vue";
-import PresetPanel from "~/components/particle-life/PresetPanel.vue";
-import SaveModal from "~/components/particle-life/SaveModal.vue";
-import { RULES_OPTIONS, generateRules } from '~/helpers/utils/rulesGenerator';
-import { PALETTE_OPTIONS, generateHSLColors } from "~/helpers/utils/colorsGenerator";
+import { defineComponent } from "vue"
+import BrushSettings from "~/components/particle-life/BrushSettings.vue"
+import MatrixSettings from "~/components/particle-life/MatrixSettings.vue"
+import PresetPanel from "~/components/particle-life/PresetPanel.vue"
+import RadiusVisualizer from "~/components/particle-life/RadiusVisualizer.vue"
+import SaveModal from "~/components/particle-life/SaveModal.vue"
+import UrgeInspector from "~/components/particle-life/UrgeInspector.vue"
+import SidebarLeft from "~/components/SidebarLeft.vue"
 import { hexToRgb, rgbFloatToHsl } from '~/helpers/utils/colorConversion'
-import RadiusVisualizer from "~/components/particle-life/RadiusVisualizer.vue";
-import UrgeInspector from "~/components/particle-life/UrgeInspector.vue";
+import { generateHSLColors, PALETTE_OPTIONS } from "~/helpers/utils/colorsGenerator"
+import { generateRules, RULES_OPTIONS } from '~/helpers/utils/rulesGenerator'
 
 export default defineComponent({
-    components: {RadiusVisualizer, SaveModal, PresetPanel, MatrixSettings, RulesMatrix, Memory, BrushSettings, SidebarLeft, UrgeInspector },
+    components: { RadiusVisualizer, SaveModal, PresetPanel, MatrixSettings, BrushSettings, SidebarLeft, UrgeInspector },
     setup() {
         const particleLife = useParticleLifeStore()
         const rulesOptions = RULES_OPTIONS
         const paletteOptions = PALETTE_OPTIONS
-        const shareOptions = ref( )
+        const shareOptions = ref()
         const mainContainer = ref<HTMLElement | null>(null)
         const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(mainContainer)
         const { success } = useToasts()
 
-        let customRulesMatrix: number[][] = [[0,1,0,1,0,0,0,0,0],[0,0,1,0,1,0,0,0,0],[1,0,0,0,0,1,0,0,0],[0,0,0,0,1,0,1,0,0],[0,0,0,0,0,1,0,1,0],[0,0,0,1,0,0,0,0,1],[1,0,0,0,0,0,0,1,0],[0,1,0,0,0,0,0,0,1],[0,0,1,0,0,0,1,0,0]]
+        // eslint-disable-next-line unused-imports/no-unused-vars
+        const customRulesMatrix: number[][] = [[0, 1, 0, 1, 0, 0, 0, 0, 0], [0, 0, 1, 0, 1, 0, 0, 0, 0], [1, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 1, 0, 1, 0, 0], [0, 0, 0, 0, 0, 1, 0, 1, 0], [0, 0, 0, 1, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 1, 0], [0, 1, 0, 0, 0, 0, 0, 0, 1], [0, 0, 1, 0, 0, 0, 1, 0, 0]]
 
         // Define canvas and context for drawing
         let lifeCanvas: HTMLCanvasElement | undefined
         let ctx: CanvasRenderingContext2D | undefined
         let canvasWidth: number = 0
         let canvasHeight: number = 0
-        let backgroundColor: string = 'black'
+        const backgroundColor: string = 'black'
         let animationFrameId: number | null = null
 
         // Flag to check if the GIF is being captured
@@ -425,7 +497,7 @@ export default defineComponent({
         let attractForce: number = particleLife.attractForce
         let repulseForce: number = -Math.abs(particleLife.repulseForce)
         let isMagnetActive: boolean = false
-        let wallRepelForce: number = particleLife.wallRepelForce // Repulse force for the walls (velocity will be multiplied by this value negative)
+        const wallRepelForce: number = particleLife.wallRepelForce // Repulse force for the walls (velocity will be multiplied by this value negative)
 
         // Define color list and rules matrix for the particles
         let currentColors: number[][] = [] // Current colors for the particles
@@ -464,7 +536,8 @@ export default defineComponent({
         let cellSizeFactor: number = particleLife.cellSizeFactor // Adjust the cell size based on the particle size
         let cellSize: number = 0 // Cell size based on the current max radius && cellSizeFactor
 
-        let currentMinRadius: number = 0 // Max value between all colors min radius
+        // eslint-disable-next-line unused-imports/no-unused-vars
+        const currentMinRadius: number = 0 // Max value between all colors min radius
         let currentMaxRadius: number = particleLife.currentMaxRadius // Max value between all colors max radius (for cell size)
 
         // Define grid properties
@@ -512,7 +585,8 @@ export default defineComponent({
             handleResize()
             setAlgorithms()
             initLife()
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
             animationFrameId = requestAnimationFrame(update) // Start the game loop
 
             onKeyStroke(' ', () => { // Space bar pressed
@@ -522,7 +596,8 @@ export default defineComponent({
             onKeyStroke('c', () => { // Space bar pressed
                 console.log('Key C pressed')
                 centerView()
-                if (!isRunning) simpleDrawParticles()
+                if (!isRunning)
+                    simpleDrawParticles()
             })
             useEventListener('resize', handleResize)
             useEventListener(lifeCanvas, ['mousedown'], (e) => {
@@ -530,8 +605,12 @@ export default defineComponent({
                 lastPointerY = e.y - lifeCanvas!.getBoundingClientRect().top
                 if (e.buttons > 0) {
                     if (e.buttons === 2 && isBrushActive) { // if secondary button is pressed (right click)
-                        if (brushType === 0) eraseWithBrush()
-                        else if (brushType === 1) drawWithBrush()
+                        if (brushType === 0) {
+                            eraseWithBrush()
+                        }
+                        else if (brushType === 1) {
+                            drawWithBrush()
+                        }
                         else if (brushType === 2 || brushType === 3) {
                             isMagnetActive = true
                         }
@@ -543,14 +622,17 @@ export default defineComponent({
                 pointerY = e.y - lifeCanvas!.getBoundingClientRect().top
 
                 if (e.buttons > 0) { // if mouse is pressed
-                    if (particleLife.isLockedPointer) return // Prevent canvas dragging if the pointer is locked
+                    if (particleLife.isLockedPointer)
+                        return // Prevent canvas dragging if the pointer is locked
                     isDragging = true
                     if (e.buttons === 1) { // if primary button is pressed (left click)
                         handleMove()
                     }
                     if (e.buttons === 2 && isBrushActive) { // if secondary button is pressed (right click)
-                        if (brushType === 0) eraseWithBrush()
-                        else if (brushType === 1) drawWithBrush()
+                        if (brushType === 0)
+                            eraseWithBrush()
+                        else if (brushType === 1)
+                            drawWithBrush()
                     }
                 }
                 else if (e.buttons === 0) {
@@ -576,7 +658,8 @@ export default defineComponent({
                 pointerX = e.touches[0].clientX - lifeCanvas!.getBoundingClientRect().left
                 pointerY = e.touches[0].clientY - lifeCanvas!.getBoundingClientRect().top
 
-                if (particleLife.isLockedPointer) return // Prevent canvas dragging if the pointer is locked
+                if (particleLife.isLockedPointer)
+                    return // Prevent canvas dragging if the pointer is locked
                 isDragging = true
                 handleMove()
             })
@@ -589,7 +672,8 @@ export default defineComponent({
             useEventListener(lifeCanvas, 'wheel', (e) => {
                 if (e.deltaY < 0) { // Zoom in
                     handleZoom(1, pointerX, pointerY)
-                } else { // Zoom out
+                }
+                else { // Zoom out
                     handleZoom(-1, pointerX, pointerY)
                 }
             })
@@ -599,7 +683,8 @@ export default defineComponent({
             canvasWidth = lifeCanvas!.width = lifeCanvas!.clientWidth
             canvasHeight = lifeCanvas!.height = lifeCanvas!.clientHeight
             setShapesProperties()
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         function handleMove() {
             if (isDragging) {
@@ -622,7 +707,8 @@ export default defineComponent({
             gridOffsetY -= (y / zoomFactor) * ((zoomFactor / oldZoomFactor) - 1)
 
             setShapesProperties()
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         // -------------------------------------------------------------------------------------------------------------
         function setAlgorithms() {
@@ -630,7 +716,8 @@ export default defineComponent({
                 processRules = particleLife.isWallWrap ? processRules3DWrapped : processRules3D
                 updateParticles = updateParticles3D
                 drawParticle = drawParticle3D
-            } else {
+            }
+            else {
                 processRules = particleLife.isWallWrap ? processRules2DWrapped : processRules2D
                 updateParticles = updateParticles2D
                 drawParticle = drawParticle2D
@@ -650,7 +737,8 @@ export default defineComponent({
             setMaxRadiusMatrix(makeRandomMaxRadiusMatrix())
         }
         function regenerateLife() {
-            if (animationFrameId) cancelAnimationFrame(animationFrameId)
+            if (animationFrameId)
+                cancelAnimationFrame(animationFrameId)
 
             initColors()
             initParticles()
@@ -658,7 +746,8 @@ export default defineComponent({
             setMinRadiusMatrix(makeRandomMinRadiusMatrix())
             setMaxRadiusMatrix(makeRandomMaxRadiusMatrix())
 
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
             animationFrameId = requestAnimationFrame(update) // Start the game loop
         }
         function initColors() {
@@ -684,11 +773,14 @@ export default defineComponent({
             for (let i = 0; i < totalParticleCount; ++i) {
                 if (i < matterCount) {
                     colors[i] = Math.floor(Math.random() * numColors)
-                } else if (particleLife.isElectricalEnabled && i < matterCount + numUrges) {
+                }
+                else if (particleLife.isElectricalEnabled && i < matterCount + numUrges) {
                     colors[i] = numColors + (i - matterCount) // urge type
-                } else if (particleLife.isElectricalEnabled && i < matterCount + numUrges + numNeurons) {
+                }
+                else if (particleLife.isElectricalEnabled && i < matterCount + numUrges + numNeurons) {
                     colors[i] = numColors + numUrges + (i - matterCount - numUrges) // motor neuron type
-                } else if (particleLife.isElectricalEnabled) {
+                }
+                else if (particleLife.isElectricalEnabled) {
                     colors[i] = numColors + numUrges + numNeurons + (i - matterCount - numUrges - numNeurons) // sense neuron type
                 }
                 const newPositions = getRandomPositions()
@@ -701,7 +793,7 @@ export default defineComponent({
 
         }
         function makeRandomMinRadiusMatrix() {
-            let matrix: number[][] = []
+            const matrix: number[][] = []
             const min: number = particleLife.minRadiusRange[0]
             const max: number = particleLife.minRadiusRange[1]
             const size = MATRIX_TYPES()
@@ -715,7 +807,7 @@ export default defineComponent({
             return matrix
         }
         function makeRandomMaxRadiusMatrix() {
-            let matrix: number[][] = []
+            const matrix: number[][] = []
             const min: number = particleLife.maxRadiusRange[0]
             const max: number = particleLife.maxRadiusRange[1]
             const size = MATRIX_TYPES()
@@ -731,24 +823,29 @@ export default defineComponent({
         const randomizeRadius = () => {
             setMinRadiusMatrix(makeRandomMinRadiusMatrix())
             setMaxRadiusMatrix(makeRandomMaxRadiusMatrix())
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         const randomizeRulesAndRadius = () => {
             setRulesMatrix(generateRules(0, numColors))
             setMinRadiusMatrix(makeRandomMinRadiusMatrix())
             setMaxRadiusMatrix(makeRandomMaxRadiusMatrix())
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         const updateColors = async (useRandomGenerator: boolean | Event = false) => {
             const shouldRandom = typeof useRandomGenerator === 'boolean' ? useRandomGenerator : false
-            if (shouldRandom) particleLife.selectedColorPaletteOption = paletteOptions[Math.floor(Math.random() * paletteOptions.length)].id
+            if (shouldRandom)
+                particleLife.selectedColorPaletteOption = paletteOptions[Math.floor(Math.random() * paletteOptions.length)].id
 
             setColors(generateHSLColors(particleLife.selectedColorPaletteOption, numColors))
-            if (!isRunning) simpleDrawParticles() // Redraw the particles if the game is not running
+            if (!isRunning)
+                simpleDrawParticles() // Redraw the particles if the game is not running
         }
         const updateRulesMatrix = async (useRandomGenerator: boolean | Event = false) => {
             const shouldRandom = typeof useRandomGenerator === 'boolean' ? useRandomGenerator : false
-            if (shouldRandom) particleLife.selectedRulesOption = rulesOptions[Math.floor(Math.random() * rulesOptions.length)].id
+            if (shouldRandom)
+                particleLife.selectedRulesOption = rulesOptions[Math.floor(Math.random() * rulesOptions.length)].id
 
             setRulesMatrix(generateRules(particleLife.selectedRulesOption, MATRIX_TYPES()))
         }
@@ -760,17 +857,18 @@ export default defineComponent({
                 return {
                     x: Math.random() * gridWidth,
                     y: Math.random() * gridHeight,
-                    z: Math.random() * (maxZDepthRandomParticle - minZDepthRandomParticle) + minZDepthRandomParticle
+                    z: Math.random() * (maxZDepthRandomParticle - minZDepthRandomParticle) + minZDepthRandomParticle,
                 }
-            } else { // Circle
+            }
+            else { // Circle
                 while (true) {
-                    const x = Math.random() * 2 * circleRadius - circleRadius;
-                    const y = Math.random() * 2 * circleRadius - circleRadius;
+                    const x = Math.random() * 2 * circleRadius - circleRadius
+                    const y = Math.random() * 2 * circleRadius - circleRadius
                     if (x * x + y * y <= circleRadius * circleRadius) {
                         return {
                             x: circleCenterX + x,
                             y: circleCenterY + y,
-                            z: Math.random() * (maxZDepthRandomParticle - minZDepthRandomParticle) + minZDepthRandomParticle
+                            z: Math.random() * (maxZDepthRandomParticle - minZDepthRandomParticle) + minZDepthRandomParticle,
                         }
                     }
                 }
@@ -779,21 +877,30 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         const update = () => {
             const startExecutionTime = performance.now()
-            if (isUpdateNumTypesPending) updateNumColors(NEW_NUM_TYPES)
+            if (isUpdateNumTypesPending)
+                updateNumColors(NEW_NUM_TYPES)
             if (isRunning) {
                 processRules()
                 updateParticles()
-                if (hasGrid) drawGrid()
-                if (hasCells) drawCells()
-                if (isCapturingGIF) captureFrame()
+                if (hasGrid)
+                    drawGrid()
+                if (hasCells)
+                    drawCells()
+                if (isCapturingGIF)
+                    captureFrame()
                 if (isMagnetActive) {
-                    if (brushType === 2) magnetWithBrush(repulseForce)
-                    else if (brushType === 3) magnetWithBrush(attractForce)
+                    if (brushType === 2)
+                        magnetWithBrush(repulseForce)
+                    else if (brushType === 3)
+                        magnetWithBrush(attractForce)
                 }
-            } else {
-                if (isDragging || isBrushActive) simpleDrawParticles()
             }
-            if (isBrushActive) drawBrush()
+            else {
+                if (isDragging || isBrushActive)
+                    simpleDrawParticles()
+            }
+            if (isBrushActive)
+                drawBrush()
 
             executionTime.value = performance.now() - startExecutionTime
             animationFrameId = requestAnimationFrame(update)
@@ -802,15 +909,18 @@ export default defineComponent({
             if (!isRunning) {
                 processRules()
                 updateParticles()
-                if (hasGrid) drawGrid()
-                if (hasCells) drawCells()
+                if (hasGrid)
+                    drawGrid()
+                if (hasCells)
+                    drawCells()
             }
         }
         function drawCells() {
             cells.forEach((particles, cell) => {
-                if (particles.length <= cellGroupSize) return // Detect groups of particles
+                if (particles.length <= cellGroupSize)
+                    return // Detect groups of particles
 
-                let centerX = 0, centerY = 0
+                let centerX = 0; let centerY = 0
                 if (isCellFollow) { // Follow the particles in the cell
                     for (let p = 0; p < particles.length; p++) {
                         centerX += positionX[particles[p]]
@@ -818,7 +928,8 @@ export default defineComponent({
                     }
                     centerX /= particles.length
                     centerY /= particles.length
-                } else { // Static cell position
+                }
+                else { // Static cell position
                     const [cellX, cellY] = cell.split(',').map(Number)
                     centerX = cellX * cellSize + cellSize / 2
                     centerY = cellY * cellSize + cellSize / 2
@@ -830,13 +941,15 @@ export default defineComponent({
                 const radius = cellSize / 2 * zoomFactor
 
                 // Skip if the cell is outside the canvas
-                if (drawX < -radius || drawX > canvasWidth + radius || drawY < -radius || drawY > canvasHeight + radius) return
+                if (drawX < -radius || drawX > canvasWidth + radius || drawY < -radius || drawY > canvasHeight + radius)
+                    return
 
                 // Draw the cell
                 ctx!.beginPath()
                 if (cellShape === 0) { // Rectangle
                     ctx!.roundRect(drawX - radius, drawY - radius, radius * 2, radius * 2, radius / 4)
-                } else { // Circle
+                }
+                else { // Circle
                     ctx!.arc(drawX, drawY, radius, 0, Math.PI * 2)
                 }
                 ctx!.strokeStyle = `hsl(${0}, 100%, 50%, 0.55)`
@@ -846,7 +959,8 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // Get display color for a particle type code (handles matter + electrical types)
         const getColorForType = (typeCode: number): number[] => {
-            if (typeCode < numColors) return currentColors[typeCode]
+            if (typeCode < numColors)
+                return currentColors[typeCode]
             if (typeCode < numColors + numUrges) {
                 // Urge: cyan -> white ramp
                 const k = typeCode - numColors
@@ -868,17 +982,20 @@ export default defineComponent({
         let drawParticle: (x: number, y: number, z: number, color: number[], size: number) => void
         function drawParticle2D(x: number, y: number, z: number, color: number[], size: number) {
             const newSize = size * zoomFactor // Adjust the size based on the depth factor and zoom factor
-            if (newSize <= 0) return // Skip if the particle is too small
+            if (newSize <= 0)
+                return // Skip if the particle is too small
             const drawX = (x + gridOffsetX) * zoomFactor // Adjust the position X based on the grid offset and zoom factor
             const drawY = (y + gridOffsetY) * zoomFactor // Adjust the position Y based on the grid offset and zoom factor
-            if (drawX < 0 || drawX > canvasWidth || drawY < 0 || drawY > canvasHeight) return // Skip if the particle is outside the canvas
+            if (drawX < 0 || drawX > canvasWidth || drawY < 0 || drawY > canvasHeight)
+                return // Skip if the particle is outside the canvas
 
             ctx!.fillStyle = `hsl(${color[0]}, ${color[1]}%, ${color[2]}%, 1)`
 
             // Handle particle drawing
             if (newSize < 2 || !isCircle) { // Draw squares for small particles
                 ctx!.fillRect(drawX - newSize / 2, drawY - newSize / 2, newSize, newSize)
-            } else { // Draw circles for larger particles
+            }
+            else { // Draw circles for larger particles
                 ctx!.beginPath()
                 ctx!.arc(drawX, drawY, newSize / 2, 0, Math.PI * 2)
                 ctx!.fill()
@@ -890,17 +1007,20 @@ export default defineComponent({
                 depthFactor = 1 - z / gridHeight / zoomFactor // Adjust this factor to control the depth effect
             }
             const newSize = size * depthFactor * zoomFactor // Adjust the size based on the depth factor and zoom factor
-            if (newSize <= 0) return // Skip if the particle is too small
+            if (newSize <= 0)
+                return // Skip if the particle is too small
             const drawX = (x + gridOffsetX) * zoomFactor // Adjust the position X based on the grid offset and zoom factor
             const drawY = (y + gridOffsetY) * zoomFactor // Adjust the position Y based on the grid offset and zoom factor
-            if (drawX < 0 || drawX > canvasWidth || drawY < 0 || drawY > canvasHeight) return // Skip if the particle is outside the canvas
+            if (drawX < 0 || drawX > canvasWidth || drawY < 0 || drawY > canvasHeight)
+                return // Skip if the particle is outside the canvas
 
             // Handle depth opacity effect
             if (hasDepthOpacity) {
                 // Opacity depth effect
                 const opacity = depthLimit !== 0 ? maxOpacity - (z / depthLimit) * (maxOpacity - minOpacity) : 1
                 ctx!.fillStyle = `hsl(${color[0]}, ${color[1]}%, ${color[2]}%, ${opacity})`
-            } else {
+            }
+            else {
                 // No opacity depth effect
                 ctx!.fillStyle = `hsl(${color[0]}, ${color[1]}%, ${color[2]}%, 1)`
             }
@@ -908,7 +1028,8 @@ export default defineComponent({
             // Handle particle drawing
             if (newSize < 2 || !isCircle) { // Draw squares for small particles
                 ctx!.fillRect(drawX - newSize / 2, drawY - newSize / 2, newSize, newSize)
-            } else { // Draw circles for larger particles
+            }
+            else { // Draw circles for larger particles
                 ctx!.beginPath()
                 ctx!.arc(drawX, drawY, newSize / 2, 0, Math.PI * 2)
                 ctx!.fill()
@@ -918,11 +1039,13 @@ export default defineComponent({
         function getForce(ruleFactor: number, colorMinRadius: number, colorMaxRadius: number, distance: number) {
             if (distance < colorMinRadius) {
                 return (repel / colorMinRadius) * distance - repel
-            } else if (distance > colorMaxRadius) {
+            }
+            else if (distance > colorMaxRadius) {
                 return 0
-            } else {
-                let mid = (colorMinRadius + colorMaxRadius) / 2
-                let slope = ruleFactor / (mid - colorMinRadius)
+            }
+            else {
+                const mid = (colorMinRadius + colorMaxRadius) / 2
+                const slope = ruleFactor / (mid - colorMinRadius)
                 return -(slope * Math.abs(distance - mid)) + ruleFactor
             }
         }
@@ -932,11 +1055,16 @@ export default defineComponent({
         // Particle category: 0 matter, 1 urge, 2 motor neuron, 4 sense neuron, 3 dormant sentinel.
         // Mirrors the GPU shaders' cat(): layout [matter][urges][motor neurons][sense neurons][dormant].
         const particleCat = (typeCode: number): number => {
-            if (typeCode < numColors) return 0
-            if (typeCode < numColors + numUrges) return 1
-            if (typeCode < numColors + numUrges + numNeurons) return 2 // motor neuron
-            if (typeCode < numColors + numUrges + numNeurons + numSenseNeurons) return 4 // sense neuron
-            if (typeCode === numColors + numUrges + numNeurons + numSenseNeurons) return 3 // dormant sentinel
+            if (typeCode < numColors)
+                return 0
+            if (typeCode < numColors + numUrges)
+                return 1
+            if (typeCode < numColors + numUrges + numNeurons)
+                return 2 // motor neuron
+            if (typeCode < numColors + numUrges + numNeurons + numSenseNeurons)
+                return 4 // sense neuron
+            if (typeCode === numColors + numUrges + numNeurons + numSenseNeurons)
+                return 3 // dormant sentinel
             return 2 // fallback: stale type -> motor neuron (same as GPU)
         }
 
@@ -945,10 +1073,10 @@ export default defineComponent({
             let mode: number
             const globalMode = ((particleLife.metricMode % 4) + 4) % 4
             switch (globalMode) {
-                case 0: mode = k % 3; break   // cycle all three
-                case 1: mode = 0; break       // all maximize
-                case 2: mode = 1; break       // all minimize
-                default: mode = 2; break      // all homeostasis
+                case 0: mode = k % 3; break // cycle all three
+                case 1: mode = 0; break // all maximize
+                case 2: mode = 1; break // all minimize
+                default: mode = 2; break // all homeostasis
             }
             let targetValue = 1.0
             if (mode === 2) {
@@ -1015,9 +1143,9 @@ export default defineComponent({
                     const typeA = colors[indexA]
                     const catA = particleCat(typeA)
 
-                    let velocityXSum = 0, velocityYSum = 0
+                    let velocityXSum = 0; let velocityYSum = 0
                     // Electrical accumulators
-                    let metricCount = 0, drive = 0, cohesionFX = 0, cohesionFY = 0
+                    let metricCount = 0; let drive = 0; let cohesionFX = 0; let cohesionFY = 0
 
                     const isMatterA = catA === 0
                     const isUrgeA = catA === 1
@@ -1050,7 +1178,7 @@ export default defineComponent({
                     let seenCount = 0
                     const SENSE_SECTORS = 12
                     const sectorScores: Float32Array | null = isSenseA ? new Float32Array(SENSE_SECTORS) : null // smell: nearness-weighted score per sector
-                    let soundVecX = 0, soundVecY = 0, soundCount = 0 // sound: uniform-weight vector sum + count
+                    let soundVecX = 0; let soundVecY = 0; let soundCount = 0 // sound: uniform-weight vector sum + count
 
                     // Process each neighboring cell
                     for (let k = 0; k < neighbors.length; k++) {
@@ -1060,7 +1188,8 @@ export default defineComponent({
                         // Process each particle in the neighboring cell
                         for (let l = 0; l < neighborParticles!.length; l++) {
                             const indexB = neighborParticles![l]
-                            if (indexA === indexB) continue
+                            if (indexA === indexB)
+                                continue
 
                             const typeB = colors[indexB]
                             const catB = particleCat(typeB)
@@ -1068,7 +1197,8 @@ export default defineComponent({
                             const dx = positionX[indexB] - posXA
                             const dy = positionY[indexB] - posYA
                             const distSq = dx * dx + dy * dy
-                            if (distSq < 0.0001) continue
+                            if (distSq < 0.0001)
+                                continue
                             const distance = Math.sqrt(distSq)
                             const dirX = dx / distance
                             const dirY = dy / distance
@@ -1083,7 +1213,8 @@ export default defineComponent({
                                 }
                             }
 
-                            if (!eOn) continue // no electrical layer
+                            if (!eOn)
+                                continue // no electrical layer
 
                             // ---- 2) Electrical <-> matter via the main interaction matrix ----
                             // The shared row gives the force ON the special particle from nearby matter.
@@ -1101,7 +1232,8 @@ export default defineComponent({
 
                             // ---- 3) Urge gathering metric for its goal ----
                             if (isUrgeA && catB === 0 && distance < eR) {
-                                if (typeB === urgeTarget) metricCount++
+                                if (typeB === urgeTarget)
+                                    metricCount++
                             }
 
                             // ---- 4) Neuron driven by nearby urges ----
@@ -1126,13 +1258,16 @@ export default defineComponent({
                             if (isSenseA && catB === 0 && typeB === senseTarget && distance < sR) {
                                 if (senseModeLocal === 0) {
                                     // SIGHT: "seen" iff inside the forward cone of motion
-                                    if (hasHeading && (dirX * headingX + dirY * headingY) > cosHalfAngle) seenCount++
-                                } else if (senseModeLocal === 1) {
+                                    if (hasHeading && (dirX * headingX + dirY * headingY) > cosHalfAngle)
+                                        seenCount++
+                                }
+                                else if (senseModeLocal === 1) {
                                     // SMELL: closer particles weigh more -> nearest dense region wins
-                                    let ang = Math.atan2(dirY, dirX) + Math.PI // [0, 2*PI)
+                                    const ang = Math.atan2(dirY, dirX) + Math.PI // [0, 2*PI)
                                     const sec = Math.floor(ang / ((2 * Math.PI) / SENSE_SECTORS)) % SENSE_SECTORS
                                     sectorScores![sec] += (sR - distance) / sR
-                                } else {
+                                }
+                                else {
                                     // SOUND: uniform weight 1.0 (range-agnostic)
                                     soundVecX += dirX
                                     soundVecY += dirY
@@ -1146,11 +1281,13 @@ export default defineComponent({
                                     const fall = Math.max(0, 1 - distance / eR)
                                     cohesionFX += dirX * (fall * cohesionVal)
                                     cohesionFY += dirY * (fall * cohesionVal)
-                                } else if (catB === 1 || catB === 2 || catB === 4) {
+                                }
+                                else if (catB === 1 || catB === 2 || catB === 4) {
                                     if (distance < 8) {
                                         cohesionFX -= dirX * (cohesionVal * 2)
                                         cohesionFY -= dirY * (cohesionVal * 2)
-                                    } else if (distance < eR * 0.6) {
+                                    }
+                                    else if (distance < eR * 0.6) {
                                         cohesionFX += dirX * (cohesionVal * 0.3)
                                         cohesionFY += dirY * (cohesionVal * 0.3)
                                     }
@@ -1163,7 +1300,8 @@ export default defineComponent({
                     if (isMatterA) {
                         velocityX[indexA] += velocityXSum * forceFactor
                         velocityY[indexA] += velocityYSum * forceFactor
-                    } else {
+                    }
+                    else {
                         velocityX[indexA] += (velocityXSum + cohesionFX) * forceFactor
                         velocityY[indexA] += (velocityYSum + cohesionFY) * forceFactor
 
@@ -1181,26 +1319,32 @@ export default defineComponent({
                             if (goal.mode === 0) {
                                 // MAXIMIZE density
                                 newControl = control[indexA] + particleLife.controlGain * dM
-                            } else if (goal.mode === 1) {
+                            }
+                            else if (goal.mode === 1) {
                                 // MINIMIZE density
                                 newControl = control[indexA] - particleLife.controlGain * dM
-                            } else {
+                            }
+                            else {
                                 // HOMEOSTASIS: proportional controller toward target
                                 const error = goal.targetValue - M
                                 const targetCtrl = Math.max(-1, Math.min(1, error)) * particleLife.controlMax
                                 newControl = control[indexA] + (targetCtrl - control[indexA]) * particleLife.controlGain
                             }
                             const cMax = particleLife.controlMax
-                            if (newControl > cMax) newControl = cMax
-                            if (newControl < -cMax) newControl = -cMax
+                            if (newControl > cMax)
+                                newControl = cMax
+                            if (newControl < -cMax)
+                                newControl = -cMax
                             control[indexA] = newControl
                             signal[indexA] = signal[indexA] * 0.85 + M * 0.15 // smooth
-                        } else if (isNeuronA) {
+                        }
+                        else if (isNeuronA) {
                             // Neuron: activity = magnitude of drive
                             const firing = Math.abs(drive)
                             signal[indexA] = signal[indexA] * 0.8 + firing * 0.2
                             control[indexA] = 0
-                        } else if (isSenseA) {
+                        }
+                        else if (isSenseA) {
                             // Sense neuron: store the perception in signal (magnitude [0,1]) and control
                             // (bearing radians). Mirrors the GPU shaders' normalization exactly.
                             const numTypesF = numColors
@@ -1215,7 +1359,8 @@ export default defineComponent({
                                 const expectedInCone = expectedCount * (particleLife.senseConeHalfAngleDeg * Math.PI / 180) / Math.PI // (2*theta)/(2*PI)
                                 newSignal = Math.min(1, Math.max(0, seenCount / Math.max(expectedInCone, 0.001)))
                                 newControl = 0
-                            } else if (senseModeLocal === 1) {
+                            }
+                            else if (senseModeLocal === 1) {
                                 // SMELL: strongest sector wins -> bearing to the nearest high-density cluster.
                                 let bestScore = 0
                                 let bestSector = 0
@@ -1226,7 +1371,8 @@ export default defineComponent({
                                     newSignal = Math.min(1, Math.max(0, bestScore / Math.max(expectedCount / SENSE_SECTORS, 0.001)))
                                     newControl = (bestSector + 0.5) * (2 * Math.PI) / SENSE_SECTORS - Math.PI // sector center in [-PI, PI]
                                 }
-                            } else {
+                            }
+                            else {
                                 // SOUND: bearing toward the centroid of sources + total loudness.
                                 if (soundCount > 0) {
                                     newSignal = Math.min(1, Math.max(0, soundCount / Math.max(expectedCount, 0.001)))
@@ -1271,10 +1417,14 @@ export default defineComponent({
                         let neighborX = cellX + offsetX
                         let neighborY = cellY + offsetY
 
-                        if (neighborX < 0) neighborX = lastCellsX
-                        else if (neighborX > lastCellsX) neighborX = 0
-                        if (neighborY < 0) neighborY = lastCellsY
-                        else if (neighborY > lastCellsY) neighborY = 0
+                        if (neighborX < 0)
+                            neighborX = lastCellsX
+                        else if (neighborX > lastCellsX)
+                            neighborX = 0
+                        if (neighborY < 0)
+                            neighborY = lastCellsY
+                        else if (neighborY > lastCellsY)
+                            neighborY = 0
 
                         const neighborKey = `${neighborX},${neighborY}`
                         if (cells.has(neighborKey)) {
@@ -1308,8 +1458,8 @@ export default defineComponent({
                     const typeA = colors[indexA]
                     const catA = particleCat(typeA)
 
-                    let velocityXSum = 0, velocityYSum = 0
-                    let metricCount = 0, drive = 0, cohesionFX = 0, cohesionFY = 0
+                    let velocityXSum = 0; let velocityYSum = 0
+                    let metricCount = 0; let drive = 0; let cohesionFX = 0; let cohesionFY = 0
 
                     const isMatterA = catA === 0
                     const isUrgeA = catA === 1
@@ -1342,7 +1492,7 @@ export default defineComponent({
                     let seenCount = 0
                     const SENSE_SECTORS = 12
                     const sectorScores: Float32Array | null = isSenseA ? new Float32Array(SENSE_SECTORS) : null // smell: nearness-weighted score per sector
-                    let soundVecX = 0, soundVecY = 0, soundCount = 0 // sound: uniform-weight vector sum + count
+                    let soundVecX = 0; let soundVecY = 0; let soundCount = 0 // sound: uniform-weight vector sum + count
 
                     // Process each neighboring cell
                     for (let k = 0; k < neighbors.length; k++) {
@@ -1352,7 +1502,8 @@ export default defineComponent({
                         // Process each particle in the neighboring cell
                         for (let l = 0; l < neighborParticles!.length; l++) {
                             const indexB = neighborParticles![l]
-                            if (indexA === indexB) continue
+                            if (indexA === indexB)
+                                continue
 
                             const typeB = colors[indexB]
                             const catB = particleCat(typeB)
@@ -1361,13 +1512,18 @@ export default defineComponent({
                             let dy = positionY[indexB] - posYA
 
                             // Apply wrapping
-                            if (dx > halfW) dx -= gridWidth
-                            else if (dx < -halfW) dx += gridWidth
-                            if (dy > halfH) dy -= gridHeight
-                            else if (dy < -halfH) dy += gridHeight
+                            if (dx > halfW)
+                                dx -= gridWidth
+                            else if (dx < -halfW)
+                                dx += gridWidth
+                            if (dy > halfH)
+                                dy -= gridHeight
+                            else if (dy < -halfH)
+                                dy += gridHeight
 
                             const distSq = dx * dx + dy * dy
-                            if (distSq < 0.0001) continue
+                            if (distSq < 0.0001)
+                                continue
                             const distance = Math.sqrt(distSq)
                             const dirX = dx / distance
                             const dirY = dy / distance
@@ -1382,7 +1538,8 @@ export default defineComponent({
                                 }
                             }
 
-                            if (!eOn) continue
+                            if (!eOn)
+                                continue
 
                             // ---- 2) Electrical <-> matter via the main interaction matrix ----
                             // Sense neurons do NOT actuate matter but get matrix-driven drift through
@@ -1399,7 +1556,8 @@ export default defineComponent({
 
                             // ---- 3) Urge gathering metric for its goal ----
                             if (isUrgeA && catB === 0 && distance < eR) {
-                                if (typeB === urgeTarget) metricCount++
+                                if (typeB === urgeTarget)
+                                    metricCount++
                             }
 
                             // ---- 4) Neuron driven by nearby urges ----
@@ -1424,13 +1582,16 @@ export default defineComponent({
                             if (isSenseA && catB === 0 && typeB === senseTarget && distance < sR) {
                                 if (senseModeLocal === 0) {
                                     // SIGHT: "seen" iff inside the forward cone of motion
-                                    if (hasHeading && (dirX * headingX + dirY * headingY) > cosHalfAngle) seenCount++
-                                } else if (senseModeLocal === 1) {
+                                    if (hasHeading && (dirX * headingX + dirY * headingY) > cosHalfAngle)
+                                        seenCount++
+                                }
+                                else if (senseModeLocal === 1) {
                                     // SMELL: closer particles weigh more -> nearest dense region wins
-                                    let ang = Math.atan2(dirY, dirX) + Math.PI // [0, 2*PI)
+                                    const ang = Math.atan2(dirY, dirX) + Math.PI // [0, 2*PI)
                                     const sec = Math.floor(ang / ((2 * Math.PI) / SENSE_SECTORS)) % SENSE_SECTORS
                                     sectorScores![sec] += (sR - distance) / sR
-                                } else {
+                                }
+                                else {
                                     // SOUND: uniform weight 1.0 (range-agnostic)
                                     soundVecX += dirX
                                     soundVecY += dirY
@@ -1444,11 +1605,13 @@ export default defineComponent({
                                     const fall = Math.max(0, 1 - distance / eR)
                                     cohesionFX += dirX * (fall * cohesionVal)
                                     cohesionFY += dirY * (fall * cohesionVal)
-                                } else if (catB === 1 || catB === 2 || catB === 4) {
+                                }
+                                else if (catB === 1 || catB === 2 || catB === 4) {
                                     if (distance < 8) {
                                         cohesionFX -= dirX * (cohesionVal * 2)
                                         cohesionFY -= dirY * (cohesionVal * 2)
-                                    } else if (distance < eR * 0.6) {
+                                    }
+                                    else if (distance < eR * 0.6) {
                                         cohesionFX += dirX * (cohesionVal * 0.3)
                                         cohesionFY += dirY * (cohesionVal * 0.3)
                                     }
@@ -1461,7 +1624,8 @@ export default defineComponent({
                     if (isMatterA) {
                         velocityX[indexA] += velocityXSum * forceFactor
                         velocityY[indexA] += velocityYSum * forceFactor
-                    } else {
+                    }
+                    else {
                         velocityX[indexA] += (velocityXSum + cohesionFX) * forceFactor
                         velocityY[indexA] += (velocityYSum + cohesionFY) * forceFactor
 
@@ -1478,25 +1642,31 @@ export default defineComponent({
                             if (goal.mode === 0) {
                                 // MAXIMIZE density
                                 newControl = control[indexA] + particleLife.controlGain * dM
-                            } else if (goal.mode === 1) {
+                            }
+                            else if (goal.mode === 1) {
                                 // MINIMIZE density
                                 newControl = control[indexA] - particleLife.controlGain * dM
-                            } else {
+                            }
+                            else {
                                 // HOMEOSTASIS: proportional controller toward target
                                 const error = goal.targetValue - M
                                 const targetCtrl = Math.max(-1, Math.min(1, error)) * particleLife.controlMax
                                 newControl = control[indexA] + (targetCtrl - control[indexA]) * particleLife.controlGain
                             }
                             const cMax = particleLife.controlMax
-                            if (newControl > cMax) newControl = cMax
-                            if (newControl < -cMax) newControl = -cMax
+                            if (newControl > cMax)
+                                newControl = cMax
+                            if (newControl < -cMax)
+                                newControl = -cMax
                             control[indexA] = newControl
                             signal[indexA] = signal[indexA] * 0.85 + M * 0.15
-                        } else if (isNeuronA) {
+                        }
+                        else if (isNeuronA) {
                             const firing = Math.abs(drive)
                             signal[indexA] = signal[indexA] * 0.8 + firing * 0.2
                             control[indexA] = 0
-                        } else if (isSenseA) {
+                        }
+                        else if (isSenseA) {
                             // Sense neuron: store the perception in signal (magnitude [0,1]) and control
                             // (bearing radians). Mirrors the GPU shaders' normalization exactly.
                             const numTypesF = numColors
@@ -1511,7 +1681,8 @@ export default defineComponent({
                                 const expectedInCone = expectedCount * (particleLife.senseConeHalfAngleDeg * Math.PI / 180) / Math.PI // (2*theta)/(2*PI)
                                 newSignal = Math.min(1, Math.max(0, seenCount / Math.max(expectedInCone, 0.001)))
                                 newControl = 0
-                            } else if (senseModeLocal === 1) {
+                            }
+                            else if (senseModeLocal === 1) {
                                 // SMELL: strongest sector wins -> bearing to the nearest high-density cluster.
                                 let bestScore = 0
                                 let bestSector = 0
@@ -1522,7 +1693,8 @@ export default defineComponent({
                                     newSignal = Math.min(1, Math.max(0, bestScore / Math.max(expectedCount / SENSE_SECTORS, 0.001)))
                                     newControl = (bestSector + 0.5) * (2 * Math.PI) / SENSE_SECTORS - Math.PI // sector center in [-PI, PI]
                                 }
-                            } else {
+                            }
+                            else {
                                 // SOUND: bearing toward the centroid of sources + total loudness.
                                 if (soundCount > 0) {
                                     newSignal = Math.min(1, Math.max(0, soundCount / Math.max(expectedCount, 0.001)))
@@ -1586,7 +1758,7 @@ export default defineComponent({
                     const posYA = positionY[indexA]
                     const posZA = positionZ[indexA]
 
-                    let velocityXSum = 0, velocityYSum = 0, velocityZSum = 0
+                    let velocityXSum = 0; let velocityYSum = 0; let velocityZSum = 0
 
                     // Process each neighboring cell
                     for (let k = 0; k < neighbors.length; k++) {
@@ -1596,7 +1768,8 @@ export default defineComponent({
                         // Process each particle in the neighboring cell
                         for (let l = 0; l < neighborParticles!.length; l++) {
                             const indexB = neighborParticles![l]
-                            if (indexA === indexB) continue
+                            if (indexA === indexB)
+                                continue
 
                             const dx = positionX[indexB] - posXA
                             const dy = positionY[indexB] - posYA
@@ -1606,7 +1779,8 @@ export default defineComponent({
                             const colorA = colors[indexA]
                             const colorB = colors[indexB]
                             // Electrical particles (urges/neurons) are 2D-only; skip them in the 3D force pass
-                            if (colorA >= numColors || colorB >= numColors) continue
+                            if (colorA >= numColors || colorB >= numColors)
+                                continue
                             const colorMaxRadius = maxRadiusMatrix[colorA][colorB]
 
                             // Apply force if the particles are close enough
@@ -1657,10 +1831,14 @@ export default defineComponent({
                         let neighborX = cellX + offsetX
                         let neighborY = cellY + offsetY
 
-                        if (neighborX < 0) neighborX = lastCellsX
-                        else if (neighborX > lastCellsX) neighborX = 0
-                        if (neighborY < 0) neighborY = lastCellsY
-                        else if (neighborY > lastCellsY) neighborY = 0
+                        if (neighborX < 0)
+                            neighborX = lastCellsX
+                        else if (neighborX > lastCellsX)
+                            neighborX = 0
+                        if (neighborY < 0)
+                            neighborY = lastCellsY
+                        else if (neighborY > lastCellsY)
+                            neighborY = 0
 
                         const neighborKey = `${neighborX},${neighborY}`
                         if (cells.has(neighborKey)) {
@@ -1684,7 +1862,7 @@ export default defineComponent({
                     const posYA = positionY[indexA]
                     const posZA = positionZ[indexA]
 
-                    let velocityXSum = 0, velocityYSum = 0, velocityZSum = 0
+                    let velocityXSum = 0; let velocityYSum = 0; let velocityZSum = 0
 
                     // Process each neighboring cell
                     for (let k = 0; k < neighbors.length; k++) {
@@ -1694,25 +1872,31 @@ export default defineComponent({
                         // Process each particle in the neighboring cell
                         for (let l = 0; l < neighborParticles!.length; l++) {
                             const indexB = neighborParticles![l]
-                            if (indexA === indexB) continue
+                            if (indexA === indexB)
+                                continue
 
                             let dx = positionX[indexB] - posXA
                             let dy = positionY[indexB] - posYA
-                            let dz = positionZ[indexB] - posZA
+                            const dz = positionZ[indexB] - posZA
 
                             // Apply wrapping for X direction
-                            if (dx > gridWidth / 2) dx -= gridWidth
-                            else if (dx < -gridWidth / 2) dx += gridWidth
+                            if (dx > gridWidth / 2)
+                                dx -= gridWidth
+                            else if (dx < -gridWidth / 2)
+                                dx += gridWidth
                             // Apply wrapping for Y direction
-                            if (dy > gridHeight / 2) dy -= gridHeight
-                            else if (dy < -gridHeight / 2) dy += gridHeight
+                            if (dy > gridHeight / 2)
+                                dy -= gridHeight
+                            else if (dy < -gridHeight / 2)
+                                dy += gridHeight
 
                             const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
 
                             const colorA = colors[indexA]
                             const colorB = colors[indexB]
                             // Electrical particles (urges/neurons) are 2D-only; skip them in the 3D force pass
-                            if (colorA >= numColors || colorB >= numColors) continue
+                            if (colorA >= numColors || colorB >= numColors)
+                                continue
                             const colorMaxRadius = maxRadiusMatrix[colorA][colorB]
 
                             // Apply force if the particles are close enough
@@ -1772,10 +1956,14 @@ export default defineComponent({
                 }
                 // Apply wrapping for the walls
                 else if (isWallWrap) {
-                    if (positionX[i] > gridWidth) positionX[i] -= gridWidth
-                    else if (positionX[i] < 0) positionX[i] += gridWidth
-                    if (positionY[i] > gridHeight) positionY[i] -= gridHeight
-                    else if (positionY[i] < 0) positionY[i] += gridHeight
+                    if (positionX[i] > gridWidth)
+                        positionX[i] -= gridWidth
+                    else if (positionX[i] < 0)
+                        positionX[i] += gridWidth
+                    if (positionY[i] > gridHeight)
+                        positionY[i] -= gridHeight
+                    else if (positionY[i] < 0)
+                        positionY[i] += gridHeight
                 }
 
                 drawParticle(positionX[i], positionY[i], 0, getColorForType(colors[i]), particleSize)
@@ -1820,16 +2008,21 @@ export default defineComponent({
                 }
                 // Apply wrapping for the walls
                 else if (isWallWrap) {
-                    if (positionX[i] > gridWidth) positionX[i] -= gridWidth
-                    else if (positionX[i] < 0) positionX[i] += gridWidth
-                    if (positionY[i] > gridHeight) positionY[i] -= gridHeight
-                    else if (positionY[i] < 0) positionY[i] += gridHeight
+                    if (positionX[i] > gridWidth)
+                        positionX[i] -= gridWidth
+                    else if (positionX[i] < 0)
+                        positionX[i] += gridWidth
+                    if (positionY[i] > gridHeight)
+                        positionY[i] -= gridHeight
+                    else if (positionY[i] < 0)
+                        positionY[i] += gridHeight
                 }
 
                 // Bounce off the depth limit
                 if (positionZ[i] > depthLimit) {
                     positionZ[i] = depthLimit
-                } else if (positionZ[i] < 0) {
+                }
+                else if (positionZ[i] < 0) {
                     positionZ[i] -= velocityZ[i] // or positionZ[i] = 0
                     velocityZ[i] *= -wallRepelForce
                 }
@@ -1856,9 +2049,12 @@ export default defineComponent({
             for (let i = 0; i < totalParticleCount; i++) {
                 drawParticle(positionX[i], positionY[i], positionZ[i], getColorForType(colors[i]), particleSize)
             }
-            if (hasGrid) drawGrid()
-            if (hasCells || isBrushActive) assignParticlesToCells()
-            if (hasCells) drawCells()
+            if (hasGrid)
+                drawGrid()
+            if (hasCells || isBrushActive)
+                assignParticlesToCells()
+            if (hasCells)
+                drawCells()
         }
         function drawGrid() {
             ctx!.beginPath()
@@ -1867,7 +2063,8 @@ export default defineComponent({
                 drawHorizontalLine(endGridX, endGridY) // Draw bottom line
                 drawVerticalLine(startGridX, endGridY) // Draw left line
                 drawVerticalLine(endGridX, endGridY) // Draw right line
-            } else { // Circle Shape
+            }
+            else { // Circle Shape
                 ctx!.arc((gridOffsetX + circleCenterX) * zoomFactor, (gridOffsetY + circleCenterY) * zoomFactor, circleRadius * zoomFactor + halfParticleSize, 0, Math.PI * 2)
             }
             ctx!.strokeStyle = 'rgba(32,32,38,1)'
@@ -1889,7 +2086,7 @@ export default defineComponent({
             ctx!.lineWidth = 3
             ctx!.stroke()
         }
-        function getParticlesInBrush() : number[] {
+        function getParticlesInBrush(): number[] {
             // Detect cells within the brush radius
             const posX = (pointerX / zoomFactor) - gridOffsetX
             const posY = (pointerY / zoomFactor) - gridOffsetY
@@ -1918,7 +2115,8 @@ export default defineComponent({
                     const dx = positionX[index] - posX
                     const dy = positionY[index] - posY
                     if (dx * dx + dy * dy <= brushRadius * brushRadius) {
-                        if (brushes.length > 0 && !brushes.includes(colors[index])) continue
+                        if (brushes.length > 0 && !brushes.includes(colors[index]))
+                            continue
                         particlesInRadius.push(index)
                     }
                 }
@@ -1927,14 +2125,16 @@ export default defineComponent({
         }
         function eraseWithBrush() {
             // Skip if brush is outside walls
-            if (isBrushOutsideWalls()) return
+            if (isBrushOutsideWalls())
+                return
 
             // Remove particles within the brush radius
             removeParticleGroup(getParticlesInBrush())
         }
         function magnetWithBrush(magnetForce: number) {
             // Skip if brush is outside walls
-            if (isBrushOutsideWalls()) return
+            if (isBrushOutsideWalls())
+                return
 
             const posX = (pointerX / zoomFactor) - gridOffsetX
             const posY = (pointerY / zoomFactor) - gridOffsetY
@@ -1955,7 +2155,8 @@ export default defineComponent({
         }
         function drawWithBrush() {
             // Skip if brush is outside walls
-            if (isBrushOutsideWalls()) return
+            if (isBrushOutsideWalls())
+                return
 
             const minZDepthRandomParticle = depthLimit * 0.2 // The minimum Z-depth for randomly placed particles, in percentage of the depthLimit
             const maxZDepthRandomParticle = depthLimit * 0.45 // The maximum Z-depth for randomly placed particles, in percentage of the depthLimit
@@ -1989,7 +2190,8 @@ export default defineComponent({
                                 if (posX > gridWidth || posX < 0 || posY > gridHeight || posY < 0) {
                                     continue // Skip if the particle is outside the rectangle
                                 }
-                            } else { // Circle Shape
+                            }
+                            else { // Circle Shape
                                 const dx = posX - circleCenterX // X distance between the particle and the center of the circle
                                 const dy = posY - circleCenterY // Y distance between the particle and the center of the circle
                                 const distanceSquared = dx * dx + dy * dy // Square of the distance between the particle and the center of the circle
@@ -2002,7 +2204,8 @@ export default defineComponent({
                         newPositionY[totalParticleCount + i] = posY
                         newPositionZ[totalParticleCount + i] = Math.random() * (maxZDepthRandomParticle - minZDepthRandomParticle) + minZDepthRandomParticle
 
-                        if (brushes.length > 0) newColors[totalParticleCount + i] = brushes[Math.floor(Math.random() * brushes.length)]
+                        if (brushes.length > 0)
+                            newColors[totalParticleCount + i] = brushes[Math.floor(Math.random() * brushes.length)]
                         else newColors[totalParticleCount + i] = Math.floor(Math.random() * numColors)
 
                         break // Exit the loop if the particle is placed successfully and move to the next particle
@@ -2037,7 +2240,8 @@ export default defineComponent({
                     if (posX > gridWidth || posX < 0 || posY > gridHeight || posY < 0) {
                         return true
                     }
-                } else { // Circle Shape
+                }
+                else { // Circle Shape
                     const dx = posX - circleCenterX // X distance between the particle and the center of the circle
                     const dy = posY - circleCenterY // Y distance between the particle and the center of the circle
                     const distanceSquared = dx * dx + dy * dy // Square of the distance between the particle and the center of the circle
@@ -2070,22 +2274,30 @@ export default defineComponent({
             circleCenterY = circleRadius
         }
         function updateGridWidth(newWidth: number | Event) {
-            if (typeof(newWidth) !== 'number') return // Prevent input event like unfocus
-            if (particleLife.linkProportions) particleLife.gridHeight = gridHeight = Math.round(gridHeight * (newWidth / gridWidth))
+            if (typeof (newWidth) !== 'number')
+                return // Prevent input event like unfocus
+            if (particleLife.linkProportions)
+                particleLife.gridHeight = gridHeight = Math.round(gridHeight * (newWidth / gridWidth))
             particleLife.gridWidth = gridWidth = newWidth
-            if (isWallWrap) setGridSizeWhenWrapped()
+            if (isWallWrap)
+                setGridSizeWhenWrapped()
             setShapesProperties()
             initParticles()
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         function updateGridHeight(newHeight: number | Event) {
-            if (typeof(newHeight) !== 'number') return // Prevent input event like unfocus
-            if (particleLife.linkProportions) particleLife.gridWidth = gridWidth = Math.round(gridWidth * (newHeight / gridHeight))
+            if (typeof (newHeight) !== 'number')
+                return // Prevent input event like unfocus
+            if (particleLife.linkProportions)
+                particleLife.gridWidth = gridWidth = Math.round(gridWidth * (newHeight / gridHeight))
             particleLife.gridHeight = gridHeight = newHeight
-            if (isWallWrap) setGridSizeWhenWrapped()
+            if (isWallWrap)
+                setGridSizeWhenWrapped()
             setShapesProperties()
             initParticles()
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         function setGridSizeBasedOnScreen() {
             particleLife.gridWidth = gridWidth = Math.floor(canvasWidth * screenMultiplierForGridSize)
@@ -2096,7 +2308,8 @@ export default defineComponent({
         function updateScreenMultiplier(multiplier: number) {
             screenMultiplierForGridSize = multiplier
             setGridSizeBasedOnScreen()
-            if (isWallWrap) setGridSizeWhenWrapped()
+            if (isWallWrap)
+                setGridSizeWhenWrapped()
             setShapesProperties()
             initParticles()
         }
@@ -2131,7 +2344,8 @@ export default defineComponent({
             for (let i = 0, j = 0, k = 0; i < totalParticleCount; i++) {
                 if (k < particles.length && i === particles[k]) {
                     k++ // Skip the particle if it is within the brush radius
-                } else {
+                }
+                else {
                     newColors[j] = colors[i]
                     newPositionX[j] = positionX[i]
                     newPositionY[j] = positionY[i]
@@ -2158,10 +2372,12 @@ export default defineComponent({
             totalParticleCount = newSize
         }
         function updateNumParticles(newMatterCount: number) {
-            if (newMatterCount === numParticles) return // Skip if matter count unchanged
+            if (newMatterCount === numParticles)
+                return // Skip if matter count unchanged
             numParticles = newMatterCount
             initParticles() // Rebuild arrays with the new matter + electrical layout
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         const setNewNumTypes = (newNumTypes: number) => {
             NEW_NUM_TYPES = newNumTypes
@@ -2192,18 +2408,20 @@ export default defineComponent({
                 setMaxRadiusMatrix(resizeMatrix(maxRadiusMatrix, oldMatrixSize, newMatrixSize, () => {
                     return Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])
                 }))
-
-            } finally {
+            }
+            finally {
                 isUpdatingParticles = false
                 isUpdateNumTypesPending = NEW_NUM_TYPES !== numColors
                 initParticles() // Reassign types (urge/neuron codes depend on numColors)
-                if (!isRunning) simpleDrawParticles() // Redraw the particles if the game is not running
+                if (!isRunning)
+                    simpleDrawParticles() // Redraw the particles if the game is not running
             }
         }
         const loadPreset = async (options: { presetRules?: number[][], presetMinRadius?: number[][], presetMaxRadius?: number[][], presetColors?: number[][] }, presetTypeCount: number, matchPresetCount: boolean) => {
             const { presetRules, presetMinRadius, presetMaxRadius, presetColors } = options
 
-            if (isUpdatingParticles || presetTypeCount === 0) return
+            if (isUpdatingParticles || presetTypeCount === 0)
+                return
             isUpdatingParticles = true
 
             try {
@@ -2214,14 +2432,20 @@ export default defineComponent({
 
                 if (!matchPresetCount) {
                     const typesToUpdate = Math.min(numColors, newNumTypes)
-                    if (presetColors) await adjustColors(presetColors, numColors, typesToUpdate, true) // Update only the colors that fit within the current NUM_TYPES
-                    if (presetRules) setRulesMatrix(applyPresetSubMatrix(rulesMatrix, presetRules, numColors, typesToUpdate))
-                    if (presetMinRadius) setMinRadiusMatrix(applyPresetSubMatrix(minRadiusMatrix, presetMinRadius, numColors, typesToUpdate))
-                    if (presetMaxRadius) setMaxRadiusMatrix(applyPresetSubMatrix(maxRadiusMatrix, presetMaxRadius, numColors, typesToUpdate))
-                } else {
+                    if (presetColors)
+                        await adjustColors(presetColors, numColors, typesToUpdate, true) // Update only the colors that fit within the current NUM_TYPES
+                    if (presetRules)
+                        setRulesMatrix(applyPresetSubMatrix(rulesMatrix, presetRules, numColors, typesToUpdate))
+                    if (presetMinRadius)
+                        setMinRadiusMatrix(applyPresetSubMatrix(minRadiusMatrix, presetMinRadius, numColors, typesToUpdate))
+                    if (presetMaxRadius)
+                        setMaxRadiusMatrix(applyPresetSubMatrix(maxRadiusMatrix, presetMaxRadius, numColors, typesToUpdate))
+                }
+                else {
                     if (presetColors) {
                         setColors(presetColors)
-                    } else if (newNumTypes !== oldNumTypes) {
+                    }
+                    else if (newNumTypes !== oldNumTypes) {
                         await adjustColors(currentColors, oldNumTypes, newNumTypes)
                     }
 
@@ -2231,33 +2455,52 @@ export default defineComponent({
                         numColors = newNumTypes
                         particleLife.numColors = numColors
 
-                        if (presetRules) setRulesMatrix(presetRules)
-                        else setRulesMatrix(resizeMatrix(rulesMatrix, oldPresetMatrixSize, newPresetMatrixSize, () => {
-                            return Math.round((Math.random() * 2 - 1) * 100) / 100
-                        }))
-                        if (presetMinRadius) setMinRadiusMatrix(presetMinRadius)
-                        else setMinRadiusMatrix(resizeMatrix(minRadiusMatrix, oldPresetMatrixSize, newPresetMatrixSize, () => {
-                            return Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])
-                        }))
-                        if (presetMaxRadius) setMaxRadiusMatrix(presetMaxRadius)
-                        else setMaxRadiusMatrix(resizeMatrix(maxRadiusMatrix, oldPresetMatrixSize, newPresetMatrixSize, () => {
-                            return Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])
-                        }))
-                    } else {
-                        if (presetRules) setRulesMatrix(presetRules)
-                        if (presetMinRadius) setMinRadiusMatrix(presetMinRadius)
-                        if (presetMaxRadius) setMaxRadiusMatrix(presetMaxRadius)
+                        if (presetRules) {
+                            setRulesMatrix(presetRules)
+                        }
+                        else {
+                            setRulesMatrix(resizeMatrix(rulesMatrix, oldPresetMatrixSize, newPresetMatrixSize, () => {
+                                return Math.round((Math.random() * 2 - 1) * 100) / 100
+                            }))
+                        }
+                        if (presetMinRadius) {
+                            setMinRadiusMatrix(presetMinRadius)
+                        }
+                        else {
+                            setMinRadiusMatrix(resizeMatrix(minRadiusMatrix, oldPresetMatrixSize, newPresetMatrixSize, () => {
+                                return Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])
+                            }))
+                        }
+                        if (presetMaxRadius) {
+                            setMaxRadiusMatrix(presetMaxRadius)
+                        }
+                        else {
+                            setMaxRadiusMatrix(resizeMatrix(maxRadiusMatrix, oldPresetMatrixSize, newPresetMatrixSize, () => {
+                                return Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])
+                            }))
+                        }
+                    }
+                    else {
+                        if (presetRules)
+                            setRulesMatrix(presetRules)
+                        if (presetMinRadius)
+                            setMinRadiusMatrix(presetMinRadius)
+                        if (presetMaxRadius)
+                            setMaxRadiusMatrix(presetMaxRadius)
                     }
                 }
-            } finally {
+            }
+            finally {
                 isUpdatingParticles = false
-                if (!isRunning) simpleDrawParticles() // Redraw the particles if the game is not running
+                if (!isRunning)
+                    simpleDrawParticles() // Redraw the particles if the game is not running
                 success("Preset loaded.")
             }
         }
-        const adjustColors = async (oldColors: number[][], oldNumTypes: number, newNumTypes: number, keepExtraColors: boolean = false,) => {
+        const adjustColors = async (oldColors: number[][], oldNumTypes: number, newNumTypes: number, keepExtraColors: boolean = false) => {
             let newColors: number[][] = new Array(keepExtraColors ? oldNumTypes : newNumTypes)
-            if (keepExtraColors) newColors = [...currentColors]
+            if (keepExtraColors)
+                newColors = [...currentColors]
 
             for (let i = 0; i < newNumTypes; i++) {
                 newColors[i] = oldColors[i] ? [...oldColors[i]] : getRandomHslColor()
@@ -2272,7 +2515,8 @@ export default defineComponent({
                         colors[i] = Math.floor(Math.random() * newNumTypes)
                     }
                 }
-            } else if (newNumTypes > oldNumTypes) {
+            }
+            else if (newNumTypes > oldNumTypes) {
                 for (let i = 0; i < totalParticleCount; i++) {
                     // Only matter particles can be reassigned to new colors
                     if (colors[i] < oldNumTypes && Math.random() < (newNumTypes - oldNumTypes) / newNumTypes) {
@@ -2288,7 +2532,8 @@ export default defineComponent({
                 for (let j = 0; j < newNumTypes; j++) {
                     if (i < oldNumTypes && j < oldNumTypes) {
                         row.push(matrix[i][j])
-                    } else {
+                    }
+                    else {
                         row.push(randomFn())
                     }
                 }
@@ -2296,7 +2541,7 @@ export default defineComponent({
             }
             return newMatrix
         }
-        const applyPresetSubMatrix = (current: number[][], preset: number[][], numTypes: number, typesToUpdate: number,): number[][] => {
+        const applyPresetSubMatrix = (current: number[][], preset: number[][], numTypes: number, typesToUpdate: number): number[][] => {
             const result = current.map(row => row.slice())
             for (let i = 0; i < numTypes; i++) {
                 for (let j = 0; j < numTypes; j++) {
@@ -2315,11 +2560,13 @@ export default defineComponent({
         }
         function updateSingleColor(colorId: number, hex: string) {
             const rgb = hexToRgb(hex)
-            if (!rgb) return
+            if (!rgb)
+                return
             const [h, s, l] = rgbFloatToHsl(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255)
             currentColors[colorId] = [h, s, l]
             particleLife.currentColors = [...currentColors]
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         function setRulesMatrix(newRules: number[][]) {
             rulesMatrix = newRules
@@ -2372,14 +2619,16 @@ export default defineComponent({
             let maxRandom = 0
             for (let i = 0; i < numColors; i++) {
                 for (let j = 0; j < numColors; j++) {
-                    if (maxRadiusMatrix[i][j] > maxRandom) maxRandom = maxRadiusMatrix[i][j]
+                    if (maxRadiusMatrix[i][j] > maxRandom)
+                        maxRandom = maxRadiusMatrix[i][j]
                 }
             }
             return maxRandom
             // return maxRadiusMatrix.reduce((max, row) => Math.max(max, ...row), -Infinity)
         }
         const setCurrentMaxRadius = (value: number) => {
-            if (currentMaxRadius === value) return
+            if (currentMaxRadius === value)
+                return
             currentMaxRadius = value
             particleLife.currentMaxRadius = value
             // Cell size must cover the largest interaction radius (matter OR electrical)
@@ -2391,13 +2640,15 @@ export default defineComponent({
                 setGridSizeWhenWrapped()
                 setShapesProperties()
             }
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         }
         // -------------------------------------------------------------------------------------------------------------
         function toggleCaptureMode(type: string) {
             if (type === particleLife.captureType) {
                 particleLife.isShareOptionsOpen = !particleLife.isShareOptionsOpen
-            } else {
+            }
+            else {
                 particleLife.isShareOptionsOpen = true
                 particleLife.captureType = type
             }
@@ -2414,16 +2665,17 @@ export default defineComponent({
         function watchAndDraw(effect: any, callback: any) {
             watch(effect, (value) => {
                 callback(value)
-                if (!isRunning) simpleDrawParticles()
+                if (!isRunning)
+                    simpleDrawParticles()
             })
         }
-        watch(() => particleLife.isCapturingGIF, (value) => isCapturingGIF = value)
-        watch(() => particleLife.numParticles, (value) => updateNumParticles(value))
+        watch(() => particleLife.isCapturingGIF, value => isCapturingGIF = value)
+        watch(() => particleLife.numParticles, value => updateNumParticles(value))
         // watch(() => particleLife.numColors, (value) => updateNumColors(value))
         watch(() => particleLife.depthLimit, (value: number) => depthLimit = value)
         watch(() => particleLife.brushes, (value: number[]) => brushes = value)
-        watch(() => particleLife.brushRadius, (value) => brushRadius = value)
-        watch(() => particleLife.brushIntensity, (value) => brushIntensity = value)
+        watch(() => particleLife.brushRadius, value => brushRadius = value)
+        watch(() => particleLife.brushIntensity, value => brushIntensity = value)
         watch(() => particleLife.brushType, (value: number) => brushType = value)
         watch(() => particleLife.attractForce, (value: number) => attractForce = value)
         watch(() => particleLife.repulseForce, (value: number) => repulseForce = -Math.abs(value))
@@ -2433,7 +2685,8 @@ export default defineComponent({
         watchAndDraw(() => particleLife.particleSize, (value: number) => particleSize = value)
         watchAndDraw(() => particleLife.isWallRepel, (value: boolean) => {
             isWallRepel = value
-            if (isWallRepel) particleLife.isWallWrap = false
+            if (isWallRepel)
+                particleLife.isWallWrap = false
             particleLife.hasGrid = isWallRepel || isWallWrap
         })
         watchAndDraw(() => particleLife.isWallWrap, (value: boolean) => {
@@ -2473,31 +2726,38 @@ export default defineComponent({
         watch(() => particleLife.numUrges, () => {
             numUrges = particleLife.numUrges
             initParticles()
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         })
         watch(() => particleLife.numNeurons, () => {
             numNeurons = particleLife.numNeurons
             initParticles()
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         })
         watch(() => particleLife.numSenseNeurons, () => {
             numSenseNeurons = particleLife.numSenseNeurons
             initParticles()
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         })
         watch(() => particleLife.isElectricalEnabled, () => {
             initParticles()
             setCurrentMaxRadius(currentMaxRadius) // recompute cell size
-            if (!isRunning) simpleDrawParticles()
+            if (!isRunning)
+                simpleDrawParticles()
         })
         watch(() => particleLife.urgeRadius, () => {
-            if (particleLife.isElectricalEnabled) setCurrentMaxRadius(currentMaxRadius)
+            if (particleLife.isElectricalEnabled)
+                setCurrentMaxRadius(currentMaxRadius)
         })
         watch(() => particleLife.neuronRadius, () => {
-            if (particleLife.isElectricalEnabled) setCurrentMaxRadius(currentMaxRadius)
+            if (particleLife.isElectricalEnabled)
+                setCurrentMaxRadius(currentMaxRadius)
         })
         watch(() => particleLife.senseRadius, () => {
-            if (particleLife.isElectricalEnabled) setCurrentMaxRadius(currentMaxRadius)
+            if (particleLife.isElectricalEnabled)
+                setCurrentMaxRadius(currentMaxRadius)
         })
 
         // ---- Urge Inspector state ----
@@ -2508,9 +2768,11 @@ export default defineComponent({
 
         // Read urge stats from CPU state (direct array access — no GPU readback needed)
         const readUrgeStats = () => {
-            if (!urgeInspectorOpen.value) return
+            if (!urgeInspectorOpen.value)
+                return
             if (!particleLife.isElectricalEnabled || numUrges <= 0) {
-                if (urgeStats.value.length !== 0) urgeStats.value = []
+                if (urgeStats.value.length !== 0)
+                    urgeStats.value = []
                 prevUrgeValues.clear()
                 return
             }
@@ -2550,12 +2812,14 @@ export default defineComponent({
             if (open) {
                 urgeReadbackInterval = setInterval(readUrgeStats, 500)
                 readUrgeStats() // immediate first read
-            } else {
+            }
+            else {
                 if (urgeReadbackInterval) { clearInterval(urgeReadbackInterval); urgeReadbackInterval = null }
             }
         })
         onUnmounted(() => {
-            if (urgeReadbackInterval) clearInterval(urgeReadbackInterval)
+            if (urgeReadbackInterval)
+                clearInterval(urgeReadbackInterval)
         })
 
         // Electrical params snapshot for the inspector card
@@ -2587,12 +2851,13 @@ export default defineComponent({
         }
 
         watch(() => particleLife.isLockedPointer, (value) => {
-            const sidebarLeftElement = document.getElementById('sidebarLeft');
+            const sidebarLeftElement = document.getElementById('sidebarLeft')
             if (sidebarLeftElement) {
                 if (value) {
-                    sidebarLeftElement.classList.add('force-hover-effect');
-                } else {
-                    sidebarLeftElement.classList.remove('force-hover-effect');
+                    sidebarLeftElement.classList.add('force-hover-effect')
+                }
+                else {
+                    sidebarLeftElement.classList.remove('force-hover-effect')
                 }
             }
         })
@@ -2606,15 +2871,42 @@ export default defineComponent({
         })
 
         return {
-            lifeCanvas, particleLife, toggleFullscreen, isFullscreen, toggleCaptureMode, getSelectedAreaImageData,
-            fps, cellCount, executionTime, step, newRandomRulesMatrix, handleZoom, updateGridWidth, updateGridHeight,
-            updateRulesMatrixValue, updateMinMatrixValue, updateMaxMatrixValue, regenerateLife,
-            shareOptions, rulesOptions, paletteOptions,
-            updateColors, updateRulesMatrix, loadPreset, setNewNumTypes, updateSingleColor,
-            randomizeRadius, randomizeRulesAndRadius,
-            urgeInspectorOpen, selectedUrgeId, urgeStats, electricalParams, colorRgbStrings, objectiveLabelFor
+            lifeCanvas,
+            particleLife,
+            toggleFullscreen,
+            isFullscreen,
+            toggleCaptureMode,
+            getSelectedAreaImageData,
+            fps,
+            cellCount,
+            executionTime,
+            step,
+            newRandomRulesMatrix,
+            handleZoom,
+            updateGridWidth,
+            updateGridHeight,
+            updateRulesMatrixValue,
+            updateMinMatrixValue,
+            updateMaxMatrixValue,
+            regenerateLife,
+            shareOptions,
+            rulesOptions,
+            paletteOptions,
+            updateColors,
+            updateRulesMatrix,
+            loadPreset,
+            setNewNumTypes,
+            updateSingleColor,
+            randomizeRadius,
+            randomizeRulesAndRadius,
+            urgeInspectorOpen,
+            selectedUrgeId,
+            urgeStats,
+            electricalParams,
+            colorRgbStrings,
+            objectiveLabelFor,
         }
-    }
+    },
 })
 </script>
 

@@ -1,4 +1,4 @@
-import { appURL, appName, appDescription } from './constants/index'
+import { appDescription, appName, appURL } from './constants/index'
 
 export default defineNuxtConfig({
     devtools: {
@@ -16,9 +16,9 @@ export default defineNuxtConfig({
         '@unocss/nuxt',
         '@pinia/nuxt',
         "@nuxtjs/seo",
-        // "@nuxt/eslint",
+        "@nuxt/eslint",
         'floating-vue/nuxt',
-        'nuxt-gtag'
+        'nuxt-gtag',
     ],
 
     site: {
@@ -72,7 +72,7 @@ export default defineNuxtConfig({
         // },
     },
     seo: {
-        redirectToCanonicalSiteUrl: false
+        redirectToCanonicalSiteUrl: false,
     },
     schemaOrg: {
         identity: {
@@ -85,13 +85,13 @@ export default defineNuxtConfig({
                 'https://github.com/DicSo92',
                 'https://sandbox-science.com',
             ],
-        }
+        },
     },
     ogImage: {
         enabled: false,
         defaults: {
-            cacheMaxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
-        }
+            cacheMaxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
+        },
     },
 
     experimental: {
@@ -100,11 +100,11 @@ export default defineNuxtConfig({
 
     linkChecker: {
         enabled: true,
-        debug: true
+        debug: true,
     },
 
     sitemap: {
-        zeroRuntime: true
+        zeroRuntime: true,
     },
 
     robots: {
@@ -128,29 +128,31 @@ export default defineNuxtConfig({
             gzip: true,
             brotli: true,
         },
-        publicAssets: process.env.NODE_ENV === 'production' ? [
-            {
-                baseURL: '/assets/fonts',
-                dir: 'public/assets/fonts',
-                maxAge: 60 * 60 * 24 * 365,
-            },
-        ] : [],
+        publicAssets: process.env.NODE_ENV === 'production'
+            ? [
+                    {
+                        baseURL: '/assets/fonts',
+                        dir: 'public/assets/fonts',
+                        maxAge: 60 * 60 * 24 * 365,
+                    },
+                ]
+            : [],
     },
 
     css: [
         '@unocss/reset/tailwind.css', // Maybe need @unocss/reset package
-        '~/assets/scss/main.scss'
+        '~/assets/scss/main.scss',
     ],
 
     features: {
         inlineStyles: false, // For UnoCSS
     },
 
-    // eslint: {
-    //     config: {
-    //         standalone: false,
-    //     },
-    // },
+    eslint: {
+        config: {
+            standalone: false,
+        },
+    },
 
-    compatibilityDate: '2025-12-18'
+    compatibilityDate: '2025-12-18',
 })

@@ -1,0 +1,29 @@
+
+/home/kaila/Documents/Unsloth Studio/Projects/LIFE-45da96aa/sandbox/SandboxScience/components/Dropdown.vue
+  29:5  warning  Unused eslint-disable directive (no problems were reported from 'unused-imports/no-unused-vars')
+
+/home/kaila/Documents/Unsloth Studio/Projects/LIFE-45da96aa/sandbox/SandboxScience/components/SelectMenu.vue
+  26:73  warning  Attribute ":id" should go before ":key"  vue/attributes-order
+
+/home/kaila/Documents/Unsloth Studio/Projects/LIFE-45da96aa/sandbox/SandboxScience/components/game-of-life/NaiveCanvas.vue
+  189:13  error  Unexpected console statement. Only these console methods are allowed: log, info, warn, error, debug  no-console
+
+/home/kaila/Documents/Unsloth Studio/Projects/LIFE-45da96aa/sandbox/SandboxScience/components/particle-life/DevicesGpuTips.vue
+  75:5  warning  Unused eslint-disable directive (no problems were reported from 'unused-imports/no-unused-vars')
+
+/home/kaila/Documents/Unsloth Studio/Projects/LIFE-45da96aa/sandbox/SandboxScience/components/particle-life/ParticleLifeCpu.vue
+  453:8  error  'Memory' is defined but never used       unused-imports/no-unused-imports
+  456:8  error  'RulesMatrix' is defined but never used  unused-imports/no-unused-imports
+
+/home/kaila/Documents/Unsloth Studio/Projects/LIFE-45da96aa/sandbox/SandboxScience/components/particle-life/ParticleLifeGpu3D.vue
+  425:8  error  'BrushSettings' is defined but never used  unused-imports/no-unused-imports
+
+/home/kaila/Documents/Unsloth Studio/Projects/LIFE-45da96aa/sandbox/SandboxScience/components/particle-life/ShareOptions.vue
+  99:5  warning  Unused eslint-disable directive (no problems were reported from 'unused-imports/no-unused-vars')
+
+/home/kaila/Documents/Unsloth Studio/Projects/LIFE-45da96aa/sandbox/SandboxScience/stores/gameStore.ts
+  29:42  error  Use the spread operator instead of '.apply()'  prefer-spread
+
+✖ 9 problems (5 errors, 4 warnings)
+  3 errors and 4 warnings potentially fixable with the `--fix` option.
+

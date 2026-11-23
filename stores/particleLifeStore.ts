@@ -1,5 +1,5 @@
+import type { Preset } from "~/composables/usePresetManager"
 import { defineStore } from 'pinia'
-import type { Preset } from "~/composables/usePresetManager";
 
 export const useParticleLifeStore = defineStore('particleLife', () => {
     const engineType = ref<'CPU' | 'GPU' | 'GPU3D'>('CPU') // Engine type
@@ -42,7 +42,7 @@ export const useParticleLifeStore = defineStore('particleLife', () => {
         set: (value: string) => {
             isWallRepel.value = value === 'repel'
             isWallWrap.value = value === 'wrap'
-        }
+        },
     })
     const hasDepthSize = ref<boolean>(true) // Enable depth size effect
     const hasDepthOpacity = ref<boolean>(false) // Enable depth opacity effect
@@ -104,18 +104,73 @@ export const useParticleLifeStore = defineStore('particleLife', () => {
     }
 
     return {
-        engineType, sidebarLeftOpen, isLockedPointer,
-        isRunning, isBrushActive, brushes, brushRadius, brushIntensity, brushType, attractForce, repulseForce, wallRepelForce,
-        rulesMatrix, minRadiusMatrix, maxRadiusMatrix, currentColors,
-        gridWidth, gridHeight, linkProportions,
-        numParticles, particleSize, numColors, depthLimit,
-        is3D, isCircle, hasGrid, hasCells, isCellFollow, isWallRepel, isWallWrap, wallState, hasDepthSize, hasDepthOpacity, maxOpacity, minOpacity, cellShape, wallShape, screenMultiplierForGridSize,
-        minRadiusRange, maxRadiusRange, currentMaxRadius,
-        repel, forceFactor, frictionFactor,
-        isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, cohesion,
-        numSenseNeurons, senseRadius, senseConeHalfAngleDeg, senseMode,
-        cellGroupSize, cellSizeFactor,
-        captureType, isCapturingGIF, isShareOptionsOpen, selectedRulesOption, selectedColorPaletteOption, savedPresets, isSaveModalOpen,
-        $reset
+        engineType,
+        sidebarLeftOpen,
+        isLockedPointer,
+        isRunning,
+        isBrushActive,
+        brushes,
+        brushRadius,
+        brushIntensity,
+        brushType,
+        attractForce,
+        repulseForce,
+        wallRepelForce,
+        rulesMatrix,
+        minRadiusMatrix,
+        maxRadiusMatrix,
+        currentColors,
+        gridWidth,
+        gridHeight,
+        linkProportions,
+        numParticles,
+        particleSize,
+        numColors,
+        depthLimit,
+        is3D,
+        isCircle,
+        hasGrid,
+        hasCells,
+        isCellFollow,
+        isWallRepel,
+        isWallWrap,
+        wallState,
+        hasDepthSize,
+        hasDepthOpacity,
+        maxOpacity,
+        minOpacity,
+        cellShape,
+        wallShape,
+        screenMultiplierForGridSize,
+        minRadiusRange,
+        maxRadiusRange,
+        currentMaxRadius,
+        repel,
+        forceFactor,
+        frictionFactor,
+        isElectricalEnabled,
+        numUrges,
+        numNeurons,
+        metricMode,
+        urgeRadius,
+        neuronRadius,
+        urgeForce,
+        controlGain,
+        controlMax,
+        cohesion,
+        numSenseNeurons,
+        senseRadius,
+        senseConeHalfAngleDeg,
+        senseMode,
+        cellGroupSize,
+        cellSizeFactor,
+        captureType,
+        isCapturingGIF,
+        isShareOptionsOpen,
+        selectedRulesOption,
+        selectedColorPaletteOption,
+        savedPresets,
+        isSaveModalOpen,
+        $reset,
     }
 })

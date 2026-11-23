@@ -3,11 +3,9 @@
 **Sandbox Science**  ***DEMIURGE EDITION*** is an interactive platform designed to make learning and exploring scientific concepts fun and accessible. The platform offers a variety of simulations, from cellular automata like Game of Life to complex particle interactions in Particle Life, allowing users to dive deep into the fascinating world of science through hands-on, visual experiences.
 It alos gives urgs and neurons to some matter and sees what happens!
 
-
 ---
 
 Check it out here: https://glassresistor.github.io/SandboxScience/particle-life
-
 
 ## 🧬 Quantum / Electrical Layer (Particle Life)
 

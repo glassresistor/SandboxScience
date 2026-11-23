@@ -1,619 +1,732 @@
 <template>
-    <section h-screen flex flex-col justify-center overflow-hidden relative ref="mainContainer" id="mainContainer">
+    <section id="mainContainer" relative h-screen flex flex-col justify-center overflow-hidden>
         <SidebarLeft v-model="particleLife.sidebarLeftOpen">
-            <template #controls>
-            </template>
+            <template #controls />
             <template #default>
-                <div h-full px-2 flex flex-col>
-                    <div flex justify-between items-end mb-1.5 px-1>
+                <div h-full flex flex-col px-2>
+                    <div mb-1.5 flex items-end justify-between px-1>
                         <div flex items-center>
-                            <div i-lets-icons-bubble text-2xl mr-2 class="text-[#2a9d8f] -mt-0.5"></div>
-                            <h1 font-800 text-lg tracking-widest class="text-[#dff6f3] drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.8)]">Particle Life</h1>
-                            <p class="ml-2 px-2 py-0.5 rounded-lg ring-1 uppercase justify-center font-mono font-bold bg-fuchsia-600/20 text-fuchsia-400 ring-fuchsia-500/30">
+                            <div i-lets-icons-bubble mr-2 text-2xl class="text-[#2a9d8f] -mt-0.5" />
+                            <h1 text-lg font-800 tracking-widest class="text-[#dff6f3] drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.8)]">
+                                Particle Life
+                            </h1>
+                            <p class="ml-2 justify-center rounded-lg bg-fuchsia-600/20 px-2 py-0.5 text-fuchsia-400 font-bold font-mono uppercase ring-1 ring-fuchsia-500/30">
                                 GPU
                             </p>
-                            <p ml-1.5 px-2 py-0.5 rounded-lg ring-1 uppercase justify-center font-mono font-bold class="bg-cyan-600/20 text-cyan-400 ring-cyan-500/30">
+                            <p ml-1.5 justify-center rounded-lg px-2 py-0.5 font-bold font-mono uppercase ring-1 class="bg-cyan-600/20 text-cyan-400 ring-cyan-500/30">
                                 2D
                             </p>
                         </div>
-                        <button @click="switchTo3D" px-2 h-full rounded-lg flex items-center font-semibold class="bg-amber-500/15 hover:bg-amber-500/25 transition-all ring-1 ring-amber-300/45 text-amber-100" title="Switch to 3D version">
-                            <span class="i-tabler-cube text-sm mr-0.75"></span>
-                            <span class="-mb-px text-xs">Try 3D</span>
+                        <button h-full flex items-center rounded-lg px-2 font-semibold class="bg-amber-500/15 text-amber-100 ring-1 ring-amber-300/45 transition-all hover:bg-amber-500/25" title="Switch to 3D version" @click="switchTo3D">
+                            <span class="i-tabler-cube mr-0.75 text-sm" />
+                            <span class="text-xs -mb-px">Try 3D</span>
                         </button>
-<!--                        <ToggleSwitch inactive-label="2D" label="3D" colorful-label v-model="particleLife.is3D" />-->
+                        <!--                        <ToggleSwitch inactive-label="2D" label="3D" colorful-label v-model="particleLife.is3D" /> -->
                     </div>
                     <hr border-slate-500>
-                    <div overflow-auto flex-1 flex flex-col gap-2 mt-2 pb-12 class="scrollableArea">
-                        <Collapse label="Presets" icon="i-tabler-sparkles text-amber-500"
-                                  tooltip="Choose predefined configurations to quickly set up your simulation.">
-                            <PresetPanel :store="particleLife"
-                                         @updateColors="updateColors"
-                                         @updateRulesMatrix="updateRulesMatrix"
-                                         @updateParticlePositions="updateParticlePositions"
-                                         @loadPreset="loadPreset">
-                            </PresetPanel>
+                    <div mt-2 flex flex-1 flex-col gap-2 overflow-auto pb-12 class="scrollableArea">
+                        <Collapse
+                            label="Presets" icon="i-tabler-sparkles text-amber-500"
+                            tooltip="Choose predefined configurations to quickly set up your simulation."
+                        >
+                            <PresetPanel
+                                :store="particleLife"
+                                @update-colors="updateColors"
+                                @update-rules-matrix="updateRulesMatrix"
+                                @update-particle-positions="updateParticlePositions"
+                                @load-preset="loadPreset"
+                            />
                         </Collapse>
-                        <Collapse label="Matrix Settings" icon="i-tabler-grid-4x4 text-indigo-500"
-                                  tooltip="Modify matrix values by clicking on cells in the grid. <br>
+                        <Collapse
+                            label="Matrix Settings" icon="i-tabler-grid-4x4 text-indigo-500"
+                            tooltip="Modify matrix values by clicking on cells in the grid. <br>
                                   Adjust individual cell values with the slider, or click and drag to change them directly. <br>
                                   Use Ctrl + Click to select multiple cells for group adjustments. <br>
-                                  If no cells are selected, the slider will adjust all values.">
-                            <MatrixSettings :store="particleLife"
-                                            @updateRulesMatrix="updateRulesMatrixValue"
-                                            @randomRulesMatrix="newRandomRulesMatrix"
-                                            @updateMinMatrix="updateMinMatrixValue"
-                                            @updateMaxMatrix="updateMaxMatrixValue"
-                                            @updateColor="updateSingleColor">
-                            </MatrixSettings>
+                                  If no cells are selected, the slider will adjust all values."
+                        >
+                            <MatrixSettings
+                                :store="particleLife"
+                                @update-rules-matrix="updateRulesMatrixValue"
+                                @random-rules-matrix="newRandomRulesMatrix"
+                                @update-min-matrix="updateMinMatrixValue"
+                                @update-max-matrix="updateMaxMatrixValue"
+                                @update-color="updateSingleColor"
+                            />
                         </Collapse>
-                        <Collapse label="Randomizer Settings" icon="i-game-icons-perspective-dice-six-faces-random text-teal-500"
-                                  tooltip="Adjust the parameters for randomizing particle attributes. <br> Configure the ranges for minimum and maximum interaction radii.">
-                            <RadiusVisualizer v-model:min-radius-range="particleLife.minRadiusRange"
-                                              v-model:max-radius-range="particleLife.maxRadiusRange"
-                                              @randomize-radius="randomizeRadius"
-                                              @randomize-rules-and-radius="randomizeRulesAndRadius"
-                                              @randomize-all="regenerateLife">
-                            </RadiusVisualizer>
+                        <Collapse
+                            label="Randomizer Settings" icon="i-game-icons-perspective-dice-six-faces-random text-teal-500"
+                            tooltip="Adjust the parameters for randomizing particle attributes. <br> Configure the ranges for minimum and maximum interaction radii."
+                        >
+                            <RadiusVisualizer
+                                v-model:min-radius-range="particleLife.minRadiusRange"
+                                v-model:max-radius-range="particleLife.maxRadiusRange"
+                                @randomize-radius="randomizeRadius"
+                                @randomize-rules-and-radius="randomizeRulesAndRadius"
+                                @randomize-all="regenerateLife"
+                            />
                         </Collapse>
                         <Collapse label="World Settings" icon="i-tabler-world-cog text-cyan-500" opened>
-                            <RangeInput input label="Particle Count"
-                                        tooltip="Adjust the total number of particles. <br> More particles may reveal complex interactions but can increase computational demand."
-                                        :min="16" :max="1048576" :step="16" v-model="particleLife.numParticles" @update:modelValue="setNewNumParticles">
-                            </RangeInput>
-                            <RangeInput input label="Species Count"
-                                        tooltip="Specify the number of particle colors. <br> Each color interacts with all others, with distinct forces and interaction ranges."
-                                        :min="1" :max="16" :step="1" v-model="particleLife.numColors" @update:modelValue="setNewNumTypes" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.numParticles" input
+                                label="Particle Count"
+                                tooltip="Adjust the total number of particles. <br> More particles may reveal complex interactions but can increase computational demand." :min="16" :max="1048576" :step="16" @update:model-value="setNewNumParticles"
+                            />
+                            <RangeInput
+                                v-model="particleLife.numColors" input
+                                label="Species Count"
+                                tooltip="Specify the number of particle colors. <br> Each color interacts with all others, with distinct forces and interaction ranges." :min="1" :max="16" :step="1" mt-2 @update:model-value="setNewNumTypes"
+                            />
                             <div flex items-center class="mt-0.5">
-                                <p class="w-2/3 text-2sm mt-1">
+                                <p class="mt-1 w-2/3 text-2sm">
                                     World Size
                                     <TooltipInfo container="#mainContainer" tooltip="Adjust the size of the area where particles are contained." />
                                 </p>
-                                <Input label="x" v-model="particleLife.simWidth" @change="updateSimWidth" mr-2 />
-                                <Input label="y" v-model="particleLife.simHeight" @change="updateSimHeight" mr-2 />
-                                <button type="button" btn rounded-full p2 flex items-center bg="slate-950/90 hover:slate-950/50" @click="particleLife.linkProportions = !particleLife.linkProportions">
-                                    <span :class="particleLife.linkProportions ? 'i-tabler-link' : 'i-tabler-unlink'" text-sm></span>
+                                <Input v-model="particleLife.simWidth" label="x" mr-2 @change="updateSimWidth" />
+                                <Input v-model="particleLife.simHeight" label="y" mr-2 @change="updateSimHeight" />
+                                <button type="button" btn flex items-center rounded-full p2 bg="slate-950/90 hover:slate-950/50" @click="particleLife.linkProportions = !particleLife.linkProportions">
+                                    <span :class="particleLife.linkProportions ? 'i-tabler-link' : 'i-tabler-unlink'" text-sm />
                                 </button>
                             </div>
 
-                            <hr border-gray-500 mt-1 mb-2>
-                            <p underline text-gray-300 class="-mt-0.5" mb-2>Boundary Settings :</p>
+                            <hr mb-2 mt-1 border-gray-500>
+                            <p class="-mt-0.5" mb-2 text-gray-300 underline>
+                                Boundary Settings :
+                            </p>
 
-                            <OptionBar name="wallStateGpu" v-model="particleLife.wallState" mb-2 :options="[
-                                { id: 'none', label: 'None' },
-                                { id: 'repel', label: 'Repel' },
-                                { id: 'wrap', label: 'Wrap' }]">
-                            </OptionBar>
+                            <OptionBar
+                                v-model="particleLife.wallState" name="wallStateGpu" mb-2 :options="[
+                                    { id: 'none', label: 'None' },
+                                    { id: 'repel', label: 'Repel' },
+                                    { id: 'wrap', label: 'Wrap' }]"
+                            />
 
-                            <div flex justify-around mb-1>
-                                <div class="w-2/3 text-2sm mt-1">
+                            <div mb-1 flex justify-around>
+                                <div class="mt-1 w-2/3 text-2sm">
                                     Wrapping Mode
                                     <TooltipInfo container="#mainContainer" tooltip="Wrapping render modes : <br> <small><u>Normal:</u> Simple wrap. <br> <u>Edges:</u> Wrap + finite grayscale edge tiling. <br> <u>Infinite:</u> wrap + tiles fill the viewport (higher GPU cost).</small>" />
                                 </div>
                                 <WrapModeSelection :store="particleLife" />
                             </div>
                             <div flex justify-between>
-                                <div class="w-2/3 text-2sm mt-1">
+                                <div class="mt-1 w-2/3 text-2sm">
                                     Edges Tiling
                                     <TooltipInfo container="#mainContainer" tooltip="Sets neighbor tiles count for Edges mode (grayscale)." />
                                 </div>
                                 <div flex>
-                                    <SelectButton :id="5" label="Cross 5" v-model="particleLife.mirrorWrapCount" :disabled="!particleLife.isMirrorWrap" mr-2 />
-                                    <SelectButton :id="9" label="3x3" v-model="particleLife.mirrorWrapCount" :disabled="!particleLife.isMirrorWrap" />
+                                    <SelectButton :id="5" v-model="particleLife.mirrorWrapCount" label="Cross 5" :disabled="!particleLife.isMirrorWrap" mr-2 />
+                                    <SelectButton :id="9" v-model="particleLife.mirrorWrapCount" label="3x3" :disabled="!particleLife.isMirrorWrap" />
                                 </div>
                             </div>
                         </Collapse>
                         <Collapse label="Physics Settings" icon="i-tabler-atom text-fuchsia-500" opened>
-                            <RangeInput input label="Repel Force"
-                                        tooltip="Adjust the force that repels particles from each other. <br> Higher values increase the separation distance."
-                                        :min="0.01" :max="4" :step="0.01" v-model="particleLife.repel">
-                            </RangeInput>
-                            <RangeInput input label="Force Multiplier"
-                                        tooltip="Scales the interaction forces between particles. <br> Higher values make forces stronger and particles move faster."
-                                        :min="0.01" :max="2" :step="0.01" v-model="particleLife.forceFactor" mt-2>
-                            </RangeInput>
-                            <RangeInput input label="Friction"
-                                        tooltip="Controls how much friction slows particles down. <br> Higher values reduce speed and help stabilize the system."
-                                        :min="0" :max="1" :step="0.01" v-model="particleLife.frictionFactor" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.repel" input
+                                label="Repel Force"
+                                tooltip="Adjust the force that repels particles from each other. <br> Higher values increase the separation distance." :min="0.01" :max="4" :step="0.01"
+                            />
+                            <RangeInput
+                                v-model="particleLife.forceFactor" input
+                                label="Force Multiplier"
+                                tooltip="Scales the interaction forces between particles. <br> Higher values make forces stronger and particles move faster." :min="0.01" :max="2" :step="0.01" mt-2
+                            />
+                            <RangeInput
+                                v-model="particleLife.frictionFactor" input
+                                label="Friction"
+                                tooltip="Controls how much friction slows particles down. <br> Higher values reduce speed and help stabilize the system." :min="0" :max="1" :step="0.01" mt-2
+                            />
 
-                            <hr border-gray-500 my-2>
+                            <hr my-2 border-gray-500>
                             <div flex items-center justify-between gap-2>
-                                <p underline text-gray-300>Delta Time :</p>
+                                <p text-gray-300 underline>
+                                    Delta Time :
+                                </p>
                                 <div flex-1>
-                                    <button type="button" text-sm cursor-pointer pointer-events-auto rounded-full px-2 py-0.5 flex items-center gap-1 transition-colors text-gray-300 ring-1 class="ring-slate-500/50 bg-slate-700/40 hover:bg-slate-600/50"
-                                            :title="particleLife.showLiveDeltaTime ? 'Hide live Δt' : 'Show live Δt'"
-                                            @click="particleLife.showLiveDeltaTime = !particleLife.showLiveDeltaTime">
+                                    <button
+                                        type="button" pointer-events-auto flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-sm text-gray-300 ring-1 transition-colors class="bg-slate-700/40 ring-slate-500/50 hover:bg-slate-600/50"
+                                        :title="particleLife.showLiveDeltaTime ? 'Hide live Δt' : 'Show live Δt'"
+                                        @click="particleLife.showLiveDeltaTime = !particleLife.showLiveDeltaTime"
+                                    >
                                         <Transition name="dt-fade" mode="out-in">
                                             <span v-if="!particleLife.showLiveDeltaTime" key="show" flex items-center gap-1 text-gray-300>
-                                                <span i-tabler-eye text-sm></span>
+                                                <span i-tabler-eye text-sm />
                                                 Show live Δt
                                             </span>
                                             <span v-else key="value" flex items-center gap-1 text-gray-300>
-                                                <span i-tabler-eye-off text-sm text-gray-500></span>
+                                                <span i-tabler-eye-off text-sm text-gray-500 />
                                                 1/{{ Math.round(1 / displayedDeltaTime) }} <span text-gray-500>({{ displayedDeltaTime.toFixed(4) }}s)</span>
                                             </span>
                                         </Transition>
                                     </button>
                                 </div>
-                                <ToggleSwitch label="Manual Δt" v-model="particleLife.manualDeltaTimeEnabled" />
+                                <ToggleSwitch v-model="particleLife.manualDeltaTimeEnabled" label="Manual Δt" />
                             </div>
-                            <RangeInput v-if="particleLife.manualDeltaTimeEnabled"
-                                        input :label="`Δt = 1/${Math.round(1 / particleLife.manualDeltaTime)}`"
-                                        tooltip="Manually set the simulation time step (Δt), shown as a frame fraction (1/x). <br> <b>Higher Δt</b> → faster but particles overshoot <br> <b>Lower Δt</b> → slower but more stable. <br> <i>Disable to keep the automatic, framerate-independent Δt.</i>"
-                                        :min="0.0041" :max="0.05" :step="0.0001" v-model="particleLife.manualDeltaTime" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-if="particleLife.manualDeltaTimeEnabled"
+                                v-model="particleLife.manualDeltaTime" input
+                                :label="`Δt = 1/${Math.round(1 / particleLife.manualDeltaTime)}`"
+                                tooltip="Manually set the simulation time step (Δt), shown as a frame fraction (1/x). <br> <b>Higher Δt</b> → faster but particles overshoot <br> <b>Lower Δt</b> → slower but more stable. <br> <i>Disable to keep the automatic, framerate-independent Δt.</i>" :min="0.0041" :max="0.05" :step="0.0001" mt-2
+                            />
                         </Collapse>
-                        <Collapse label="Quantum / Electrical" icon="i-tabler-bolt text-lime-400"
-                                  tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each have their own goal (derived from their index) and learn an attract/repel intent. They do NOT push matter directly — they recruit nearby neurons. <br> <b>Neurons</b> are actuators for a single color: within range of an urge they are driven by it and then pull or push only that one color. <br> State persists across frames (the next step reads the previous one), so there is no second pass.">
-                            <div flex items-center justify-between gap-2 mb-1>
+                        <Collapse
+                            label="Quantum / Electrical" icon="i-tabler-bolt text-lime-400"
+                            tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each have their own goal (derived from their index) and learn an attract/repel intent. They do NOT push matter directly — they recruit nearby neurons. <br> <b>Neurons</b> are actuators for a single color: within range of an urge they are driven by it and then pull or push only that one color. <br> State persists across frames (the next step reads the previous one), so there is no second pass."
+                        >
+                            <div mb-1 flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Enable layer
                                     <TooltipInfo container="#mainContainer" tooltip="Master switch. When off, urges and neurons freeze in place and exert no field." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isElectricalEnabled" />
+                                <ToggleSwitch v-model="particleLife.isElectricalEnabled" label="On" colorful-label />
                             </div>
 
-                            <RangeInput input label="Urge Count"
-                                        tooltip="Number of urge particles. Each urge is a distinct type with its OWN goal: it acts on color = index % species, and the objective (attract vs repel, density vs fraction) is derived from its index so the population is diverse."
-                                        :min="0" :max="2000" :step="1" v-model="particleLife.numUrges">
-                            </RangeInput>
-                            <RangeInput input label="Neuron Count" mt-2
-                                        tooltip="Number of neuron particles. Each neuron is an actuator for a single color = index % species. It is driven by the urges near it and then pulls or pushes only that one color."
-                                        :min="0" :max="2000" :step="1" v-model="particleLife.numNeurons">
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.numUrges" input
+                                label="Urge Count"
+                                tooltip="Number of urge particles. Each urge is a distinct type with its OWN goal: it acts on color = index % species, and the objective (attract vs repel, density vs fraction) is derived from its index so the population is diverse." :min="0" :max="2000" :step="1"
+                            />
+                            <RangeInput
+                                v-model="particleLife.numNeurons" input label="Neuron Count"
+                                mt-2
+                                tooltip="Number of neuron particles. Each neuron is an actuator for a single color = index % species. It is driven by the urges near it and then pulls or pushes only that one color." :min="0" :max="2000" :step="1"
+                            />
 
-                            <div flex items-center justify-between gap-2 mt-2>
-                                <p class="w-1/3 text-2sm shrink-0">
+                            <div mt-2 flex items-center justify-between gap-2>
+                                <p class="w-1/3 shrink-0 text-2sm">
                                     Urge Goal Family
                                     <TooltipInfo container="#mainContainer" tooltip="The goal family for urges. Each urge targets a different color (by index). <br> <b>Cycle All</b>: each urge cycles through maximize, minimize, and homeostasis by its index — most diverse. <br> <b>All Maximize</b>: every urge wants to increase density of its target color. <br> <b>All Minimize</b>: every urge wants to decrease density of its target color. <br> <b>All Homeostasis</b>: every urge keeps its target color's density at a per-urge set point." />
                                 </p>
-                                <SelectInput name="urge-metric-mode" class="max-w-full!"
-                                             v-model="particleLife.metricMode"
-                                             :options="[
-                                                 { id: 0, name: 'Cycle All', category: 'Goal' },
-                                                 { id: 1, name: 'All Maximize', category: 'Goal' },
-                                                 { id: 2, name: 'All Minimize', category: 'Goal' },
-                                                 { id: 3, name: 'All Homeostasis', category: 'Goal' },
-                                             ]">
-                                </SelectInput>
+                                <SelectInput
+                                    v-model="particleLife.metricMode" name="urge-metric-mode"
+                                    class="max-w-full!"
+                                    :options="[
+                                        { id: 0, name: 'Cycle All', category: 'Goal' },
+                                        { id: 1, name: 'All Maximize', category: 'Goal' },
+                                        { id: 2, name: 'All Minimize', category: 'Goal' },
+                                        { id: 3, name: 'All Homeostasis', category: 'Goal' },
+                                    ]"
+                                />
                             </div>
 
-                            <hr border-gray-500 my-2>
-                            <RangeInput input label="Urge Radius"
-                                        tooltip="Radius over which an urge measures its goal metric, and the range at which a neuron pushes/pulls its color. Larger = wider influence."
-                                        :min="4" :max="160" :step="1" v-model="particleLife.urgeRadius">
-                            </RangeInput>
-                            <RangeInput input label="Neuron Radius" mt-2
-                                        tooltip="Radius (measured from the neuron) within which an urge drives it. Closer urges have more influence on its drive."
-                                        :min="4" :max="160" :step="1" v-model="particleLife.neuronRadius">
-                            </RangeInput>
-                            <RangeInput input label="Urge Field Strength" mt-2
-                                        tooltip="Strength of a neuron's field on its color, scaled by the drive it receives from nearby urges. Neurons near many strong urges push/pull harder."
-                                        :min="0" :max="4" :step="0.01" v-model="particleLife.urgeForce">
-                            </RangeInput>
+                            <hr my-2 border-gray-500>
+                            <RangeInput
+                                v-model="particleLife.urgeRadius" input
+                                label="Urge Radius"
+                                tooltip="Radius over which an urge measures its goal metric, and the range at which a neuron pushes/pulls its color. Larger = wider influence." :min="4" :max="160" :step="1"
+                            />
+                            <RangeInput
+                                v-model="particleLife.neuronRadius" input label="Neuron Radius"
+                                mt-2
+                                tooltip="Radius (measured from the neuron) within which an urge drives it. Closer urges have more influence on its drive." :min="4" :max="160" :step="1"
+                            />
+                            <RangeInput
+                                v-model="particleLife.urgeForce" input label="Urge Field Strength"
+                                mt-2
+                                tooltip="Strength of a neuron's field on its color, scaled by the drive it receives from nearby urges. Neurons near many strong urges push/pull harder." :min="0" :max="4" :step="0.01"
+                            />
 
-                            <hr border-gray-500 my-2>
-                            <p underline text-gray-300 class="-mt-0.5" mb-1>Urge Learning :</p>
-                            <RangeInput input label="Control Gain"
-                                        tooltip="Learning rate: how strongly the change in the urge's metric (vs the previous frame) pushes its attract/repel control. Higher = faster adaptation."
-                                        :min="0" :max="1" :step="0.005" v-model="particleLife.controlGain">
-                            </RangeInput>
-                            <RangeInput input label="Control Max" mt-2
-                                        tooltip="Clamp on an urge's control magnitude (attract +, repel -)."
-                                        :min="0.1" :max="6" :step="0.1" v-model="particleLife.controlMax">
-                            </RangeInput>
+                            <hr my-2 border-gray-500>
+                            <p class="-mt-0.5" mb-1 text-gray-300 underline>
+                                Urge Learning :
+                            </p>
+                            <RangeInput
+                                v-model="particleLife.controlGain" input
+                                label="Control Gain"
+                                tooltip="Learning rate: how strongly the change in the urge's metric (vs the previous frame) pushes its attract/repel control. Higher = faster adaptation." :min="0" :max="1" :step="0.005"
+                            />
+                            <RangeInput
+                                v-model="particleLife.controlMax" input label="Control Max"
+                                mt-2
+                                tooltip="Clamp on an urge's control magnitude (attract +, repel -)." :min="0.1" :max="6" :step="0.1"
+                            />
 
-                            <hr border-gray-500 my-2>
-                            <p underline text-gray-300 class="-mt-0.5" mb-1>Neuron Control :</p>
-                            <RangeInput input label="Neuron Influence"
-                                        tooltip="(Legacy) How strongly a single nearby neuron nudged an urge's control. In the current model urges drive neurons, so this no longer has an effect."
-                                        :min="0" :max="3" :step="0.01" v-model="particleLife.neuronInfluence">
-                            </RangeInput>
-                            <RangeInput input label="Authority / Neuron" mt-2
-                                        tooltip="(Legacy) Extra authority gained per nearby neuron. In the current model urges drive neurons, so this no longer has an effect."
-                                        :min="0" :max="2" :step="0.01" v-model="particleLife.neuronAuthority">
-                            </RangeInput>
-                            <RangeInput input label="Max Authority" mt-2
-                                        tooltip="(Legacy) Cap on the total neuron authority an urge could accumulate. No longer used."
-                                        :min="1" :max="12" :step="0.5" v-model="particleLife.maxAuthority">
-                            </RangeInput>
+                            <hr my-2 border-gray-500>
+                            <p class="-mt-0.5" mb-1 text-gray-300 underline>
+                                Neuron Control :
+                            </p>
+                            <RangeInput
+                                v-model="particleLife.neuronInfluence" input
+                                label="Neuron Influence"
+                                tooltip="(Legacy) How strongly a single nearby neuron nudged an urge's control. In the current model urges drive neurons, so this no longer has an effect." :min="0" :max="3" :step="0.01"
+                            />
+                            <RangeInput
+                                v-model="particleLife.neuronAuthority" input label="Authority / Neuron"
+                                mt-2
+                                tooltip="(Legacy) Extra authority gained per nearby neuron. In the current model urges drive neurons, so this no longer has an effect." :min="0" :max="2" :step="0.01"
+                            />
+                            <RangeInput
+                                v-model="particleLife.maxAuthority" input label="Max Authority"
+                                mt-2
+                                tooltip="(Legacy) Cap on the total neuron authority an urge could accumulate. No longer used." :min="1" :max="12" :step="0.5"
+                            />
 
-                            <hr border-gray-500 my-2>
-                            <RangeInput input label="Cohesion"
-                                        tooltip="How strongly urges and neurons cling to the body (so they coat it) and avoid overlapping each other. 0 = they drift freely."
-                                        :min="0" :max="3" :step="0.01" v-model="particleLife.cohesion">
-                            </RangeInput>
+                            <hr my-2 border-gray-500>
+                            <RangeInput
+                                v-model="particleLife.cohesion" input
+                                label="Cohesion"
+                                tooltip="How strongly urges and neurons cling to the body (so they coat it) and avoid overlapping each other. 0 = they drift freely." :min="0" :max="3" :step="0.01"
+                            />
 
                             <!-- Sense Neurons: sensors that perceive one target color (no actuation) -->
                             <template v-if="particleLife.isElectricalEnabled">
-                                <hr border-gray-500 my-2>
-                                <p underline text-gray-300 class="-mt-0.5" mb-1>Sense Neurons :</p>
-                                <RangeInput input label="Sense Count"
-                                            tooltip="Number of sense neuron particles (sensors). Each senses EXACTLY ONE color = index % species and stores its perception in the particle's signal (magnitude 0–1) and control (bearing, radians) fields. They never push or pull matter."
-                                            :min="0" :max="2000" :step="1" v-model="particleLife.numSenseNeurons">
-                                </RangeInput>
-                                <RangeInput input label="Sense Radius" mt-2
-                                            tooltip="Perception radius (world units) shared by all three senses: sight cone range, smell/sound scan disk."
-                                            :min="4" :max="160" :step="1" v-model="particleLife.senseRadius">
-                                </RangeInput>
-                                <RangeInput input label="Sight Cone Half-Angle" mt-2
-                                            tooltip="Half-angle of the sight cone in the direction of motion. Sight only counts target-color matter inside this forward cone (magnitude only, no bearing)."
-                                            :min="1" :max="90" :step="1" v-model="particleLife.senseConeHalfAngleDeg">
-                                </RangeInput>
-                                <div flex items-center justify-between gap-2 mt-2>
-                                    <p class="w-1/3 text-2sm shrink-0">
+                                <hr my-2 border-gray-500>
+                                <p class="-mt-0.5" mb-1 text-gray-300 underline>
+                                    Sense Neurons :
+                                </p>
+                                <RangeInput
+                                    v-model="particleLife.numSenseNeurons" input
+                                    label="Sense Count"
+                                    tooltip="Number of sense neuron particles (sensors). Each senses EXACTLY ONE color = index % species and stores its perception in the particle's signal (magnitude 0–1) and control (bearing, radians) fields. They never push or pull matter." :min="0" :max="2000" :step="1"
+                                />
+                                <RangeInput
+                                    v-model="particleLife.senseRadius" input label="Sense Radius"
+                                    mt-2
+                                    tooltip="Perception radius (world units) shared by all three senses: sight cone range, smell/sound scan disk." :min="4" :max="160" :step="1"
+                                />
+                                <RangeInput
+                                    v-model="particleLife.senseConeHalfAngleDeg" input label="Sight Cone Half-Angle"
+                                    mt-2
+                                    tooltip="Half-angle of the sight cone in the direction of motion. Sight only counts target-color matter inside this forward cone (magnitude only, no bearing)." :min="1" :max="90" :step="1"
+                                />
+                                <div mt-2 flex items-center justify-between gap-2>
+                                    <p class="w-1/3 shrink-0 text-2sm">
                                         Sense Mode
                                         <TooltipInfo container="#mainContainer" tooltip="Which sense each sense neuron uses. <br> <b>Cycle All</b>: senses cycle sight / smell / sound by index — a diverse population. <br> <b>All Sight</b>: forward cone, magnitude only (nothing behind is seen). <br> <b>All Smell</b>: bearing toward the NEAREST high-density cluster of the target color (near-biased weighting). <br> <b>All Sound</b>: bearing + loudness with NO far/near discrimination (uniform weight)." />
                                     </p>
-                                    <SelectInput name="sense-mode" class="max-w-full!"
-                                                 v-model="particleLife.senseMode"
-                                                 :options="[
-                                                     { id: 0, name: 'Cycle All', category: 'Sense' },
-                                                     { id: 1, name: 'All Sight', category: 'Sense' },
-                                                     { id: 2, name: 'All Smell', category: 'Sense' },
-                                                     { id: 3, name: 'All Sound', category: 'Sense' },
-                                                 ]">
-                                    </SelectInput>
+                                    <SelectInput
+                                        v-model="particleLife.senseMode" name="sense-mode"
+                                        class="max-w-full!"
+                                        :options="[
+                                            { id: 0, name: 'Cycle All', category: 'Sense' },
+                                            { id: 1, name: 'All Sight', category: 'Sense' },
+                                            { id: 2, name: 'All Smell', category: 'Sense' },
+                                            { id: 3, name: 'All Sound', category: 'Sense' },
+                                        ]"
+                                    />
                                 </div>
                             </template>
 
-                            <hr border-gray-500 my-2>
-                            <div flex items-center justify-between gap-2 mb-1>
+                            <hr my-2 border-gray-500>
+                            <div mb-1 flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Urge Cloning
                                     <TooltipInfo container="#mainContainer" tooltip="When an urge's metric stays above the threshold, it gives birth: a dormant clone-pool particle is activated as a copy of that urge plus ALL its in-range neurons, shot outward with an impulse. <b>On every birth the parent's metric is split in half</b> — half stays with the parent, half goes to the clone. Urges keep giving birth for as long as their metric stays above the threshold, so highly successful urges (and urge+neuron combinations) keep replicating, while marginal ones stall or starve." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isCloningEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                                <ToggleSwitch v-model="particleLife.isCloningEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
                             </div>
 
                             <template v-if="particleLife.isCloningEnabled">
-                                <RangeInput input label="Metric Threshold"
-                                            tooltip="An urge gives birth only while its metric stays above this value. Each birth halves the metric, so an urge must re-accumulate past this value before it can reproduce again — higher = rarer replication. Typical metrics range 0–20 depending on local density."
-                                            :min="0.1" :max="10" :step="0.1" v-model="particleLife.cloneMetricThreshold" mt-1>
-                                </RangeInput>
-                                <RangeInput input label="Birth Sustained Ticks"
-                                            tooltip="Consecutive checks (500 ms each) that an urge's metric must stay above the threshold before it gives birth. 1 = reproduce immediately whenever above threshold (fastest replication). Higher = slower, steadier reproduction. After a birth the counter resets and the halved metric must climb back above threshold."
-                                            :min="1" :max="30" :step="1" v-model="particleLife.birthSustainedTicks" mt-1>
-                                </RangeInput>
-                                <RangeInput input label="Clone Impulse"
-                                            tooltip="Initial velocity given to a clone so it shoots outside the original's radius but stays in the general area. Higher = flies further. Typical sim sizes are ~800–2000 px."
-                                            :min="200" :max="5000" :step="50" v-model="particleLife.cloneImpulse" mt-1>
-                                </RangeInput>
-                                <RangeInput input label="Clone Pool Size"
-                                            tooltip="Number of dormant slots reserved for cloning. Each clone permanently consumes one slot. Total particles = matter + urges + neurons + sense + pool. Changing this re-labels the population."
-                                            :min="0" :max="1000" :step="10" v-model="particleLife.numClonePool" mt-1>
-                                </RangeInput>
+                                <RangeInput
+                                    v-model="particleLife.cloneMetricThreshold" input
+                                    label="Metric Threshold"
+                                    tooltip="An urge gives birth only while its metric stays above this value. Each birth halves the metric, so an urge must re-accumulate past this value before it can reproduce again — higher = rarer replication. Typical metrics range 0–20 depending on local density." :min="0.1" :max="10" :step="0.1" mt-1
+                                />
+                                <RangeInput
+                                    v-model="particleLife.birthSustainedTicks" input
+                                    label="Birth Sustained Ticks"
+                                    tooltip="Consecutive checks (500 ms each) that an urge's metric must stay above the threshold before it gives birth. 1 = reproduce immediately whenever above threshold (fastest replication). Higher = slower, steadier reproduction. After a birth the counter resets and the halved metric must climb back above threshold." :min="1" :max="30" :step="1" mt-1
+                                />
+                                <RangeInput
+                                    v-model="particleLife.cloneImpulse" input
+                                    label="Clone Impulse"
+                                    tooltip="Initial velocity given to a clone so it shoots outside the original's radius but stays in the general area. Higher = flies further. Typical sim sizes are ~800–2000 px." :min="200" :max="5000" :step="50" mt-1
+                                />
+                                <RangeInput
+                                    v-model="particleLife.numClonePool" input
+                                    label="Clone Pool Size"
+                                    tooltip="Number of dormant slots reserved for cloning. Each clone permanently consumes one slot. Total particles = matter + urges + neurons + sense + pool. Changing this re-labels the population." :min="0" :max="1000" :step="10" mt-1
+                                />
                             </template>
 
                             <!-- Urge Lifecycle: Death -->
-                            <div class="flex items-center justify-between mt-2">
+                            <div class="mt-2 flex items-center justify-between">
                                 <p class="w-2/3 text-2sm">
                                     Urge Death (Starvation)
                                     <TooltipInfo container="#mainContainer" tooltip="When an urge's metric stays below the threshold for the sustained time, it dies: its particle becomes dormant (invisible) and all neurons within neuronRadius of it also die. Death is permanent for the session." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isDeathEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                                <ToggleSwitch v-model="particleLife.isDeathEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
                             </div>
                             <template v-if="particleLife.isDeathEnabled">
-                                <RangeInput input label="Metric Threshold" tooltip="Signal below this counts as 'starved'. Signal is ≥ 0 by construction, so a small epsilon means effectively zero."
-                                            :min="0" :max="2" :step="0.01" v-model="particleLife.deathMetricThreshold" mt-1>
-                                </RangeInput>
-                                <RangeInput input label="Sustained Ticks" tooltip="Consecutive 500 ms ticks below threshold before death. 12 ticks ≈ 6 seconds."
-                                            :min="3" :max="60" :step="1" v-model="particleLife.deathSustainedTicks" mt-1>
-                                </RangeInput>
+                                <RangeInput
+                                    v-model="particleLife.deathMetricThreshold" input label="Metric Threshold"
+                                    tooltip="Signal below this counts as 'starved'. Signal is ≥ 0 by construction, so a small epsilon means effectively zero." :min="0" :max="2" :step="0.01" mt-1
+                                />
+                                <RangeInput
+                                    v-model="particleLife.deathSustainedTicks" input label="Sustained Ticks"
+                                    tooltip="Consecutive 500 ms ticks below threshold before death. 12 ticks ≈ 6 seconds." :min="3" :max="60" :step="1" mt-1
+                                />
                             </template>
 
                             <!-- Urge Lifecycle: Merges -->
-                            <div class="flex items-center justify-between mt-2">
+                            <div class="mt-2 flex items-center justify-between">
                                 <p class="w-2/3 text-2sm">
                                     Urge Merges
                                     <TooltipInfo container="#mainContainer" tooltip="When two live urges stay within the merge radius for the sustained time, they merge: the higher-power urge survives (absorbing the other's metric/control), and the loser dies along with its in-range neurons. Tie → lower display id wins." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isMergeEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                                <ToggleSwitch v-model="particleLife.isMergeEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
                             </div>
                             <template v-if="particleLife.isMergeEnabled">
-                                <RangeInput input label="Merge Radius" tooltip="World-unit distance within which two urges are considered close enough to merge. Default ≈ urgeRadius × 0.6."
-                                            :min="5" :max="200" :step="1" v-model="particleLife.mergeRadius" mt-1>
-                                </RangeInput>
-                                <RangeInput input label="Sustained Ticks" tooltip="Consecutive 500 ms ticks of proximity before merge fires. 8 ticks ≈ 4 seconds."
-                                            :min="3" :max="60" :step="1" v-model="particleLife.mergeSustainedTicks" mt-1>
-                                </RangeInput>
+                                <RangeInput
+                                    v-model="particleLife.mergeRadius" input label="Merge Radius"
+                                    tooltip="World-unit distance within which two urges are considered close enough to merge. Default ≈ urgeRadius × 0.6." :min="5" :max="200" :step="1" mt-1
+                                />
+                                <RangeInput
+                                    v-model="particleLife.mergeSustainedTicks" input label="Sustained Ticks"
+                                    tooltip="Consecutive 500 ms ticks of proximity before merge fires. 8 ticks ≈ 4 seconds." :min="3" :max="60" :step="1" mt-1
+                                />
                             </template>
 
                             <!-- Urge Lifecycle: Murders -->
-                            <div class="flex items-center justify-between mt-2">
+                            <div class="mt-2 flex items-center justify-between">
                                 <p class="w-2/3 text-2sm">
                                     Urge Murders
                                     <TooltipInfo container="#mainContainer" tooltip="When two live urges collide (distance below murderRadius) and their power gap exceeds the margin, the weaker dies immediately. No sustained requirement — instant collision event. Near-equal powers do not kill each other." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isMurderEnabled" :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                                <ToggleSwitch v-model="particleLife.isMurderEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
                             </div>
                             <template v-if="particleLife.isMurderEnabled">
-                                <RangeInput input label="Murder Radius" tooltip="World-unit distance for a 'collision'. Tighter than merge radius. Default ≈ urgeRadius × 0.35."
-                                            :min="2" :max="100" :step="1" v-model="particleLife.murderRadius" mt-1>
-                                </RangeInput>
-                                <RangeInput input label="Power Margin" tooltip="Minimum |powerA − powerB| (in signal units) before the weaker one dies. Higher = more tolerant of near-equal powers."
-                                            :min="0.1" :max="5" :step="0.1" v-model="particleLife.murderPowerMargin" mt-1>
-                                </RangeInput>
+                                <RangeInput
+                                    v-model="particleLife.murderRadius" input label="Murder Radius"
+                                    tooltip="World-unit distance for a 'collision'. Tighter than merge radius. Default ≈ urgeRadius × 0.35." :min="2" :max="100" :step="1" mt-1
+                                />
+                                <RangeInput
+                                    v-model="particleLife.murderPowerMargin" input label="Power Margin"
+                                    tooltip="Minimum |powerA − powerB| (in signal units) before the weaker one dies. Higher = more tolerant of near-equal powers." :min="0.1" :max="5" :step="0.1" mt-1
+                                />
                             </template>
 
-                            <hr border-gray-500 my-2>
+                            <hr my-2 border-gray-500>
                             <div flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Debug links
                                     <TooltipInfo container="#mainContainer" tooltip="Draw light dotted lines from each neuron to the urges within its radius — i.e. the urges currently driving it, so you can see which neurons an urge is recruiting." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="particleLife.isDebugConnections" />
+                                <ToggleSwitch v-model="particleLife.isDebugConnections" label="On" colorful-label />
                             </div>
                         </Collapse>
-                        <Collapse label="Urge Inspector" icon="i-tabler-telescope text-sky-400"
-                                  tooltip="Read-only telemetry for the Quantum / Electrical layer. <br> Flip <b>Live readback</b> on to sample each urge’s <b>control</b> and <b>metric</b> from the GPU a few times per second — off means zero overhead."> 
-                            <div flex items-center justify-between gap-2 mb-1>
+                        <Collapse
+                            label="Urge Inspector" icon="i-tabler-telescope text-sky-400"
+                            tooltip="Read-only telemetry for the Quantum / Electrical layer. <br> Flip <b>Live readback</b> on to sample each urge’s <b>control</b> and <b>metric</b> from the GPU a few times per second — off means zero overhead."
+                        >
+                            <div mb-1 flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Live readback
                                     <TooltipInfo container="#mainContainer" tooltip="Throttled GPU readback of every urge’s control & metric. Never runs while a resize/erase is mutating buffers, and stops immediately when off." />
                                 </p>
-                                <ToggleSwitch label="On" colorful-label v-model="urgeInspectorOpen" :disabled="!particleLife.isElectricalEnabled" />
+                                <ToggleSwitch v-model="urgeInspectorOpen" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled" />
                             </div>
 
-                            <UrgeInspector v-if="urgeInspectorOpen" key="urge-inspector-panel"
-                                           v-model:selected-id="selectedUrgeId"
-                                           :stats="urgeStats"
-                                           :params="electricalParams"
-                                           :control-max="particleLife.controlMax"
-                                           :target-colors="colorRgbStrings"
-                                           :num-types="particleLife.numColors"
-                                           :objective-label-for="objectiveLabelFor" />
+                            <UrgeInspector
+                                v-if="urgeInspectorOpen" key="urge-inspector-panel"
+                                v-model:selected-id="selectedUrgeId"
+                                :stats="urgeStats"
+                                :params="electricalParams"
+                                :control-max="particleLife.controlMax"
+                                :target-colors="colorRgbStrings"
+                                :num-types="particleLife.numColors"
+                                :objective-label-for="objectiveLabelFor"
+                            />
                         </Collapse>
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500">
-                            <RangeInput input label="Particle Size"
-                                        tooltip="Controls the overall size of the particles in the simulation, allowing you to make them larger or smaller depending on your preference. This setting does not impact performance."
-                                        :min="0.1" :max="6" :step="0.1" v-model="particleLife.particleSize">
-                            </RangeInput>
-                            <RangeInput input label="Particle Opacity"
-                                        tooltip="Adjust the opacity of the particles in the simulation. <br> This setting allows you to control how transparent or opaque the particles appear."
-                                        :min="0" :max="1" :step="0.01" v-model="particleLife.particleOpacity" mt-2>
-                            </RangeInput>
-                            <div flex justify-between mt-1>
-                                <div class="w-2/3 text-2sm mt-1">
+                            <RangeInput
+                                v-model="particleLife.particleSize" input
+                                label="Particle Size"
+                                tooltip="Controls the overall size of the particles in the simulation, allowing you to make them larger or smaller depending on your preference. This setting does not impact performance." :min="0.1" :max="6" :step="0.1"
+                            />
+                            <RangeInput
+                                v-model="particleLife.particleOpacity" input
+                                label="Particle Opacity"
+                                tooltip="Adjust the opacity of the particles in the simulation. <br> This setting allows you to control how transparent or opaque the particles appear." :min="0" :max="1" :step="0.01" mt-2
+                            />
+                            <div mt-1 flex justify-between>
+                                <div class="mt-1 w-2/3 text-2sm">
                                     Particle Blending
                                     <TooltipInfo container="#mainContainer" tooltip="Particle blending modes. <br> <small><u>Normal:</u> Alpha blend (standard colors). <br> <u>Additive:</u> Adds color values. Overlaps accumulate brightness (glow-like).</small>" />
                                 </div>
                                 <div flex>
-                                    <SelectButton :id="false" label="Normal" v-model="particleLife.isAdditiveBlending" mr-2 />
-                                    <SelectButton :id="true" label="Additive" v-model="particleLife.isAdditiveBlending" />
+                                    <SelectButton :id="false" v-model="particleLife.isAdditiveBlending" label="Normal" mr-2 />
+                                    <SelectButton :id="true" v-model="particleLife.isAdditiveBlending" label="Additive" />
                                 </div>
                             </div>
 
-                            <hr border-gray-500 my-2>
-                            <div flex items-start justify-between mb-2>
-                                <p underline text-gray-300 mb-1>Glow Settings :</p>
-                                <ToggleSwitch label="Particle Glowing" colorful-label v-model="particleLife.isParticleGlow" />
+                            <hr my-2 border-gray-500>
+                            <div mb-2 flex items-start justify-between>
+                                <p mb-1 text-gray-300 underline>
+                                    Glow Settings :
+                                </p>
+                                <ToggleSwitch v-model="particleLife.isParticleGlow" label="Particle Glowing" colorful-label />
                             </div>
 
-                            <RangeInput input label="Glow Size"
-                                        tooltip="Adjust the size of the glow effect around particles."
-                                        :min="0" :max="32" :step="0.1" v-model="particleLife.glowSize" mt-2>
-                            </RangeInput>
-                            <RangeInput input label="Glow Intensity"
-                                        tooltip="Adjust the intensity of the glow effect around particles."
-                                        :min="0" :max="0.5" :step="0.005" v-model="particleLife.glowIntensity" mt-2>
-                            </RangeInput>
-                            <RangeInput input label="Glow Steepness"
-                                        tooltip="Adjust the steepness of the glow effect around particles. <br> Higher values create a sharper transition between glowing and non-glowing areas."
-                                        :min="0" :max="12" :step="1" v-model="particleLife.glowSteepness" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.glowSize" input
+                                label="Glow Size"
+                                tooltip="Adjust the size of the glow effect around particles." :min="0" :max="32" :step="0.1" mt-2
+                            />
+                            <RangeInput
+                                v-model="particleLife.glowIntensity" input
+                                label="Glow Intensity"
+                                tooltip="Adjust the intensity of the glow effect around particles." :min="0" :max="0.5" :step="0.005" mt-2
+                            />
+                            <RangeInput
+                                v-model="particleLife.glowSteepness" input
+                                label="Glow Steepness"
+                                tooltip="Adjust the steepness of the glow effect around particles. <br> Higher values create a sharper transition between glowing and non-glowing areas." :min="0" :max="12" :step="1" mt-2
+                            />
                         </Collapse>
                         <Collapse label="Camera Settings" icon="i-tabler-camera-cog text-violet-500">
-                            <RangeInput input label="Zoom Smoothing"
-                                        tooltip="Adjusts the smoothness of the zoom. <br> Lower values result in a slower, more fluid zoom, while higher values make it faster and more abrupt."
-                                        :min="0.01" :max="0.5" :step="0.01" v-model="particleLife.zoomSmoothing">
-                            </RangeInput>
-                            <RangeInput input label="Pan Smoothing"
-                                        tooltip="Adjusts the smoothness of camera panning. <br> Lower values create more inertia for a gliding effect, while higher values make the movement stop more abruptly."
-                                        :min="0.01" :max="0.5" :step="0.01" v-model="particleLife.panSmoothing" mt-2>
-                            </RangeInput>
+                            <RangeInput
+                                v-model="particleLife.zoomSmoothing" input
+                                label="Zoom Smoothing"
+                                tooltip="Adjusts the smoothness of the zoom. <br> Lower values result in a slower, more fluid zoom, while higher values make it faster and more abrupt." :min="0.01" :max="0.5" :step="0.01"
+                            />
+                            <RangeInput
+                                v-model="particleLife.panSmoothing" input
+                                label="Pan Smoothing"
+                                tooltip="Adjusts the smoothness of camera panning. <br> Lower values create more inertia for a gliding effect, while higher values make the movement stop more abruptly." :min="0.01" :max="0.5" :step="0.01" mt-2
+                            />
 
-                            <hr border-gray-500 my-2>
+                            <hr my-2 border-gray-500>
                             <div flex items-center justify-between>
-                                <p underline text-gray-300>Cinematic Mode :</p>
-                                <button btn px-3 py-1 text-xs rounded-full font-medium flex items-center ring-1 transition-all relative
-                                        :class="particleLife.isDriftCamActive
-                                            ? 'bg-violet-600/80 hover:bg-violet-500/80 ring-violet-400/50 text-white'
-                                            : 'bg-violet-900/60 hover:bg-violet-800/70 ring-violet-500/30 text-violet-300'"
-                                        @click="particleLife.isDriftCamActive = !particleLife.isDriftCamActive">
-                                    <span v-if="particleLife.isDriftCamActive" class="absolute -top-1 -right-1 flex size-3">
-                                        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 ring-1 ring-violet-300/50 opacity-75"></span>
-                                        <span class="relative inline-flex size-3 rounded-full bg-violet-400"></span>
+                                <p text-gray-300 underline>
+                                    Cinematic Mode :
+                                </p>
+                                <button
+                                    btn relative flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 transition-all
+                                    :class="particleLife.isDriftCamActive
+                                        ? 'bg-violet-600/80 hover:bg-violet-500/80 ring-violet-400/50 text-white'
+                                        : 'bg-violet-900/60 hover:bg-violet-800/70 ring-violet-500/30 text-violet-300'"
+                                    @click="particleLife.isDriftCamActive = !particleLife.isDriftCamActive"
+                                >
+                                    <span v-if="particleLife.isDriftCamActive" class="absolute size-3 flex -right-1 -top-1">
+                                        <span class="absolute h-full w-full inline-flex animate-ping rounded-full bg-violet-400 opacity-75 ring-1 ring-violet-300/50" />
+                                        <span class="relative size-3 inline-flex rounded-full bg-violet-400" />
                                     </span>
-                                    <span i-tabler-video text-xs mr-1></span>
+                                    <span i-tabler-video mr-1 text-xs />
                                     {{ particleLife.isDriftCamActive ? 'Drifting...' : 'Enable Drift' }}
                                 </button>
                             </div>
-                            <p v-if="!particleLife.isDriftCamActive" class="text-sm text-gray-500 mt-1">
+                            <p v-if="!particleLife.isDriftCamActive" class="mt-1 text-sm text-gray-500">
                                 Auto camera panning & zooming.
                             </p>
-                            <div v-else flex flex-col gap-2 mt-2>
-                                 <ToggleSwitch label="Reset Path on Pan" colorful-label v-model="particleLife.driftCamResetOnPan"
-                                               tooltip="Starts a new drift trajectory after manual panning or zooming, instead of resuming the previous path.">
-                                </ToggleSwitch>
-                                <RangeInput input label="Drift Speed"
-                                            tooltip="Controls the automatic camera movement speed. <br> - <b>Higher</b> → faster tracking. <br> - <b>Lower</b> → smoother cinematic effect."
-                                            :min="0.01" :max="1.0" :step="0.01" v-model="particleLife.driftCamSpeed">
-                                </RangeInput>
-                                <RangeInput input label="Pan Amplitude"
-                                            tooltip="Controls how far the camera moves from center. <br> - <b>0.5</b> → half the simulation area. <br> - <b>1.0</b> → full edges."
-                                            :min="0.05" :max="1.0" :step="0.05" v-model="particleLife.driftCamAmplitude">
-                                </RangeInput>
-                                <RangeInputMinMax input label="Zoom Range" mt-2
-                                                  tooltip="Sets the min/max zoom levels for automatic cinematic zoom."
-                                                  :min="0.1" :max="5" :step="0.05" :range-offset="0.1" v-model="particleLife.driftCamZoomRange">
-                                </RangeInputMinMax>
+                            <div v-else mt-2 flex flex-col gap-2>
+                                <ToggleSwitch
+                                    v-model="particleLife.driftCamResetOnPan" label="Reset Path on Pan" colorful-label
+                                    tooltip="Starts a new drift trajectory after manual panning or zooming, instead of resuming the previous path."
+                                />
+                                <RangeInput
+                                    v-model="particleLife.driftCamSpeed" input
+                                    label="Drift Speed"
+                                    tooltip="Controls the automatic camera movement speed. <br> - <b>Higher</b> → faster tracking. <br> - <b>Lower</b> → smoother cinematic effect." :min="0.01" :max="1.0" :step="0.01"
+                                />
+                                <RangeInput
+                                    v-model="particleLife.driftCamAmplitude" input
+                                    label="Pan Amplitude"
+                                    tooltip="Controls how far the camera moves from center. <br> - <b>0.5</b> → half the simulation area. <br> - <b>1.0</b> → full edges." :min="0.05" :max="1.0" :step="0.05"
+                                />
+                                <RangeInputMinMax
+                                    v-model="particleLife.driftCamZoomRange" input label="Zoom Range"
+                                    mt-2
+                                    tooltip="Sets the min/max zoom levels for automatic cinematic zoom." :min="0.1" :max="5" :step="0.05" :range-offset="0.1"
+                                />
                             </div>
 
-                            <hr border-gray-500 my-2>
+                            <hr my-2 border-gray-500>
                             <div flex items-center justify-between>
-                                <p underline text-gray-300>Creature Tracking :</p>
-                                <button btn px-3 py-1 text-xs rounded-full font-medium flex items-center ring-1 transition-all relative
-                                        :class="particleLife.isTrackerSelectionActive
-                                            ? 'bg-amber-700/80 hover:bg-amber-600/80 ring-amber-500/50 text-white animate-pulse'
-                                            : particleLife.isTrackerActive
-                                                ? 'bg-rose-600/80 hover:bg-rose-500/80 ring-rose-400/50 text-white'
-                                                : 'bg-rose-900/60 hover:bg-rose-800/70 ring-rose-500/30 text-rose-300'"
-                                        @click="particleLife.isTrackerSelectionActive ? cancelTrackerSelection() : particleLife.isTrackerActive ? stopTracker() : startTrackerSelection()">
-                                    <span v-if="particleLife.isTrackerActive" class="absolute -top-1 -right-1 flex size-3">
-                                        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 ring-1 ring-rose-300/50 opacity-75"></span>
-                                        <span class="relative inline-flex size-3 rounded-full bg-rose-400"></span>
+                                <p text-gray-300 underline>
+                                    Creature Tracking :
+                                </p>
+                                <button
+                                    btn relative flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 transition-all
+                                    :class="particleLife.isTrackerSelectionActive
+                                        ? 'bg-amber-700/80 hover:bg-amber-600/80 ring-amber-500/50 text-white animate-pulse'
+                                        : particleLife.isTrackerActive
+                                            ? 'bg-rose-600/80 hover:bg-rose-500/80 ring-rose-400/50 text-white'
+                                            : 'bg-rose-900/60 hover:bg-rose-800/70 ring-rose-500/30 text-rose-300'"
+                                    @click="particleLife.isTrackerSelectionActive ? cancelTrackerSelection() : particleLife.isTrackerActive ? stopTracker() : startTrackerSelection()"
+                                >
+                                    <span v-if="particleLife.isTrackerActive" class="absolute size-3 flex -right-1 -top-1">
+                                        <span class="absolute h-full w-full inline-flex animate-ping rounded-full bg-rose-400 opacity-75 ring-1 ring-rose-300/50" />
+                                        <span class="relative size-3 inline-flex rounded-full bg-rose-400" />
                                     </span>
-                                    <span :class="particleLife.isTrackerSelectionActive ? 'i-tabler-marquee-2' : 'i-tabler-current-location'" text-xs mr-1></span>
+                                    <span :class="particleLife.isTrackerSelectionActive ? 'i-tabler-marquee-2' : 'i-tabler-current-location'" mr-1 text-xs />
                                     {{ particleLife.isTrackerSelectionActive ? 'Selecting...' : particleLife.isTrackerActive ? 'Tracking...' : 'Select & Track' }}
                                 </button>
                             </div>
-                            <p v-if="!particleLife.isTrackerActive && !particleLife.isTrackerSelectionActive" class="text-sm text-gray-500 mt-1">
+                            <p v-if="!particleLife.isTrackerActive && !particleLife.isTrackerSelectionActive" class="mt-1 text-sm text-gray-500">
                                 Track & follow a creature in real time.
                             </p>
-                            <p v-else-if="particleLife.isTrackerSelectionActive" class="text-sm text-amber-500/80 mt-1">
+                            <p v-else-if="particleLife.isTrackerSelectionActive" class="mt-1 text-sm text-amber-500/80">
                                 Draw around a creature to start tracking.
                             </p>
-                            <div v-else flex flex-col gap-2 mt-2>
-                                <ToggleSwitch label="Camera Follow" colorful-label v-model="particleLife.isTrackerCameraActive"
-                                              tooltip="When enabled, the camera will smoothly follow the tracked creature.">
-                                </ToggleSwitch>
-                                <ToggleSwitch label="Show Indicator" colorful-label v-model="particleLife.isTrackerIndicatorVisible"
-                                              tooltip="Show or hide the visual tracker indicator overlay.">
-                                </ToggleSwitch>
-                                <RangeInput input label="Smoothing"
-                                            tooltip="Controls how smoothly the camera follows the tracked creature. <br> Lower values give a slower, cinematic follow. Higher values make the camera snap to the target."
-                                            :min="0.01" :max="1" :step="0.01" v-model="particleLife.trackerCameraSmoothing">
-                                </RangeInput>
+                            <div v-else mt-2 flex flex-col gap-2>
+                                <ToggleSwitch
+                                    v-model="particleLife.isTrackerCameraActive" label="Camera Follow" colorful-label
+                                    tooltip="When enabled, the camera will smoothly follow the tracked creature."
+                                />
+                                <ToggleSwitch
+                                    v-model="particleLife.isTrackerIndicatorVisible" label="Show Indicator" colorful-label
+                                    tooltip="Show or hide the visual tracker indicator overlay."
+                                />
+                                <RangeInput
+                                    v-model="particleLife.trackerCameraSmoothing" input
+                                    label="Smoothing"
+                                    tooltip="Controls how smoothly the camera follows the tracked creature. <br> Lower values give a slower, cinematic follow. Higher values make the camera snap to the target." :min="0.01" :max="1" :step="0.01"
+                                />
                             </div>
                         </Collapse>
-                        <Collapse label="Debug Tools" icon="i-tabler-bug text-rose-500"
-                                  tooltip="Provides tools for visualizing the simulation's internal state. <br> Toggle the grid view to see spatial bins or activate a heatmap to analyze particle density. <br> These features are useful for debugging and performance tuning.">
+                        <Collapse
+                            label="Debug Tools" icon="i-tabler-bug text-rose-500"
+                            tooltip="Provides tools for visualizing the simulation's internal state. <br> Toggle the grid view to see spatial bins or activate a heatmap to analyze particle density. <br> These features are useful for debugging and performance tuning."
+                        >
                             <div v-show="particleLife.useSpatialHash">
-                                <p text-gray-300 text-2sm underline mb-1 class="-mt-0.5">Spatial Bins Overlay :</p>
+                                <p mb-1 text-2sm text-gray-300 underline class="-mt-0.5">
+                                    Spatial Bins Overlay :
+                                </p>
                                 <div flex items-center gap-2>
-                                    <SelectInput name="debug-bins-mode"
-                                                 :model-value="particleLife.isDebugHeatmapActive ? 'heatmap' : 'grid'"
-                                                 @update:model-value="particleLife.isDebugHeatmapActive = $event === 'heatmap'"
-                                                 :options="[
-                                                 { id: 'grid', name: 'Grid', icon: 'i-tabler-grid-dots', category: 'Display Mode' },
-                                                 { id: 'heatmap', name: 'Heatmap', icon: 'i-tabler-flame', category: 'Display Mode' }
-                                             ]">
-                                    </SelectInput>
-                                    <ToggleSwitch label="Active" colorful-label v-model="particleLife.isDebugBinsActive" />
+                                    <SelectInput
+                                        name="debug-bins-mode"
+                                        :model-value="particleLife.isDebugHeatmapActive ? 'heatmap' : 'grid'"
+                                        :options="[
+                                            { id: 'grid', name: 'Grid', icon: 'i-tabler-grid-dots', category: 'Display Mode' },
+                                            { id: 'heatmap', name: 'Heatmap', icon: 'i-tabler-flame', category: 'Display Mode' },
+                                        ]"
+                                        @update:model-value="particleLife.isDebugHeatmapActive = $event === 'heatmap'"
+                                    />
+                                    <ToggleSwitch v-model="particleLife.isDebugBinsActive" label="Active" colorful-label />
                                 </div>
-                                <RangeInput v-show="particleLife.isDebugHeatmapActive" input label="Heatmap Scale"
-                                            tooltip="Sets the number of particles in a cell that maps to the highest value on the heatmap gradient. <br> Adjusting this value scales the density visualization, helping to fine-tune how particle concentrations are displayed."
-                                            :min="640" :max="16000" :step="16" v-model="particleLife.debugMaxParticleCount" mt-2>
-                                </RangeInput>
-                                <hr border-gray-500 my-2>
+                                <RangeInput
+                                    v-show="particleLife.isDebugHeatmapActive" v-model="particleLife.debugMaxParticleCount" input
+                                    label="Heatmap Scale"
+                                    tooltip="Sets the number of particles in a cell that maps to the highest value on the heatmap gradient. <br> Adjusting this value scales the density visualization, helping to fine-tune how particle concentrations are displayed." :min="640" :max="16000" :step="16" mt-2
+                                />
+                                <hr my-2 border-gray-500>
                             </div>
 
-                            <p text-gray-300 text-2sm underline mb-1 class="-mt-0.5">Neighbor Search :</p>
-                            <SelectInput name="algorithm-mode"
-                                         :model-value="particleLife.useSpatialHash ? 'spatial' : 'brute'"
-                                         @update:model-value="particleLife.useSpatialHash = $event === 'spatial'"
-                                         :options="[
-                                             { id: 'spatial', name: 'Spatial Hash', icon: 'i-tabler-topology-ring-3', category: 'Method' },
-                                             { id: 'brute', name: 'Brute Force', icon: 'i-tabler-cpu', category: 'Method' },
-                                         ]">
-                            </SelectInput>
-                            <RangeInput v-show="particleLife.useSpatialHash" input label="Cell Subdivisions" mt-2
-                                        tooltip="Subdivides the interaction radius into smaller grid cells. <br> Default: 2 (fastest in most cases). <br> Increasing subdivisions can improve performance for simulations with very large radii."
-                                        :min="1" :max="5" :step="1" v-model="particleLife.cellSubdivisions">
-                            </RangeInput>
+                            <p mb-1 text-2sm text-gray-300 underline class="-mt-0.5">
+                                Neighbor Search :
+                            </p>
+                            <SelectInput
+                                name="algorithm-mode"
+                                :model-value="particleLife.useSpatialHash ? 'spatial' : 'brute'"
+                                :options="[
+                                    { id: 'spatial', name: 'Spatial Hash', icon: 'i-tabler-topology-ring-3', category: 'Method' },
+                                    { id: 'brute', name: 'Brute Force', icon: 'i-tabler-cpu', category: 'Method' },
+                                ]"
+                                @update:model-value="particleLife.useSpatialHash = $event === 'spatial'"
+                            />
+                            <RangeInput
+                                v-show="particleLife.useSpatialHash" v-model="particleLife.cellSubdivisions" input label="Cell Subdivisions"
+                                mt-2
+                                tooltip="Subdivides the interaction radius into smaller grid cells. <br> Default: 2 (fastest in most cases). <br> Increasing subdivisions can improve performance for simulations with very large radii." :min="1" :max="5" :step="1"
+                            />
                         </Collapse>
                     </div>
                     <div absolute bottom-2 right-0 z-100 class="-mr-px">
-                        <button rounded-l-lg border border-slate-600 flex items-center p-1 bg="slate-900/85 hover:slate-950/85" @click="particleLife.sidebarLeftOpen = false">
-                            <span i-tabler-chevron-left text-2xl></span>
+                        <button flex items-center border border-slate-600 rounded-l-lg p-1 bg="slate-900/85 hover:slate-950/85" @click="particleLife.sidebarLeftOpen = false">
+                            <span i-tabler-chevron-left text-2xl />
                         </button>
                     </div>
                 </div>
             </template>
             <template #bottom-actions>
-                <button type="button" name="Cinematic Camera" aria-label="Cinematic Camera" title="Cinematic Camera"
-                        btn rounded-full flex items-center justify-center p-2 backdrop-blur-sm pointer-events-auto
-                        :class="particleLife.isDriftCamActive ? 'bg-violet-600/90 hover:bg-violet-500/90' : 'bg-violet-900/80 hover:bg-violet-800/80'"
-                        @click="particleLife.isDriftCamActive = !particleLife.isDriftCamActive" :disabled="particleLife.isHudLocked">
-                    <span i-tabler-video :class="particleLife.isDriftCamActive ? 'text-white' : 'text-violet-300'"></span>
-                    <span v-if="particleLife.isDriftCamActive" class="absolute -top-0.5 -right-0.5 flex size-3">
-                        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 ring-1 ring-violet-300/50 opacity-75"></span>
-                        <span class="relative inline-flex size-3 rounded-full bg-violet-400"></span>
+                <button
+                    type="button" name="Cinematic Camera" aria-label="Cinematic Camera" title="Cinematic Camera"
+                    btn pointer-events-auto flex items-center justify-center rounded-full p-2 backdrop-blur-sm
+                    :class="particleLife.isDriftCamActive ? 'bg-violet-600/90 hover:bg-violet-500/90' : 'bg-violet-900/80 hover:bg-violet-800/80'"
+                    :disabled="particleLife.isHudLocked" @click="particleLife.isDriftCamActive = !particleLife.isDriftCamActive"
+                >
+                    <span i-tabler-video :class="particleLife.isDriftCamActive ? 'text-white' : 'text-violet-300'" />
+                    <span v-if="particleLife.isDriftCamActive" class="absolute size-3 flex -right-0.5 -top-0.5">
+                        <span class="absolute h-full w-full inline-flex animate-ping rounded-full bg-violet-400 opacity-75 ring-1 ring-violet-300/50" />
+                        <span class="relative size-3 inline-flex rounded-full bg-violet-400" />
                     </span>
                 </button>
                 <TrackerToggle
-                    @toggle="particleLife.isTrackerSelectionActive ? cancelTrackerSelection() : particleLife.isTrackerActive ? stopTracker() : startTrackerSelection()">
-                </TrackerToggle>
-                <CenterViewButton :disabled="particleLife.isHudLocked" 
-                                  @centerAll="smoothCenterView()" 
-                                  @centerPosition="smoothCenterView(true, false)"
-                                  @resetZoom="smoothCenterView(false, true)">
-                </CenterViewButton>
-                <button type="button" name="Randomize" aria-label="Randomize" title="Randomize simulation"
-                        btn rounded-full flex items-center justify-center p-2 pointer-events-auto
-                        class="backdrop-blur-sm bg-[#094F5D]/90 hover:bg-[#0B5F6F]/90"
-                        @click="regenerateLife" :disabled="particleLife.isHudLocked">
-                    <span i-game-icons-perspective-dice-six-faces-random text-2xl></span>
+                    @toggle="particleLife.isTrackerSelectionActive ? cancelTrackerSelection() : particleLife.isTrackerActive ? stopTracker() : startTrackerSelection()"
+                />
+                <CenterViewButton
+                    :disabled="particleLife.isHudLocked"
+                    @center-all="smoothCenterView()"
+                    @center-position="smoothCenterView(true, false)"
+                    @reset-zoom="smoothCenterView(false, true)"
+                />
+                <button
+                    type="button" name="Randomize" aria-label="Randomize" title="Randomize simulation"
+                    btn pointer-events-auto flex items-center justify-center rounded-full p-2
+                    class="bg-[#094F5D]/90 backdrop-blur-sm hover:bg-[#0B5F6F]/90"
+                    :disabled="particleLife.isHudLocked" @click="regenerateLife"
+                >
+                    <span i-game-icons-perspective-dice-six-faces-random text-2xl />
                 </button>
             </template>
         </SidebarLeft>
-        <canvas ref="canvasRef" id="canvasRef" @contextmenu.prevent w-full h-full cursor-crosshair></canvas>
+        <canvas id="canvasRef" ref="canvasRef" h-full w-full cursor-crosshair @contextmenu.prevent />
         <!-- Urge tracking overlay: the marker position is set imperatively every frame (no GPU work);
              it simply projects the selected urge's last-known world position through the camera. -->
-        <div class="absolute inset-0 pointer-events-none z-20 overflow-hidden" aria-hidden="true">
-            <div v-show="selectedUrgeId !== -1 && particleLife.isElectricalEnabled"
-                 ref="urgeMarkerEl" class="absolute left-0 top-0 will-change-transform" style="opacity: 0; transform: translate(-9999px, -9999px)">
+        <div class="pointer-events-none absolute inset-0 z-20 overflow-hidden" aria-hidden="true">
+            <div
+                v-show="selectedUrgeId !== -1 && particleLife.isElectricalEnabled"
+                ref="urgeMarkerEl" class="absolute left-0 top-0 will-change-transform" style="opacity: 0; transform: translate(-9999px, -9999px)"
+            >
                 <!-- ring centred on the point -->
                 <div class="-translate-x-1/2 -translate-y-1/2">
-                    <div class="w-4 h-4 rounded-full border-2 animate-pulse"
-                         :style="{ borderColor: markerColor, boxShadow: `0 0 9px ${markerColor}` }"></div>
+                    <div
+                        class="h-4 w-4 animate-pulse border-2 rounded-full"
+                        :style="{ borderColor: markerColor, boxShadow: `0 0 9px ${markerColor}` }"
+                    />
                 </div>
                 <!-- label offset to the right of the point -->
-                <div class="absolute left-3.5 top-0 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900/85 backdrop-blur-sm px-2 py-1 ring-1 text-[0.7rem] leading-tight"
-                     :style="{ borderColor: markerColor }">
+                <div
+                    class="absolute left-3.5 top-0 whitespace-nowrap rounded-md bg-slate-900/85 px-2 py-1 text-[0.7rem] leading-tight ring-1 backdrop-blur-sm -translate-y-1/2"
+                    :style="{ borderColor: markerColor }"
+                >
                     <div class="flex items-center gap-1.5">
-                        <span class="font-mono font-semibold" :class="selectedUrgeId < 0 ? 'text-violet-300' : 'text-zinc-100'">{{ markerLabel }}</span>
+                        <span class="font-semibold font-mono" :class="selectedUrgeId < 0 ? 'text-violet-300' : 'text-zinc-100'">{{ markerLabel }}</span>
                         <span class="text-amber-300">{{ markerObjective }}</span>
                     </div>
-                    <div ref="urgeMarkerStatEl" class="font-mono text-[0.62rem] text-emerald-300"></div>
+                    <div ref="urgeMarkerStatEl" class="text-[0.62rem] text-emerald-300 font-mono" />
                 </div>
             </div>
         </div>
         <ClientOnly>
-            <TrackerOverlay v-if="particleLife.isTrackerSelectionActive" @tracker-zone-selected="onTrackerZoneSelected"></TrackerOverlay>
+            <TrackerOverlay v-if="particleLife.isTrackerSelectionActive" @tracker-zone-selected="onTrackerZoneSelected" />
         </ClientOnly>
-        <SaveModal :store="particleLife"></SaveModal>
-        <div absolute top-0 right-0 flex flex-col items-end text-right pointer-events-none>
-            <div flex items-center text-start text-xs pl-4 pr-1 bg-slate-800 rounded-bl-xl style="padding-bottom: 1px; opacity: 75%" >
-                <div flex>Fps: <div ml-1 min-w-8>{{ fps }}</div></div>
-<!--                <div flex ml-3>Process: <div ml-1 min-w-7>{{ Math.round(executionTime) }}</div></div>-->
+        <SaveModal :store="particleLife" />
+        <div pointer-events-none absolute right-0 top-0 flex flex-col items-end text-right>
+            <div flex items-center rounded-bl-xl bg-slate-800 pl-4 pr-1 text-start text-xs style="padding-bottom: 1px; opacity: 75%">
+                <div flex>
+                    Fps: <div ml-1 min-w-8>
+                        {{ fps }}
+                    </div>
+                </div>
+                <!--                <div flex ml-3>Process: <div ml-1 min-w-7>{{ Math.round(executionTime) }}</div></div> -->
             </div>
-            <BrushSettings :store="particleLife" mt-2 mr-1 pointer-events-auto :class="particleLife.isHudLocked && '!pointer-events-none [&_*]:!pointer-events-none opacity-40'" />
+            <BrushSettings :store="particleLife" pointer-events-auto mr-1 mt-2 :class="particleLife.isHudLocked && '!pointer-events-none [&_*]:!pointer-events-none opacity-40'" />
 
             <div class="faded-hover-effect" mr-1>
-                <button type="button" title="Debugger" aria-label="Debugger" btn w-8 aspect-square rounded-full p1 flex items-center justify-center bg="#D62839 hover:#DC4151" mt-2
-                        @click="particleLife.isDebugBinsActive = !particleLife.isDebugBinsActive" :disabled="particleLife.isHudLocked">
-                    <span text-sm :class="particleLife.isDebugBinsActive ? 'i-tabler-bug-filled' : 'i-tabler-bug'"></span>
+                <button
+                    type="button" title="Debugger" aria-label="Debugger" bg="#D62839 hover:#DC4151" btn mt-2 aspect-square w-8 flex items-center justify-center rounded-full p1
+                    :disabled="particleLife.isHudLocked" @click="particleLife.isDebugBinsActive = !particleLife.isDebugBinsActive"
+                >
+                    <span text-sm :class="particleLife.isDebugBinsActive ? 'i-tabler-bug-filled' : 'i-tabler-bug'" />
                 </button>
             </div>
         </div>
-        <div fixed z-10 bottom-2 flex justify-center items-end pointer-events-none class="left-1/2 transform -translate-x-1/2"> <!-- faded-hover-effect -->
-            <button type="button" name="Toggle Fullscreen" aria-label="Toggle Fullscreen" btn p2 rounded-full mx-1 flex items-center backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isHudLocked" @click="toggleFullscreen">
-                <span :class="isFullscreen ? 'i-tabler-maximize-off' : 'i-tabler-maximize'"></span>
+        <div pointer-events-none fixed bottom-2 z-10 flex items-end justify-center class="left-1/2 transform -translate-x-1/2">
+            <!-- faded-hover-effect -->
+            <button type="button" name="Toggle Fullscreen" aria-label="Toggle Fullscreen" btn mx-1 flex items-center rounded-full p2 backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isHudLocked" @click="toggleFullscreen">
+                <span :class="isFullscreen ? 'i-tabler-maximize-off' : 'i-tabler-maximize'" />
             </button>
-            <button type="button" name="Zoom Out" aria-label="Zoom Out" btn p2 rounded-full mx-1 flex items-center backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isHudLocked" @click="handleZoom(-1, true)">
-                <span i-tabler-zoom-out></span>
+            <button type="button" name="Zoom Out" aria-label="Zoom Out" btn mx-1 flex items-center rounded-full p2 backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isHudLocked" @click="handleZoom(-1, true)">
+                <span i-tabler-zoom-out />
             </button>
-            <button type="button" name="Play/Pause" aria-label="Play/Pause" btn p3 rounded-full mx-1 flex items-center backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isHudLocked" @click="particleLife.isRunning = !particleLife.isRunning">
-                <span text-xl :class="particleLife.isRunning ? 'i-tabler-player-pause-filled' : 'i-tabler-player-play-filled'"></span>
+            <button type="button" name="Play/Pause" aria-label="Play/Pause" btn mx-1 flex items-center rounded-full p3 backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isHudLocked" @click="particleLife.isRunning = !particleLife.isRunning">
+                <span text-xl :class="particleLife.isRunning ? 'i-tabler-player-pause-filled' : 'i-tabler-player-play-filled'" />
             </button>
-            <button type="button" name="Step" aria-label="Step" btn p2 rounded-full mx-1 flex items-center backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isRunning || particleLife.isHudLocked" @click="step">
-                <span i-tabler-player-skip-forward-filled></span>
+            <button type="button" name="Step" aria-label="Step" btn mx-1 flex items-center rounded-full p2 backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isRunning || particleLife.isHudLocked" @click="step">
+                <span i-tabler-player-skip-forward-filled />
             </button>
-            <button type="button" name="Zoom In" aria-label="Zoom In" btn p2 rounded-full mx-1 flex items-center backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isHudLocked" @click="handleZoom(1, true)">
-                <span i-tabler-zoom-in></span>
+            <button type="button" name="Zoom In" aria-label="Zoom In" btn mx-1 flex items-center rounded-full p2 backdrop-blur-sm bg="slate-800/80 hover:slate-700/80" :disabled="particleLife.isHudLocked" @click="handleZoom(1, true)">
+                <span i-tabler-zoom-in />
             </button>
         </div>
         <SocialLinks />
@@ -621,52 +734,53 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, onMounted, ref } from 'vue';
-import WrapModeSelection from "~/components/particle-life/WrapModeSelection.vue";
-import MatrixSettings from "~/components/particle-life/MatrixSettings.vue";
-import BrushSettings from "~/components/particle-life/BrushSettings.vue";
-import SaveModal from "~/components/particle-life/SaveModal.vue";
-import PresetPanel from "~/components/particle-life/PresetPanel.vue";
-import TrackerOverlay from "~/components/particle-life/TrackerOverlay.vue";
-import TrackerToggle from "~/components/particle-life/TrackerToggle.vue";
-import CenterViewButton from "~/components/particle-life/CenterViewButton.vue";
-import RadiusVisualizer from "~/components/particle-life/RadiusVisualizer.vue";
-import UrgeInspector, { type UrgeStat, type ElectricalParams } from "~/components/particle-life/UrgeInspector.vue";
+import type { ElectricalParams, UrgeStat } from "~/components/particle-life/UrgeInspector.vue"
+import heatmapImage from 'assets/particle-life-gpu/images/heatmap_red4x_256x1.png'
+import composeHdrShaderCode from 'assets/particle-life-gpu/shaders/compose/compose_hdr.wgsl?raw'
+import infiniteCompositorShaderCode from 'assets/particle-life-gpu/shaders/compose/infinite_compositor.wgsl?raw'
+import binFillSizeShaderCode from 'assets/particle-life-gpu/shaders/compute/binFillSize.wgsl?raw'
+import binPrefixSumShaderCode from 'assets/particle-life-gpu/shaders/compute/binPrefixSum.wgsl?raw'
+import bruteForceShaderCode from 'assets/particle-life-gpu/shaders/compute/compute_bruteForce.wgsl?raw'
+import debugConnectionsShaderCode from 'assets/particle-life-gpu/shaders/compute/debugConnections.wgsl?raw'
+import particleAdvanceShaderCode from 'assets/particle-life-gpu/shaders/compute/particleAdvance.wgsl?raw'
+import particleAdvanceBrushShaderCode from 'assets/particle-life-gpu/shaders/compute/particleAdvance_brush.wgsl?raw'
+import particleCompactShaderCode from 'assets/particle-life-gpu/shaders/compute/particleCompact.wgsl?raw'
 
-import { RULES_OPTIONS, generateRules } from '~/helpers/utils/rulesGenerator';
-import { PALETTE_OPTIONS, generateColors } from "~/helpers/utils/colorsGenerator";
-import { POSITION_OPTIONS, generatePositions } from "~/helpers/utils/positionsGenerator";
-import { hexToRgb } from '~/helpers/utils/colorConversion';
+import particleComputeForcesShaderCode from 'assets/particle-life-gpu/shaders/compute/particleComputeForces.wgsl?raw'
+import particleDrawShaderCode from 'assets/particle-life-gpu/shaders/compute/particleDraw.wgsl?raw'
+import particleEraseShaderCode from 'assets/particle-life-gpu/shaders/compute/particleErase.wgsl?raw'
+import particleSortShaderCode from 'assets/particle-life-gpu/shaders/compute/particleSort.wgsl?raw'
 
-import heatmapImage from 'assets/particle-life-gpu/images/heatmap_red4x_256x1.png';
+import trackerCameraUpdateShaderCode from 'assets/particle-life-gpu/shaders/compute/trackerCameraUpdate.wgsl?raw'
 
-import binFillSizeShaderCode from 'assets/particle-life-gpu/shaders/compute/binFillSize.wgsl?raw';
-import binPrefixSumShaderCode from 'assets/particle-life-gpu/shaders/compute/binPrefixSum.wgsl?raw';
-import particleSortShaderCode from 'assets/particle-life-gpu/shaders/compute/particleSort.wgsl?raw';
-import bruteForceShaderCode from 'assets/particle-life-gpu/shaders/compute/compute_bruteForce.wgsl?raw';
-import particleComputeForcesShaderCode from 'assets/particle-life-gpu/shaders/compute/particleComputeForces.wgsl?raw';
-import particleAdvanceShaderCode from 'assets/particle-life-gpu/shaders/compute/particleAdvance.wgsl?raw';
-import particleAdvanceBrushShaderCode from 'assets/particle-life-gpu/shaders/compute/particleAdvance_brush.wgsl?raw';
+import trackerComputeShaderCode from 'assets/particle-life-gpu/shaders/compute/trackerCompute.wgsl?raw'
+import offscreenShaderCode from 'assets/particle-life-gpu/shaders/render/offscreen_render_vertex.wgsl?raw'
+import renderGlowShaderCode from 'assets/particle-life-gpu/shaders/render/particle_render_glow.wgsl?raw'
+import renderBinsShaderCode from 'assets/particle-life-gpu/shaders/render/render_bins.wgsl?raw'
+import renderBrushCircleShaderCode from 'assets/particle-life-gpu/shaders/render/render_brush_circle.wgsl?raw'
+import renderConnectionsShaderCode from 'assets/particle-life-gpu/shaders/render/render_connections.wgsl?raw'
+import renderInfiniteShaderCode from 'assets/particle-life-gpu/shaders/render/render_infinite.wgsl?raw'
 
-import renderShaderCode from 'assets/particle-life-gpu/shaders/render/render_normal.wgsl?raw';
-import offscreenShaderCode from 'assets/particle-life-gpu/shaders/render/offscreen_render_vertex.wgsl?raw';
-import infiniteCompositorShaderCode from 'assets/particle-life-gpu/shaders/compose/infinite_compositor.wgsl?raw';
-import renderGlowShaderCode from 'assets/particle-life-gpu/shaders/render/particle_render_glow.wgsl?raw';
-import composeHdrShaderCode from 'assets/particle-life-gpu/shaders/compose/compose_hdr.wgsl?raw';
+import renderMirrorShaderCode from 'assets/particle-life-gpu/shaders/render/render_mirror.wgsl?raw'
+import renderShaderCode from 'assets/particle-life-gpu/shaders/render/render_normal.wgsl?raw'
+import renderTrackerShaderCode from 'assets/particle-life-gpu/shaders/render/render_tracker.wgsl?raw'
+import { defineComponent, onMounted, ref } from 'vue'
+import BrushSettings from "~/components/particle-life/BrushSettings.vue"
 
-import renderMirrorShaderCode from 'assets/particle-life-gpu/shaders/render/render_mirror.wgsl?raw';
-import renderInfiniteShaderCode from 'assets/particle-life-gpu/shaders/render/render_infinite.wgsl?raw';
+import CenterViewButton from "~/components/particle-life/CenterViewButton.vue"
+import MatrixSettings from "~/components/particle-life/MatrixSettings.vue"
 
-import particleEraseShaderCode from 'assets/particle-life-gpu/shaders/compute/particleErase.wgsl?raw';
-import particleCompactShaderCode from 'assets/particle-life-gpu/shaders/compute/particleCompact.wgsl?raw';
-import particleDrawShaderCode from 'assets/particle-life-gpu/shaders/compute/particleDraw.wgsl?raw';
-import renderBrushCircleShaderCode from 'assets/particle-life-gpu/shaders/render/render_brush_circle.wgsl?raw';
-import renderBinsShaderCode from 'assets/particle-life-gpu/shaders/render/render_bins.wgsl?raw';
-import renderTrackerShaderCode from 'assets/particle-life-gpu/shaders/render/render_tracker.wgsl?raw';
-import trackerComputeShaderCode from 'assets/particle-life-gpu/shaders/compute/trackerCompute.wgsl?raw';
-import trackerCameraUpdateShaderCode from 'assets/particle-life-gpu/shaders/compute/trackerCameraUpdate.wgsl?raw';
-import debugConnectionsShaderCode from 'assets/particle-life-gpu/shaders/compute/debugConnections.wgsl?raw';
-import renderConnectionsShaderCode from 'assets/particle-life-gpu/shaders/render/render_connections.wgsl?raw';
+import PresetPanel from "~/components/particle-life/PresetPanel.vue"
+import RadiusVisualizer from "~/components/particle-life/RadiusVisualizer.vue"
+import SaveModal from "~/components/particle-life/SaveModal.vue"
+import TrackerOverlay from "~/components/particle-life/TrackerOverlay.vue"
+import TrackerToggle from "~/components/particle-life/TrackerToggle.vue"
+import UrgeInspector from "~/components/particle-life/UrgeInspector.vue"
+import WrapModeSelection from "~/components/particle-life/WrapModeSelection.vue"
+import { hexToRgb } from '~/helpers/utils/colorConversion'
+import { generateColors, PALETTE_OPTIONS } from "~/helpers/utils/colorsGenerator"
+import { generatePositions, POSITION_OPTIONS } from "~/helpers/utils/positionsGenerator"
+import { generateRules, RULES_OPTIONS } from '~/helpers/utils/rulesGenerator'
 
 export default defineComponent({
     name: 'ParticleLifeGpu',
@@ -864,6 +978,7 @@ export default defineComponent({
         let hdrTextureView: GPUTextureView
 
         let renderPipeline: GPURenderPipeline
+        // eslint-disable-next-line unused-imports/no-unused-vars
         let renderConnectionsPipeline: GPURenderPipeline // debug dotted urge<->neuron lines
         let renderGlowPipeline: GPURenderPipeline
         let renderCirclePipeline: GPURenderPipeline
@@ -893,6 +1008,7 @@ export default defineComponent({
         let bruteForceComputePipeline: GPUComputePipeline
         let particleComputeForcesPipeline: GPUComputePipeline
         let particleAdvancePipeline: GPUComputePipeline
+        // eslint-disable-next-line unused-imports/no-unused-vars
         let debugConnectionsPipeline: GPUComputePipeline // emits debug connection dots
         let particleAdvanceBrushPipeline: GPUComputePipeline
 
@@ -912,7 +1028,9 @@ export default defineComponent({
         let infiniteRenderOptionsBindGroup: GPUBindGroup
         let brushOptionsBindGroup: GPUBindGroup
         let electricalBindGroup: GPUBindGroup
+        // eslint-disable-next-line unused-imports/no-unused-vars
         let connectionsComputeBindGroup: GPUBindGroup // debug lines compute (particles + dots + count)
+        // eslint-disable-next-line unused-imports/no-unused-vars
         let connectionsRenderBindGroup: GPUBindGroup // debug lines render (dots + count)
 
         let particleBufferBindGroupLayout: GPUBindGroupLayout
@@ -935,22 +1053,22 @@ export default defineComponent({
         let brushOptionsBindGroupLayout: GPUBindGroupLayout
         let trackerRenderBindGroupLayout: GPUBindGroupLayout
 
-        let particleErasePipeline: GPUComputePipeline;
-        let particleCompactPipeline: GPUComputePipeline;
-        let particleEraseBindGroupLayout: GPUBindGroupLayout;
-        let particleCompactBindGroupLayout: GPUBindGroupLayout;
-        let particleEraseBindGroup: GPUBindGroup;
-        let particleCompactBindGroup: GPUBindGroup;
-        let particleKeepFlagsBuffer: GPUBuffer | undefined;
-        let newParticleCountBuffer: GPUBuffer | undefined;
-        let newParticleCountReadBuffer: GPUBuffer | undefined;
-        let particleCompactBuffer: GPUBuffer | undefined;
+        let particleErasePipeline: GPUComputePipeline
+        let particleCompactPipeline: GPUComputePipeline
+        let particleEraseBindGroupLayout: GPUBindGroupLayout
+        let particleCompactBindGroupLayout: GPUBindGroupLayout
+        let particleEraseBindGroup: GPUBindGroup
+        let particleCompactBindGroup: GPUBindGroup
+        let particleKeepFlagsBuffer: GPUBuffer | undefined
+        let newParticleCountBuffer: GPUBuffer | undefined
+        let newParticleCountReadBuffer: GPUBuffer | undefined
+        let particleCompactBuffer: GPUBuffer | undefined
 
-        let particleDrawPipeline: GPUComputePipeline;
-        let particleDrawBindGroupLayout: GPUBindGroupLayout;
-        let particleDrawBindGroup: GPUBindGroup;
+        let particleDrawPipeline: GPUComputePipeline
+        let particleDrawBindGroupLayout: GPUBindGroupLayout
+        let particleDrawBindGroup: GPUBindGroup
 
-        let brushesBuffer: GPUBuffer | undefined;
+        let brushesBuffer: GPUBuffer | undefined
 
         let renderBrushCirclePipeline: GPURenderPipeline
         let renderBrushCircleBindGroupLayout: GPUBindGroupLayout
@@ -980,8 +1098,10 @@ export default defineComponent({
                 lastPointerX = (e.x - canvasRef.value!.getBoundingClientRect().left) * DEVICE_PIXEL_RATIO
                 lastPointerY = (e.y - canvasRef.value!.getBoundingClientRect().top) * DEVICE_PIXEL_RATIO
                 if (e.buttons === 2 && isBrushActive) { // if secondary button is pressed (right click)
-                    if (brushType === 0) isBrushErasing = true
-                    else if (brushType === 1) isBrushDrawing = true
+                    if (brushType === 0)
+                        isBrushErasing = true
+                    else if (brushType === 1)
+                        isBrushDrawing = true
                     else isApplyingBrushForce = true
                 }
             })
@@ -990,14 +1110,17 @@ export default defineComponent({
                 pointerY = (e.y - canvasRef.value!.getBoundingClientRect().top) * DEVICE_PIXEL_RATIO
 
                 if (e.buttons > 0) { // if mouse is pressed
-                    if (particleLife.isLockedPointer) return // Prevent canvas dragging if the pointer is locked
+                    if (particleLife.isLockedPointer)
+                        return // Prevent canvas dragging if the pointer is locked
                     if (e.buttons === 1) { // if primary button is pressed (left click)
                         isDragging = true
                         handleMove()
                     }
                     if (e.buttons === 2 && isBrushActive) { // if secondary button is pressed (right click)
-                        if (brushType === 0) isBrushErasing = true
-                        else if (brushType === 1) isBrushDrawing = true
+                        if (brushType === 0)
+                            isBrushErasing = true
+                        else if (brushType === 1)
+                            isBrushDrawing = true
                         else isApplyingBrushForce = true
                     }
                 }
@@ -1009,7 +1132,8 @@ export default defineComponent({
                 }
             })
             useEventListener(canvasRef.value, ['mouseup'], () => {
-                if (isDragging && isDriftCamActive && driftCamResetOnPan) initDriftCamera()
+                if (isDragging && isDriftCamActive && driftCamResetOnPan)
+                    initDriftCamera()
                 isDragging = false
                 isBrushErasing = false
                 isBrushDrawing = false
@@ -1022,11 +1146,13 @@ export default defineComponent({
                 isApplyingBrushForce = false
             })
             useEventListener(canvasRef.value, 'wheel', (e) => {
-                if (e.deltaY < 0) handleZoom(1) // Zoom in
+                if (e.deltaY < 0)
+                    handleZoom(1) // Zoom in
                 else handleZoom(-1) // Zoom out
                 if (isDriftCamActive) {
                     driftCamTransitionProgress = 0 // Reset drift cam transition when user interacts with the camera
-                    if (driftCamResetOnPan) initDriftCamera()
+                    if (driftCamResetOnPan)
+                        initDriftCamera()
                 }
             })
         })
@@ -1087,7 +1213,8 @@ export default defineComponent({
                 GRID_WIDTH = Math.ceil(SIM_WIDTH / CELL_SIZE)
                 GRID_HEIGHT = Math.ceil(SIM_HEIGHT / CELL_SIZE)
                 binCount = EXTENDED_GRID_WIDTH * EXTENDED_GRID_HEIGHT
-            } else {
+            }
+            else {
                 GRID_WIDTH = Math.ceil(SIM_WIDTH / CELL_SIZE)
                 GRID_HEIGHT = Math.ceil(SIM_HEIGHT / CELL_SIZE)
                 binCount = GRID_WIDTH * GRID_HEIGHT
@@ -1107,7 +1234,8 @@ export default defineComponent({
             targetCameraCenter = { x: SIM_WIDTH_HALF, y: SIM_HEIGHT_HALF }
         }
         function smoothCenterView(position: boolean = true, zoom: boolean = true) {
-            if (position) targetCameraCenter = { x: SIM_WIDTH_HALF, y: SIM_HEIGHT_HALF }
+            if (position)
+                targetCameraCenter = { x: SIM_WIDTH_HALF, y: SIM_HEIGHT_HALF }
             if (zoom) {
                 targetZoomFactor = Math.min(CANVAS_WIDTH / SIM_WIDTH, CANVAS_HEIGHT / SIM_HEIGHT)
                 lastZoomPositionX = CANVAS_WIDTH / 2
@@ -1122,7 +1250,8 @@ export default defineComponent({
             if (isCameraTracking) {
                 targetTrackerCameraOffset.x -= worldDx
                 targetTrackerCameraOffset.y -= worldDy
-            } else {
+            }
+            else {
                 targetCameraCenter.x -= worldDx
                 targetCameraCenter.y -= worldDy
             }
@@ -1132,11 +1261,12 @@ export default defineComponent({
         const handleMoveSmoothing = () => {
             const panXDiff = targetCameraCenter.x - cameraCenter.x
             const panYDiff = targetCameraCenter.y - cameraCenter.y
-            if (Math.abs(panXDiff) < 0.001 && Math.abs(panYDiff) < 0.001) return
+            if (Math.abs(panXDiff) < 0.001 && Math.abs(panYDiff) < 0.001)
+                return
 
             cameraCenter.x += panXDiff * panSmoothing
             cameraCenter.y += panYDiff * panSmoothing
-            cameraChanged = true;
+            cameraChanged = true
         }
         function handleZoom(delta: number, isCentered: boolean = false) {
             lastZoomPositionX = isCentered ? cameraCenter.x : pointerX
@@ -1147,7 +1277,8 @@ export default defineComponent({
         }
         const handleZoomSmoothing = () => {
             const zoomDiff = targetZoomFactor - zoomFactor
-            if (Math.abs(zoomDiff) < 0.001) return
+            if (Math.abs(zoomDiff) < 0.001)
+                return
 
             const mouseClipX = (lastZoomPositionX / CANVAS_WIDTH) * 2 - 1
             const mouseClipY = (lastZoomPositionY / CANVAS_HEIGHT) * 2 - 1
@@ -1190,7 +1321,7 @@ export default defineComponent({
             const phasesY = findMatchingPhases((cameraCenter.y - SIM_HEIGHT_HALF) / (SIM_HEIGHT_HALF * driftCamAmplitude))
             const phasesZ = findMatchingPhases((zoomFactor - driftCamZoomCenter) / driftCamZoomAmplitude)
 
-            driftCamPhase = { x1: phasesX.p1, x2: phasesX.p2, y1: phasesY.p1, y2: phasesY.p2, z1: phasesZ.p1, z2: phasesZ.p2}
+            driftCamPhase = { x1: phasesX.p1, x2: phasesX.p2, y1: phasesY.p1, y2: phasesY.p2, z1: phasesZ.p1, z2: phasesZ.p2 }
         }
         const handleDriftCamera = () => {
             const now = performance.now() / 1000
@@ -1208,14 +1339,14 @@ export default defineComponent({
             if (!isTrackerActive) {
                 // Horizontal pan using two combined sine waves
                 const driftTargetX = SIM_WIDTH_HALF + (
-                    Math.sin(driftCamTime * 1.0 + driftCamPhase.x1) * 0.6 +   // Primary wave (60%), base freq
-                    Math.sin(driftCamTime * 1.618 + driftCamPhase.x2) * 0.4   // Secondary wave (40%), golden ratio freq
+                    Math.sin(driftCamTime * 1.0 + driftCamPhase.x1) * 0.6 // Primary wave (60%), base freq
+                    + Math.sin(driftCamTime * 1.618 + driftCamPhase.x2) * 0.4 // Secondary wave (40%), golden ratio freq
                 ) * SIM_WIDTH_HALF * driftCamAmplitude
 
                 // Vertical pan with offset frequencies for diagonal drift
                 const driftTargetY = SIM_HEIGHT_HALF + (
-                    Math.sin(driftCamTime * 1.1 + driftCamPhase.y1) * 0.6 +   // Primary wave (60%), slightly faster than X
-                    Math.sin(driftCamTime * 1.414 + driftCamPhase.y2) * 0.4   // Secondary wave (40%), sqrt(2) freq
+                    Math.sin(driftCamTime * 1.1 + driftCamPhase.y1) * 0.6 // Primary wave (60%), slightly faster than X
+                    + Math.sin(driftCamTime * 1.414 + driftCamPhase.y2) * 0.4 // Secondary wave (40%), sqrt(2) freq
                 ) * SIM_HEIGHT_HALF * driftCamAmplitude
 
                 // Smoothly interpolate camera center towards the drift targets
@@ -1225,8 +1356,8 @@ export default defineComponent({
 
             // Zoom level with slower frequencies for smooth transitions
             const driftTargetZoom = driftCamZoomCenter + (
-                Math.sin(driftCamTime * 0.7 + driftCamPhase.z1) * 0.6 +   // Primary wave (60%), slow zoom
-                Math.sin(driftCamTime * 1.3 + driftCamPhase.z2) * 0.4     // Secondary wave (40%), faster variation
+                Math.sin(driftCamTime * 0.7 + driftCamPhase.z1) * 0.6 // Primary wave (60%), slow zoom
+                + Math.sin(driftCamTime * 1.3 + driftCamPhase.z2) * 0.4 // Secondary wave (40%), faster variation
             ) * driftCamZoomAmplitude
 
             // Smoothly interpolate zoom towards the drift targets
@@ -1252,12 +1383,14 @@ export default defineComponent({
             trackerCameraOffset.x += dx * panSmoothing
             trackerCameraOffset.y += dy * panSmoothing
             device.queue.writeBuffer(trackerCameraOptionsBuffer!, 0, new Float32Array([
-                trackerCameraOffset.x, trackerCameraOffset.y
+                trackerCameraOffset.x,
+                trackerCameraOffset.y,
             ]))
         }
         const handleCameraTrackingZoomSmoothing = () => {
             const zoomDiff = targetZoomFactor - zoomFactor
-            if (Math.abs(zoomDiff) < 0.001) return
+            if (Math.abs(zoomDiff) < 0.001)
+                return
 
             zoomFactor += zoomDiff * zoomSmoothing
             updateCameraScaleFactors()
@@ -1296,7 +1429,8 @@ export default defineComponent({
             particleLife.isRunning = true // Resume the simulation if tracker selection is canceled
         }
         const stopTracker = async () => {
-            if (isTrackerCameraActive) await syncCameraFromGPU()
+            if (isTrackerCameraActive)
+                await syncCameraFromGPU()
             resetTrackerCameraOffset()
             particleLife.isTrackerActive = false
             particleLife.isTrackerSelectionActive = false
@@ -1309,13 +1443,14 @@ export default defineComponent({
         }
         // Syncs CPU camera to GPU camera position (used when switching between tracker camera and free camera modes to prevent jumps)
         const syncCameraFromGPU = async () => {
-            if (!cameraBuffer) return
+            if (!cameraBuffer)
+                return
 
             const arrayBuffer = await readBufferFromGPU(cameraBuffer, 16)
             const cameraData = new Float32Array(arrayBuffer)
 
-            cameraCenter.x = targetCameraCenter.x = cameraData[0]  // centerX
-            cameraCenter.y = targetCameraCenter.y = cameraData[1]  // centerY
+            cameraCenter.x = targetCameraCenter.x = cameraData[0] // centerX
+            cameraCenter.y = targetCameraCenter.y = cameraData[1] // centerY
             cameraChanged = true
         }
         const onTrackerZoneSelected = async (zone: { x: number, y: number, width: number, height: number }) => {
@@ -1323,10 +1458,10 @@ export default defineComponent({
             const scaledY = zone.y * DEVICE_PIXEL_RATIO
             const scaledWidth = zone.width * DEVICE_PIXEL_RATIO
             const scaledHeight = zone.height * DEVICE_PIXEL_RATIO
-            
+
             const centerScreenX = scaledX + scaledWidth / 2
             const centerScreenY = scaledY + scaledHeight / 2
-            
+
             // Convert screen coordinates to world coordinates
             const worldX = cameraCenter.x + (centerScreenX / CANVAS_WIDTH * 2 - 1) / cameraScaleX
             const worldY = cameraCenter.y + (centerScreenY / CANVAS_HEIGHT * 2 - 1) / cameraScaleY
@@ -1336,8 +1471,9 @@ export default defineComponent({
             const worldHeight = (scaledHeight / CANVAS_HEIGHT) * 2 / cameraScaleY
 
             const success = await initializeTrackerFromZone({ x: worldX, y: worldY, width: worldWidth, height: worldHeight })
-            
-            if (success) particleLife.isTrackerActive = true
+
+            if (success)
+                particleLife.isTrackerActive = true
             particleLife.isTrackerSelectionActive = false
             particleLife.isRunning = true
         }
@@ -1349,7 +1485,7 @@ export default defineComponent({
 
             const zoneHalfW = zone.width * 0.5
             const zoneHalfH = zone.height * 0.5
-            let sumX = 0, sumY = 0, sumVx = 0, sumVy = 0, count = 0
+            let sumX = 0; let sumY = 0; let sumVx = 0; let sumVy = 0; let count = 0
 
             // Get the center of mass and average velocity of particles within the selected zone
             for (let i = 0; i < NUM_PARTICLES; i++) {
@@ -1365,7 +1501,7 @@ export default defineComponent({
                     count++
                 }
             }
-            
+
             if (count < 8) {
                 error(`Not enough particles to track. <br> <b>${count}</b> found, <b>8</b> minimum.`)
                 return false
@@ -1381,18 +1517,18 @@ export default defineComponent({
             const minRadius = Math.max(currentMaxRadius * 0.8, 16)
             const zoneRadius = Math.max(zoneHalfW, zoneHalfH)
             const initialSearchRadius = Math.max(zoneRadius, minRadius)
-            
+
             // Initialize tracker state on GPU (32 bytes)
             const stateData = new ArrayBuffer(32)
             const view = new DataView(stateData)
-            view.setFloat32(0, centerX, true)              // x
-            view.setFloat32(4, centerY, true)              // y
-            view.setFloat32(8, avgVx, true)                // vx
-            view.setFloat32(12, avgVy, true)               // vy
+            view.setFloat32(0, centerX, true) // x
+            view.setFloat32(4, centerY, true) // y
+            view.setFloat32(8, avgVx, true) // vx
+            view.setFloat32(12, avgVy, true) // vy
             view.setFloat32(16, initialSearchRadius, true) // searchRadius
-            view.setUint32(20, count, true)                // expectedCount
-            view.setFloat32(24, cameraCenter.x, true)      // baseCameraX
-            view.setFloat32(28, cameraCenter.y, true)      // baseCameraY
+            view.setUint32(20, count, true) // expectedCount
+            view.setFloat32(24, cameraCenter.x, true) // baseCameraX
+            view.setFloat32(28, cameraCenter.y, true) // baseCameraY
             device.queue.writeBuffer(trackerStateBuffer!, 0, stateData)
 
             // Clear levels buffer
@@ -1407,7 +1543,8 @@ export default defineComponent({
             return true
         }
         const computeTracking = (encoder: GPUCommandEncoder) => {
-            if (!trackerStateBuffer || !trackerLevelsBuffer) return
+            if (!trackerStateBuffer || !trackerLevelsBuffer)
+                return
 
             const accumulatePass = encoder.beginComputePass()
             accumulatePass.setPipeline(trackerAccumulatePipeline)
@@ -1424,8 +1561,9 @@ export default defineComponent({
             finalizePass.setBindGroup(2, deltaTimeBindGroup)
             finalizePass.dispatchWorkgroups(1)
             finalizePass.end()
-            
-            if (isTrackerCameraActive) computeTrackerCameraUpdate(encoder)
+
+            if (isTrackerCameraActive)
+                computeTrackerCameraUpdate(encoder)
         }
         const computeTrackerCameraUpdate = (encoder: GPUCommandEncoder) => {
             const cameraUpdatePass = encoder.beginComputePass()
@@ -1455,7 +1593,8 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         const initWebGPU = async () => {
             const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
-            if (!adapter) throw new Error("WebGPU adapter not found")
+            if (!adapter)
+                throw new Error("WebGPU adapter not found")
             // The force shaders use 5 bind groups (particles, simOptions, deltaTime,
             // electrical options, extended interaction matrix). WebGPU's default limit is 4,
             // so request the higher limit up front — otherwise createPipelineLayout fails and
@@ -1484,7 +1623,8 @@ export default defineComponent({
             // particle buffers on frame 1, racing the render pass and leaving it black.)
             NUM_PARTICLES = baseMatterCount + numUrges + numNeurons + numSenseNeurons + numClonePool
             NEW_NUM_PARTICLES = NUM_PARTICLES
-            if (NUM_PARTICLES !== particleLife.numParticles) particleLife.numParticles = NUM_PARTICLES
+            if (NUM_PARTICLES !== particleLife.numParticles)
+                particleLife.numParticles = NUM_PARTICLES
             // Main interaction matrix: (numColors+2)×(numColors+2) — matter + urge + neuron rows/cols.
             // The extra 2 rows/cols are for the shared "urge" and "neuron" types.
             setRulesMatrix(generateRules(0, MATRIX_TYPES))
@@ -1495,12 +1635,13 @@ export default defineComponent({
             // setMaxRadiusMatrix([[65, 72, 80, 66, 72, 67, 79],[69, 61, 75, 73, 69, 70, 73],[80, 69, 71, 74, 67, 62, 61],[73, 79, 70, 70, 70, 72, 79],[67, 65, 74, 76, 64, 77, 71],[61, 68, 72, 64, 69, 64, 79],[72, 68, 77, 74, 63, 70, 75]])
             // particleLife.currentMaxRadius = 80
 
-            console.log("Rules Matrix:", rulesMatrix);
-            console.log("Min Radius Matrix:", minRadiusMatrix);
-            console.log("Max Radius Matrix:", maxRadiusMatrix);
+            console.log("Rules Matrix:", rulesMatrix)
+            console.log("Min Radius Matrix:", minRadiusMatrix)
+            console.log("Max Radius Matrix:", maxRadiusMatrix)
 
             await nextTick()
-            if (autoCenter) centerView()
+            if (autoCenter)
+                centerView()
 
             initColors()
             initParticles()
@@ -1514,7 +1655,8 @@ export default defineComponent({
             animationFrameId = requestAnimationFrame(frame)
         }
         const regenerateLife = async () => {
-            if (isTrackerActive) await stopTracker()
+            if (isTrackerActive)
+                await stopTracker()
             cancelAnimationLoop()
             destroyPipelinesAndBindGroups()
             await destroyBuffers(true)
@@ -1523,7 +1665,8 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
-        let pendingFrames: number = 0
+        // eslint-disable-next-line unused-imports/no-unused-vars
+        const pendingFrames: number = 0
         const frame = async () => {
             // Wait for the GPU to finish processing before starting a new frame (to avoid overloading the GPU)
             // Produces flickering if the GPU is not fast enough
@@ -1531,23 +1674,32 @@ export default defineComponent({
             //     animationFrameId = requestAnimationFrame(frame)
             //     return
             // }
-            if (isDriftCamActive) handleDriftCamera()
+            if (isDriftCamActive)
+                handleDriftCamera()
             if (isCameraTracking) {
                 handleCameraTrackingMoveSmoothing()
                 handleCameraTrackingZoomSmoothing()
-            } else {
+            }
+            else {
                 handleMoveSmoothing()
                 handleZoomSmoothing()
             }
 
-            if (isBrushActive && showBrushCircle) updateBrushOptionsBuffer()
+            if (isBrushActive && showBrushCircle)
+                updateBrushOptionsBuffer()
             if (!isEraseCompleting) { // Prevent buffer mutations while async erase completion is pending
-                if (isBrushErasing) eraseWithBrush()
-                else if (isEraseCompletionPending) completeEraseWithBrush()
-                else if (isBrushDrawing) drawWithBrush()
-                else if (isUpdateNumParticlesPending) await updateNumParticles(NEW_NUM_PARTICLES)
-                else if (isUpdateNumTypesPending) await updateNumTypes(NEW_NUM_TYPES)
-                else if (isUpdateElectricalPending) await updateElectricalCounts()
+                if (isBrushErasing)
+                    eraseWithBrush()
+                else if (isEraseCompletionPending)
+                    completeEraseWithBrush()
+                else if (isBrushDrawing)
+                    drawWithBrush()
+                else if (isUpdateNumParticlesPending)
+                    await updateNumParticles(NEW_NUM_PARTICLES)
+                else if (isUpdateNumTypesPending)
+                    await updateNumTypes(NEW_NUM_TYPES)
+                else if (isUpdateElectricalPending)
+                    await updateElectricalCounts()
             }
 
             const startExecutionTime = performance.now()
@@ -1557,13 +1709,18 @@ export default defineComponent({
                 // and the subsequent write-back reverts all frames computed in between.
                 handleDeltaTime(startExecutionTime)
                 step()
-            } else {
+            }
+            else {
                 const encoder = device.createCommandEncoder()
-                if (isCameraTracking) computeTrackerCameraUpdate(encoder)
+                if (isCameraTracking)
+                    computeTrackerCameraUpdate(encoder)
                 renderParticles(encoder)
-                if (isDebugBinsActive && useSpatialHash) renderDebugBins(encoder)
-                if (isBrushActive && showBrushCircle) renderBrushCircle(encoder)
-                if (isTrackerActive && isTrackerIndicatorVisible) renderTrackerIndicator(encoder)
+                if (isDebugBinsActive && useSpatialHash)
+                    renderDebugBins(encoder)
+                if (isBrushActive && showBrushCircle)
+                    renderBrushCircle(encoder)
+                if (isTrackerActive && isTrackerIndicatorVisible)
+                    renderTrackerIndicator(encoder)
                 device.queue.submit([encoder.finish()])
             }
             // device.queue.onSubmittedWorkDone().then(() => executionTime.value = performance.now() - startExecutionTime) // Approximate execution time of the GPU commands
@@ -1591,7 +1748,8 @@ export default defineComponent({
                 lastDisplayedDtUpdate = startExecutionTime
                 displayedDeltaTime.value = smoothedDeltaTime
             }
-            if (manualDeltaTimeEnabled) return
+            if (manualDeltaTimeEnabled)
+                return
 
             // Only update the delta time buffer if it has changed significantly
             if (Math.round(lastSmoothedDeltaTime * 1000) !== Math.round(smoothedDeltaTime * 1000)) {
@@ -1599,7 +1757,7 @@ export default defineComponent({
             }
         }
         const updateDeltaTimeBuffer = (deltaTime: number) => {
-            device.queue.writeBuffer(deltaTimeBuffer!, 0, new Float32Array([deltaTime, Math.pow(1 - frictionFactor, deltaTime * 60)]))
+            device.queue.writeBuffer(deltaTimeBuffer!, 0, new Float32Array([deltaTime, (1 - frictionFactor) ** (deltaTime * 60)]))
         }
         // -------------------------------------------------------------------------------------------------------------
         const step = () => {
@@ -1608,17 +1766,22 @@ export default defineComponent({
             if (!useSpatialHash) {
                 encoder.copyBufferToBuffer(particleBuffer!, 0, particleTempBuffer!, 0, particleBuffer!.size)
             }
-            if (useSpatialHash) computeBinning(encoder)
+            if (useSpatialHash)
+                computeBinning(encoder)
             else computeBruteForce(encoder)
             computeAdvance(encoder)
-            
-            if (isTrackerActive) computeTracking(encoder)
-            
+
+            if (isTrackerActive)
+                computeTracking(encoder)
+
             renderParticles(encoder)
 
-            if (isDebugBinsActive && useSpatialHash) renderDebugBins(encoder)
-            if (isBrushActive && showBrushCircle) renderBrushCircle(encoder)
-            if (isTrackerActive && isTrackerIndicatorVisible) renderTrackerIndicator(encoder)
+            if (isDebugBinsActive && useSpatialHash)
+                renderDebugBins(encoder)
+            if (isBrushActive && showBrushCircle)
+                renderBrushCircle(encoder)
+            if (isTrackerActive && isTrackerIndicatorVisible)
+                renderTrackerIndicator(encoder)
 
             device.queue.submit([encoder.finish()])
         }
@@ -1669,7 +1832,8 @@ export default defineComponent({
         }
         const computeAdvance = (encoder: GPUCommandEncoder) => {
             if (isApplyingBrushForce) {
-                if (!showBrushCircle) updateBrushOptionsBuffer() // Condition prevents duplicate updates
+                if (!showBrushCircle)
+                    updateBrushOptionsBuffer() // Condition prevents duplicate updates
 
                 const advanceBrushComputePass = encoder.beginComputePass()
                 advanceBrushComputePass.setPipeline(particleAdvanceBrushPipeline)
@@ -1679,7 +1843,8 @@ export default defineComponent({
                 advanceBrushComputePass.setBindGroup(3, brushOptionsBindGroup)
                 advanceBrushComputePass.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 64))
                 advanceBrushComputePass.end()
-            } else {
+            }
+            else {
                 const advanceComputePass = encoder.beginComputePass()
                 advanceComputePass.setPipeline(particleAdvancePipeline)
                 advanceComputePass.setBindGroup(0, particleBufferBindGroup)
@@ -1696,9 +1861,13 @@ export default defineComponent({
             if (cameraChanged) {
                 if (isCameraTracking) { // Only update zoom factors when tracking (position is handled by the tracker camera compute shader)
                     device.queue.writeBuffer(cameraBuffer!, 8, new Float32Array([cameraScaleX, cameraScaleY]))
-                } else {
+                }
+                else {
                     device.queue.writeBuffer(cameraBuffer!, 0, new Float32Array([
-                        cameraCenter.x, cameraCenter.y, cameraScaleX, cameraScaleY
+                        cameraCenter.x,
+                        cameraCenter.y,
+                        cameraScaleX,
+                        cameraScaleY,
                     ]))
                 }
                 updateInfiniteRenderOptions()
@@ -1724,14 +1893,16 @@ export default defineComponent({
                     hdrRenderPass.setPipeline(isAdditiveBlending ? renderMirrorCirclePipelineAdditive : renderMirrorCirclePipeline)
                     hdrRenderPass.draw(4, NUM_PARTICLES * mirrorWrapCount)
                     hdrRenderPass.end()
-                } else if (isInfiniteMirrorWrap) {
+                }
+                else if (isInfiniteMirrorWrap) {
                     hdrRenderPass.setBindGroup(3, infiniteRenderOptionsBindGroup)
                     hdrRenderPass.setPipeline(renderInfiniteGlowPipeline)
                     hdrRenderPass.draw(4, infiniteTotalInstances)
                     hdrRenderPass.setPipeline(isAdditiveBlending ? renderInfiniteCirclePipelineAdditive : renderInfiniteCirclePipeline)
                     hdrRenderPass.draw(4, infiniteTotalInstances)
                     hdrRenderPass.end()
-                } else {
+                }
+                else {
                     hdrRenderPass.setBindGroup(3, glowOptionsBindGroup)
                     hdrRenderPass.setPipeline(renderGlowPipeline)
                     hdrRenderPass.draw(4, NUM_PARTICLES)
@@ -1757,8 +1928,8 @@ export default defineComponent({
                         view: ctx.getCurrentTexture().createView(),
                         loadOp: 'clear',
                         storeOp: 'store',
-                        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }
-                    }]
+                        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                    }],
                 })
                 renderPass.setPipeline(isAdditiveBlending ? renderMirrorPipelineAdditive : renderMirrorPipeline)
                 renderPass.setBindGroup(0, particleBufferReadOnlyBindGroup)
@@ -1776,8 +1947,8 @@ export default defineComponent({
                         view: ctx.getCurrentTexture().createView(),
                         loadOp: 'clear',
                         clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-                        storeOp: 'store'
-                    }]
+                        storeOp: 'store',
+                    }],
                 })
                 renderPass.setPipeline(isAdditiveBlending ? renderInfinitePipelineAdditive : renderInfinitePipeline)
                 renderPass.setBindGroup(0, particleBufferReadOnlyBindGroup)
@@ -1859,6 +2030,7 @@ export default defineComponent({
             renderPass.end()
         }
         // -------------------------------------------------------------------------------------------------------------
+        // eslint-disable-next-line unused-imports/no-unused-vars
         const renderInfiniteMirrorWithOffscreenTexture = (encoder: GPUCommandEncoder) => {
             const renderOffscreenPass = encoder.beginRenderPass({
                 colorAttachments: [{
@@ -1879,8 +2051,8 @@ export default defineComponent({
                     view: ctx.getCurrentTexture().createView(),
                     loadOp: 'clear',
                     clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-                    storeOp: 'store'
-                }]
+                    storeOp: 'store',
+                }],
             })
             renderInfinitePass.setPipeline(composeInfinitePipeline)
             renderInfinitePass.setBindGroup(0, cameraBindGroup)
@@ -1923,15 +2095,18 @@ export default defineComponent({
                 })
                 new Uint8Array(electricalOptionsBuffer.getMappedRange()).set(new Uint8Array(data))
                 electricalOptionsBuffer.unmap()
-            } else {
+            }
+            else {
                 device.queue.writeBuffer(electricalOptionsBuffer, 0, data)
             }
         }
         const MAX_CONN_DOTS: number = 32768 // must match MAX_CONN_DOTS in debugConnections.wgsl
         const CONN_DOT_STRIDE: number = 24 // ConnDot { pos: vec2f; col: vec3f } -> 24 bytes array stride
         const createConnectionBuffers = () => {
-            if (connDotsBuffer) connDotsBuffer.destroy(); connDotsBuffer = undefined;
-            if (connCountBuffer) connCountBuffer.destroy(); connCountBuffer = undefined;
+            if (connDotsBuffer)
+                connDotsBuffer.destroy(); connDotsBuffer = undefined
+            if (connCountBuffer)
+                connCountBuffer.destroy(); connCountBuffer = undefined
             connDotsBuffer = device.createBuffer({
                 size: MAX_CONN_DOTS * CONN_DOT_STRIDE,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -1960,24 +2135,24 @@ export default defineComponent({
             cameraBuffer = device.createBuffer({
                 size: cameraData.byteLength,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-                mappedAtCreation: true
-            });
+                mappedAtCreation: true,
+            })
             new Float32Array(cameraBuffer.getMappedRange()).set(cameraData)
             cameraBuffer.unmap()
 
             deltaTimeBuffer = device.createBuffer({
                 size: 8, // [deltaTime, friction] -> friction = pre-computed pow(1 - frictionFactor, deltaTime * 60)
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-                mappedAtCreation: true
+                mappedAtCreation: true,
             })
-            new Float32Array(deltaTimeBuffer.getMappedRange()).set([smoothedDeltaTime, Math.pow(1 - frictionFactor, smoothedDeltaTime * 60)])
+            new Float32Array(deltaTimeBuffer.getMappedRange()).set([smoothedDeltaTime, (1 - frictionFactor) ** (smoothedDeltaTime * 60)])
             deltaTimeBuffer.unmap()
 
             const infiniteRenderOptionsData = new Int32Array(4) // startX, startY, numCopiesX, numCopiesY
             infiniteRenderOptionsBuffer = device.createBuffer({
                 size: infiniteRenderOptionsData.byteLength,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-                mappedAtCreation: true
+                mappedAtCreation: true,
             })
             new Int32Array(infiniteRenderOptionsBuffer.getMappedRange()).set(infiniteRenderOptionsData)
             infiniteRenderOptionsBuffer.unmap()
@@ -1995,23 +2170,27 @@ export default defineComponent({
         const updateColorBuffer = () => {
             const paddedSize = Math.ceil(colors.byteLength / 16) * 16 // Ensure padded to 16 bytes
             if (!colorBuffer || colorBuffer.size !== paddedSize) {
-                if (colorBuffer) colorBuffer?.destroy(); colorBuffer = undefined;
+                if (colorBuffer)
+                    colorBuffer?.destroy(); colorBuffer = undefined
                 colorBuffer = device.createBuffer({
                     size: paddedSize,
                     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-                    mappedAtCreation: true
+                    mappedAtCreation: true,
                 })
                 new Float32Array(colorBuffer.getMappedRange()).set(colors)
                 colorBuffer.unmap()
-            } else {
+            }
+            else {
                 const paddedColors = new Float32Array(paddedSize / 4)
                 paddedColors.set(colors)
                 device.queue.writeBuffer(colorBuffer!, 0, paddedColors)
             }
         }
         const updateParticleBuffers = (hasInitialParticles: boolean = false) => {
-            if (particleBuffer) particleBuffer?.destroy(); particleBuffer = undefined;
-            if (particleTempBuffer) particleTempBuffer?.destroy(); particleTempBuffer = undefined;
+            if (particleBuffer)
+                particleBuffer?.destroy(); particleBuffer = undefined
+            if (particleTempBuffer)
+                particleTempBuffer?.destroy(); particleTempBuffer = undefined
 
             particleBuffer = device.createBuffer({
                 size: NUM_PARTICLES * 32, // 7 floats: x,y,vx,vy,type,control,signal
@@ -2028,8 +2207,10 @@ export default defineComponent({
             })
         }
         const updateEraseCompactBuffers = () => {
-            if (particleKeepFlagsBuffer) particleKeepFlagsBuffer.destroy(); particleKeepFlagsBuffer = undefined
-            if (particleCompactBuffer) particleCompactBuffer.destroy(); particleCompactBuffer = undefined
+            if (particleKeepFlagsBuffer)
+                particleKeepFlagsBuffer.destroy(); particleKeepFlagsBuffer = undefined
+            if (particleCompactBuffer)
+                particleCompactBuffer.destroy(); particleCompactBuffer = undefined
             particleKeepFlagsBuffer = device.createBuffer({
                 size: NUM_PARTICLES * 4,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -2040,9 +2221,12 @@ export default defineComponent({
             })
         }
         const updateBinningBuffers = () => {
-            if (binOffsetBuffer) binOffsetBuffer.destroy(); binOffsetBuffer = undefined;
-            if (binOffsetTempBuffer) binOffsetTempBuffer.destroy(); binOffsetTempBuffer = undefined;
-            if (binPrefixSumStepSizeBuffer) binPrefixSumStepSizeBuffer.destroy(); binPrefixSumStepSizeBuffer = undefined;
+            if (binOffsetBuffer)
+                binOffsetBuffer.destroy(); binOffsetBuffer = undefined
+            if (binOffsetTempBuffer)
+                binOffsetTempBuffer.destroy(); binOffsetTempBuffer = undefined
+            if (binPrefixSumStepSizeBuffer)
+                binPrefixSumStepSizeBuffer.destroy(); binPrefixSumStepSizeBuffer = undefined
 
             binOffsetBuffer = device.createBuffer({
                 size: (binCount + 1) * 4,
@@ -2055,19 +2239,20 @@ export default defineComponent({
 
             const binPrefixSumStepSize = new Uint32Array(prefixSumIterations * 64)
             for (let i = 0; i < prefixSumIterations; ++i) {
-                binPrefixSumStepSize[i * 64] = Math.pow(2, i)
+                binPrefixSumStepSize[i * 64] = 2 ** i
             }
             binPrefixSumStepSizeBuffer = device.createBuffer({
                 size: prefixSumIterations * 256,
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
-                mappedAtCreation: true
+                mappedAtCreation: true,
             })
             new Uint32Array(binPrefixSumStepSizeBuffer.getMappedRange()).set(binPrefixSumStepSize)
             binPrefixSumStepSizeBuffer.unmap()
         }
         // -------------------------------------------------------------------------------------------------------------
         const updateBrushesBuffer = () => {
-            if (brushesBuffer) brushesBuffer.destroy(); brushesBuffer = undefined;
+            if (brushesBuffer)
+                brushesBuffer.destroy(); brushesBuffer = undefined
 
             const selectedTypes = new Uint32Array(brushes)
             const bufferSize = 8 + selectedTypes.byteLength
@@ -2081,7 +2266,8 @@ export default defineComponent({
             if (selectedTypes.length > 0) {
                 device.queue.writeBuffer(brushesBuffer, 4, selectedTypes)
             }
-            if (brushOptionsBindGroup) updateBrushesBindGroup()
+            if (brushOptionsBindGroup)
+                updateBrushesBindGroup()
         }
         const updateBrushOptionsBuffer = () => {
             const brushClipX = pointerX / CANVAS_WIDTH * 2 - 1
@@ -2110,12 +2296,14 @@ export default defineComponent({
                 })
                 new Uint8Array(brushOptionsBuffer.getMappedRange()).set(new Uint8Array(brushOptionsData))
                 brushOptionsBuffer.unmap()
-            } else {
+            }
+            else {
                 device.queue.writeBuffer(brushOptionsBuffer, 0, brushOptionsData)
             }
         }
         const updateInfiniteRenderOptions = () => {
-            if (!isInfiniteMirrorWrap) return
+            if (!isInfiniteMirrorWrap)
+                return
 
             const viewWidth = 2.0 / cameraScaleX
             const viewHeight = 2.0 / cameraScaleY
@@ -2152,7 +2340,8 @@ export default defineComponent({
                 })
                 new Uint8Array(glowOptionsBuffer.getMappedRange()).set(new Uint8Array(glowOptionsData))
                 glowOptionsBuffer.unmap()
-            } else {
+            }
+            else {
                 device.queue.writeBuffer(glowOptionsBuffer, 0, glowOptionsData)
             }
         }
@@ -2199,11 +2388,13 @@ export default defineComponent({
                 })
                 new Uint8Array(simOptionsBuffer.getMappedRange()).set(new Uint8Array(simOptionsData))
                 simOptionsBuffer.unmap()
-            } else if (isEraseCompletionPending) {
+            }
+            else if (isEraseCompletionPending) {
                 // Skip writing numParticles during erase to avoid conflicts with GPU-side copyBufferToBuffer
                 device.queue.writeBuffer(simOptionsBuffer, 0, simOptionsData, 0, 20)
                 device.queue.writeBuffer(simOptionsBuffer, 24, simOptionsData, 24, 80)
-            } else {
+            }
+            else {
                 device.queue.writeBuffer(simOptionsBuffer, 0, simOptionsData)
             }
         }
@@ -2221,7 +2412,8 @@ export default defineComponent({
                 })
                 new Uint8Array(debugOptionsBuffer.getMappedRange()).set(new Uint8Array(debugOptionsData))
                 debugOptionsBuffer.unmap()
-            } else {
+            }
+            else {
                 device.queue.writeBuffer(debugOptionsBuffer, 0, debugOptionsData)
             }
         }
@@ -2245,16 +2437,16 @@ export default defineComponent({
             targetTrackerCameraOffset = { x: 0, y: 0 }
         }
         const updateInteractionMatrixBuffer = () => {
-            const stride = 4; // 4 octets per entry
-            const interactionData = new Uint8Array(MATRIX_TYPES * MATRIX_TYPES * stride);
+            const stride = 4 // 4 octets per entry
+            const interactionData = new Uint8Array(MATRIX_TYPES * MATRIX_TYPES * stride)
             for (let a = 0; a < MATRIX_TYPES; a++) {
                 for (let b = 0; b < MATRIX_TYPES; b++) {
-                    const index = (a * MATRIX_TYPES + b) * stride;
-                    interactionData[index] = Math.round((rulesMatrix[a][b] + 1) * 0.5 * 255); // rule u8
-                    interactionData[index + 1] = Math.round(minRadiusMatrix[a][b]); // minR u8
-                    const maxR = maxRadiusMatrix[a][b];
-                    interactionData[index + 2] = maxR & 0xFF; // maxR low byte
-                    interactionData[index + 3] = (maxR >> 8) & 0xFF; // maxR high byte
+                    const index = (a * MATRIX_TYPES + b) * stride
+                    interactionData[index] = Math.round((rulesMatrix[a][b] + 1) * 0.5 * 255) // rule u8
+                    interactionData[index + 1] = Math.round(minRadiusMatrix[a][b]) // minR u8
+                    const maxR = maxRadiusMatrix[a][b]
+                    interactionData[index + 2] = maxR & 0xFF // maxR low byte
+                    interactionData[index + 3] = (maxR >> 8) & 0xFF // maxR high byte
                 }
             }
 
@@ -2263,15 +2455,17 @@ export default defineComponent({
             paddedInteractionData.set(interactionData)
 
             if (!interactionMatrixBuffer || interactionMatrixBuffer.size !== paddedSize) {
-                if (interactionMatrixBuffer) interactionMatrixBuffer.destroy(); interactionMatrixBuffer = undefined;
+                if (interactionMatrixBuffer)
+                    interactionMatrixBuffer.destroy(); interactionMatrixBuffer = undefined
                 interactionMatrixBuffer = device.createBuffer({
                     size: paddedSize,
                     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-                    mappedAtCreation: true
+                    mappedAtCreation: true,
                 })
                 new Uint8Array(interactionMatrixBuffer.getMappedRange()).set(paddedInteractionData)
                 interactionMatrixBuffer.unmap()
-            } else {
+            }
+            else {
                 device.queue.writeBuffer(interactionMatrixBuffer, 0, paddedInteractionData)
             }
         }
@@ -2384,7 +2578,7 @@ export default defineComponent({
             binFillSizeBindGroup = device.createBindGroup({
                 layout: binFillSizeBindGroupLayout,
                 entries: [
-                    { binding: 0, resource: { buffer: binOffsetBuffer! } }
+                    { binding: 0, resource: { buffer: binOffsetBuffer! } },
                 ],
             })
             binPrefixSumBindGroup[0] = device.createBindGroup({
@@ -2408,17 +2602,17 @@ export default defineComponent({
                 entries: [
                     { binding: 0, resource: { buffer: binOffsetBuffer! } },
                     { binding: 1, resource: heatmapTextureView! },
-                    { binding: 2, resource: heatmapSampler! }
+                    { binding: 2, resource: heatmapSampler! },
                 ],
             })
         }
         const updateParticleBindGroups = () => {
-            particleBufferBindGroup = undefined as any;
-            particleBufferReadOnlyBindGroup = undefined as any;
-            particleSortBindGroup = undefined as any;
-            particleComputeForcesBindGroup = undefined as any;
-            bruteForceBindGroup = undefined as any;
-            trackerComputeBindGroup = undefined as any;
+            particleBufferBindGroup = undefined as any
+            particleBufferReadOnlyBindGroup = undefined as any
+            particleSortBindGroup = undefined as any
+            particleComputeForcesBindGroup = undefined as any
+            bruteForceBindGroup = undefined as any
+            trackerComputeBindGroup = undefined as any
 
             particleBufferBindGroup = device.createBindGroup({
                 layout: particleBufferBindGroupLayout,
@@ -2431,7 +2625,7 @@ export default defineComponent({
                 layout: particleBufferReadOnlyBindGroupLayout,
                 entries: [
                     { binding: 0, resource: { buffer: particleBuffer! } },
-                    { binding: 1, resource: { buffer: colorBuffer! } }
+                    { binding: 1, resource: { buffer: colorBuffer! } },
                 ],
             })
             particleSortBindGroup = device.createBindGroup({
@@ -2470,14 +2664,14 @@ export default defineComponent({
             })
         }
         const updateEraseCompactBindGroups = () => {
-            particleEraseBindGroup = undefined as any;
-            particleCompactBindGroup = undefined as any;
+            particleEraseBindGroup = undefined as any
+            particleCompactBindGroup = undefined as any
 
             particleEraseBindGroup = device.createBindGroup({
                 layout: particleEraseBindGroupLayout,
                 entries: [
                     { binding: 0, resource: { buffer: particleBuffer! } },
-                    { binding: 1, resource: { buffer: particleKeepFlagsBuffer! } }
+                    { binding: 1, resource: { buffer: particleKeepFlagsBuffer! } },
                 ],
             })
             particleCompactBindGroup = device.createBindGroup({
@@ -2496,8 +2690,8 @@ export default defineComponent({
                     layout: offscreenTextureBindGroupLayout,
                     entries: [
                         { binding: 0, resource: offscreenTextureView },
-                        { binding: 1, resource: offscreenSampler }
-                    ]
+                        { binding: 1, resource: offscreenSampler },
+                    ],
                 })
             }
         }
@@ -2505,7 +2699,7 @@ export default defineComponent({
             composeHdrBindGroup = device.createBindGroup({
                 layout: composeHdrBindGroupLayout,
                 entries: [
-                    { binding: 0, resource: hdrTextureView }
+                    { binding: 0, resource: hdrTextureView },
                 ],
             })
         }
@@ -2591,7 +2785,7 @@ export default defineComponent({
                 entries: [
                     { binding: 0, visibility: GPUShaderStage.COMPUTE | GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
                 ],
-            });
+            })
             deltaTimeBindGroupLayout = device.createBindGroupLayout({
                 entries: [
                     { binding: 0, visibility: GPUShaderStage.COMPUTE | GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }, // deltaTimeBuffer
@@ -2634,16 +2828,16 @@ export default defineComponent({
             particleEraseBindGroupLayout = device.createBindGroupLayout({
                 entries: [
                     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particleBuffer
-                    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }        // particleKeepFlagsBuffer
-                ]
+                    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // particleKeepFlagsBuffer
+                ],
             })
             particleCompactBindGroupLayout = device.createBindGroupLayout({
                 entries: [
                     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // oldParticleBuffer
-                    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },         // newParticleBuffer
+                    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // newParticleBuffer
                     { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particleKeepFlags
-                    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }          // newParticleCount
-                ]
+                    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // newParticleCount
+                ],
             })
             particleDrawBindGroupLayout = device.createBindGroupLayout({
                 entries: [
@@ -2705,7 +2899,7 @@ export default defineComponent({
                         binFillSizeBindGroupLayout,
                     ],
                 }),
-                compute: { module: binFillSizeShader, entryPoint: 'clearBinSize' }
+                compute: { module: binFillSizeShader, entryPoint: 'clearBinSize' },
             })
             binFillSizePipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
@@ -2715,7 +2909,7 @@ export default defineComponent({
                         binFillSizeBindGroupLayout,
                     ],
                 }),
-                compute: { module: binFillSizeShader, entryPoint: 'fillBinSize' }
+                compute: { module: binFillSizeShader, entryPoint: 'fillBinSize' },
             })
             const binPrefixSumShader = device.createShaderModule({ code: binPrefixSumShaderCode })
             binPrefixSumPipeline = device.createComputePipeline({
@@ -2724,7 +2918,7 @@ export default defineComponent({
                         binPrefixSumBindGroupLayout,
                     ],
                 }),
-                compute: { module: binPrefixSumShader, entryPoint: 'prefixSumStep' }
+                compute: { module: binPrefixSumShader, entryPoint: 'prefixSumStep' },
             })
             const particleSortShader = device.createShaderModule({ code: particleSortShaderCode })
             particleSortClearSizePipeline = device.createComputePipeline({
@@ -2734,7 +2928,7 @@ export default defineComponent({
                         simOptionsBindGroupLayout,
                     ],
                 }),
-                compute: { module: particleSortShader, entryPoint: 'clearBinSize' }
+                compute: { module: particleSortShader, entryPoint: 'clearBinSize' },
             })
             particleSortPipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
@@ -2743,7 +2937,7 @@ export default defineComponent({
                         simOptionsBindGroupLayout,
                     ],
                 }),
-                compute: { module: particleSortShader, entryPoint: 'sortParticles' }
+                compute: { module: particleSortShader, entryPoint: 'sortParticles' },
             })
             const particleComputeForcesShader = device.createShaderModule({ code: particleComputeForcesShaderCode })
             particleComputeForcesPipeline = device.createComputePipeline({
@@ -2755,7 +2949,7 @@ export default defineComponent({
                         electricalBindGroupLayout,
                     ],
                 }),
-                compute: { module: particleComputeForcesShader, entryPoint: 'computeForces' }
+                compute: { module: particleComputeForcesShader, entryPoint: 'computeForces' },
             })
             const bruteForceShader = device.createShaderModule({ code: bruteForceShaderCode })
             bruteForceComputePipeline = device.createComputePipeline({
@@ -2767,7 +2961,7 @@ export default defineComponent({
                         electricalBindGroupLayout,
                     ],
                 }),
-                compute: { module: bruteForceShader, entryPoint: 'main' }
+                compute: { module: bruteForceShader, entryPoint: 'main' },
             })
             const particleAdvanceShader = device.createShaderModule({ code: particleAdvanceShaderCode })
             particleAdvancePipeline = device.createComputePipeline({
@@ -2778,7 +2972,7 @@ export default defineComponent({
                         deltaTimeBindGroupLayout,
                     ],
                 }),
-                compute: { module: particleAdvanceShader, entryPoint: 'particleAdvance' }
+                compute: { module: particleAdvanceShader, entryPoint: 'particleAdvance' },
             })
             const debugConnectionsShader = device.createShaderModule({ code: debugConnectionsShaderCode })
             debugConnectionsPipeline = device.createComputePipeline({
@@ -2789,7 +2983,7 @@ export default defineComponent({
                         electricalBindGroupLayout,
                     ],
                 }),
-                compute: { module: debugConnectionsShader, entryPoint: 'emitConnections' }
+                compute: { module: debugConnectionsShader, entryPoint: 'emitConnections' },
             })
             const particleAdvanceBrushShader = device.createShaderModule({ code: particleAdvanceBrushShaderCode })
             particleAdvanceBrushPipeline = device.createComputePipeline({
@@ -2798,29 +2992,29 @@ export default defineComponent({
                         particleBufferBindGroupLayout,
                         simOptionsBindGroupLayout,
                         deltaTimeBindGroupLayout,
-                        brushOptionsBindGroupLayout
+                        brushOptionsBindGroupLayout,
                     ],
                 }),
-                compute: { module: particleAdvanceBrushShader, entryPoint: 'particleAdvance' }
+                compute: { module: particleAdvanceBrushShader, entryPoint: 'particleAdvance' },
             })
             const particleEraseShader = device.createShaderModule({ code: particleEraseShaderCode })
             particleErasePipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleEraseBindGroupLayout, simOptionsBindGroupLayout, brushOptionsBindGroupLayout,],
+                    bindGroupLayouts: [particleEraseBindGroupLayout, simOptionsBindGroupLayout, brushOptionsBindGroupLayout],
                 }),
-                compute: { module: particleEraseShader, entryPoint: 'markForErase' }
+                compute: { module: particleEraseShader, entryPoint: 'markForErase' },
             })
             const particleCompactShader = device.createShaderModule({ code: particleCompactShaderCode })
             particleCompactPipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleCompactBindGroupLayout, simOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleCompactBindGroupLayout, simOptionsBindGroupLayout],
                 }),
                 compute: { module: particleCompactShader, entryPoint: 'compactParticles' },
             })
-            const particleDrawShader = device.createShaderModule({ code: particleDrawShaderCode });
+            const particleDrawShader = device.createShaderModule({ code: particleDrawShaderCode })
             particleDrawPipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleDrawBindGroupLayout, simOptionsBindGroupLayout, brushOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleDrawBindGroupLayout, simOptionsBindGroupLayout, brushOptionsBindGroupLayout],
                 }),
                 compute: { module: particleDrawShader, entryPoint: 'drawParticles' },
             })
@@ -2828,22 +3022,22 @@ export default defineComponent({
             const trackerComputeShader = device.createShaderModule({ code: trackerComputeShaderCode })
             trackerAccumulatePipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [trackerComputeBindGroupLayout, simOptionsBindGroupLayout, deltaTimeBindGroupLayout]
+                    bindGroupLayouts: [trackerComputeBindGroupLayout, simOptionsBindGroupLayout, deltaTimeBindGroupLayout],
                 }),
-                compute: { module: trackerComputeShader, entryPoint: 'accumulateParticles' }
+                compute: { module: trackerComputeShader, entryPoint: 'accumulateParticles' },
             })
             trackerFinalizePipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [trackerComputeBindGroupLayout, simOptionsBindGroupLayout, deltaTimeBindGroupLayout]
+                    bindGroupLayouts: [trackerComputeBindGroupLayout, simOptionsBindGroupLayout, deltaTimeBindGroupLayout],
                 }),
-                compute: { module: trackerComputeShader, entryPoint: 'finalizeTracker' }
+                compute: { module: trackerComputeShader, entryPoint: 'finalizeTracker' },
             })
             const trackerCameraUpdateShader = device.createShaderModule({ code: trackerCameraUpdateShaderCode })
             trackerCameraUpdatePipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [trackerCameraUpdateBindGroupLayout]
+                    bindGroupLayouts: [trackerCameraUpdateBindGroupLayout],
                 }),
-                compute: { module: trackerCameraUpdateShader, entryPoint: 'main' }
+                compute: { module: trackerCameraUpdateShader, entryPoint: 'main' },
             })
         }
         const particleNormalBlending: GPUBlendState = {
@@ -2863,20 +3057,20 @@ export default defineComponent({
                 vertex: { module: renderShader, entryPoint: 'vertexMain' },
                 fragment: { module: renderShader, entryPoint: 'fragmentMain', targets: [{
                     format: navigator.gpu.getPreferredCanvasFormat(),
-                    blend: particleNormalBlending
+                    blend: particleNormalBlending,
                 }] },
-                primitive: { topology: 'triangle-strip' }
+                primitive: { topology: 'triangle-strip' },
             })
             renderPipelineAdditive = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout,],
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout],
                 }),
-                vertex: { module: renderShader, entryPoint: 'vertexMain'},
+                vertex: { module: renderShader, entryPoint: 'vertexMain' },
                 fragment: { module: renderShader, entryPoint: 'fragmentMain', targets: [{
                     format: navigator.gpu.getPreferredCanvasFormat(),
-                    blend: particleAdditiveBlending
+                    blend: particleAdditiveBlending,
                 }] },
-                primitive: { topology: 'triangle-strip' }
+                primitive: { topology: 'triangle-strip' },
             })
             const renderConnectionsShader = device.createShaderModule({ code: renderConnectionsShaderCode })
             renderConnectionsPipeline = device.createRenderPipeline({
@@ -2887,12 +3081,12 @@ export default defineComponent({
                 fragment: { module: renderConnectionsShader, entryPoint: 'fragmentMain', targets: [{
                     format: navigator.gpu.getPreferredCanvasFormat(),
                     // Normal (alpha) blending: lines draw ON TOP of bright matter so they stay visible.
-                    blend: particleNormalBlending
+                    blend: particleNormalBlending,
                 }] },
-                primitive: { topology: 'triangle-strip' }
+                primitive: { topology: 'triangle-strip' },
             })
             // ---------------------------------------------------------------------------------------------------------
-            const renderMirrorShader = device.createShaderModule({ code: renderMirrorShaderCode });
+            const renderMirrorShader = device.createShaderModule({ code: renderMirrorShaderCode })
             renderMirrorPipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
                     bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout],
@@ -2900,9 +3094,9 @@ export default defineComponent({
                 vertex: { module: renderMirrorShader, entryPoint: 'mirrorVertex' },
                 fragment: { module: renderMirrorShader, entryPoint: 'mirrorFragment', targets: [{
                     format: navigator.gpu.getPreferredCanvasFormat(),
-                    blend: particleNormalBlending
+                    blend: particleNormalBlending,
                 }] },
-                primitive: { topology: 'triangle-strip' }
+                primitive: { topology: 'triangle-strip' },
             })
             renderMirrorPipelineAdditive = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
@@ -2911,45 +3105,44 @@ export default defineComponent({
                 vertex: { module: renderMirrorShader, entryPoint: 'mirrorVertex' },
                 fragment: { module: renderMirrorShader, entryPoint: 'mirrorFragment', targets: [{
                     format: navigator.gpu.getPreferredCanvasFormat(),
-                    blend: particleAdditiveBlending
+                    blend: particleAdditiveBlending,
                 }] },
-                primitive: { topology: 'triangle-strip' }
+                primitive: { topology: 'triangle-strip' },
             })
             // ---------------------------------------------------------------------------------------------------------
-            const renderInfiniteShader = device.createShaderModule({ code: renderInfiniteShaderCode });
+            const renderInfiniteShader = device.createShaderModule({ code: renderInfiniteShaderCode })
             renderInfinitePipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderInfiniteShader, entryPoint: 'infiniteVertex' },
                 fragment: { module: renderInfiniteShader, entryPoint: 'infiniteFragment', targets: [{
                     format: navigator.gpu.getPreferredCanvasFormat(),
-                    blend: particleNormalBlending
+                    blend: particleNormalBlending,
                 }] },
-                primitive: { topology: 'triangle-strip', stripIndexFormat: 'uint32' }
+                primitive: { topology: 'triangle-strip', stripIndexFormat: 'uint32' },
             })
             renderInfinitePipelineAdditive = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout,]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderInfiniteShader, entryPoint: 'infiniteVertex' },
                 fragment: { module: renderInfiniteShader, entryPoint: 'infiniteFragment', targets: [{
                     format: navigator.gpu.getPreferredCanvasFormat(),
-                    blend: particleAdditiveBlending
+                    blend: particleAdditiveBlending,
                 }] },
-                primitive: { topology: 'triangle-strip', stripIndexFormat: 'uint32' }
+                primitive: { topology: 'triangle-strip', stripIndexFormat: 'uint32' },
             })
             // ---------------------------------------------------------------------------------------------------------
             const offscreenVertexShader = device.createShaderModule({ code: offscreenShaderCode })
             renderOffscreenPipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout,],
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout],
                 }),
                 vertex: { module: offscreenVertexShader, entryPoint: 'vertexMain' },
-                fragment: { module: renderShader, entryPoint: 'fragmentMain',
-                    targets: [{ format: 'rgba8unorm' }]
+                fragment: { module: renderShader, entryPoint: 'fragmentMain', targets: [{ format: 'rgba8unorm' }],
                 },
-                primitive: { topology: 'triangle-strip' }
+                primitive: { topology: 'triangle-strip' },
             })
             // ---------------------------------------------------------------------------------------------------------
             const infiniteCompositorShader = device.createShaderModule({ code: infiniteCompositorShaderCode })
@@ -2958,16 +3151,15 @@ export default defineComponent({
                     bindGroupLayouts: [cameraBindGroupLayout, simOptionsBindGroupLayout, offscreenTextureBindGroupLayout],
                 }),
                 vertex: { module: infiniteCompositorShader, entryPoint: 'vertexInfinite' },
-                fragment: { module: infiniteCompositorShader, entryPoint: 'fragmentInfinite',
-                    targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }]
+                fragment: { module: infiniteCompositorShader, entryPoint: 'fragmentInfinite', targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }],
                 },
-                primitive: { topology: 'triangle-list' }
+                primitive: { topology: 'triangle-list' },
             })
             // ---------------------------------------------------------------------------------------------------------
             const renderBrushCircleShader = device.createShaderModule({ code: renderBrushCircleShaderCode })
             renderBrushCirclePipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [cameraBindGroupLayout, renderBrushCircleBindGroupLayout]
+                    bindGroupLayouts: [cameraBindGroupLayout, renderBrushCircleBindGroupLayout],
                 }),
                 vertex: { module: renderBrushCircleShader, entryPoint: 'vertexMain' },
                 fragment: { module: renderBrushCircleShader, entryPoint: 'fragmentMain', targets: [{
@@ -2976,23 +3168,23 @@ export default defineComponent({
                 }] },
                 primitive: { topology: 'triangle-strip' },
             })
-            const renderBinsShader = device.createShaderModule({ code: renderBinsShaderCode });
+            const renderBinsShader = device.createShaderModule({ code: renderBinsShaderCode })
             renderDebugBinsPipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [renderDebugBinsBindGroupLayout, debugOptionsBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout]
+                    bindGroupLayouts: [renderDebugBinsBindGroupLayout, debugOptionsBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout],
                 }),
                 vertex: { module: renderBinsShader, entryPoint: 'vertexMain' },
                 fragment: { module: renderBinsShader, entryPoint: 'fragmentMain', targets: [{
-                        format: navigator.gpu.getPreferredCanvasFormat(),
-                        blend: particleNormalBlending,
-                    }] },
+                    format: navigator.gpu.getPreferredCanvasFormat(),
+                    blend: particleNormalBlending,
+                }] },
                 primitive: { topology: 'triangle-strip' },
             })
             // ---------------------------------------------------------------------------------------------------------
             const renderTrackerShader = device.createShaderModule({ code: renderTrackerShaderCode })
             renderTrackerPipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [cameraBindGroupLayout, trackerRenderBindGroupLayout, deltaTimeBindGroupLayout, simOptionsBindGroupLayout]
+                    bindGroupLayouts: [cameraBindGroupLayout, trackerRenderBindGroupLayout, deltaTimeBindGroupLayout, simOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderTrackerShader, entryPoint: 'vertexMain' },
                 fragment: { module: renderTrackerShader, entryPoint: 'fragmentMain', targets: [{
@@ -3011,7 +3203,7 @@ export default defineComponent({
             const renderGlowShader = device.createShaderModule({ code: renderGlowShaderCode })
             renderGlowPipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderGlowShader, entryPoint: 'vertexGlow' },
                 fragment: { module: renderGlowShader, entryPoint: 'fragmentGlow', targets: [{
@@ -3022,7 +3214,7 @@ export default defineComponent({
             })
             renderCirclePipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderGlowShader, entryPoint: 'vertexCircle' },
                 fragment: { module: renderGlowShader, entryPoint: 'fragmentCircle', targets: [{
@@ -3033,7 +3225,7 @@ export default defineComponent({
             })
             renderCirclePipelineAdditive = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderGlowShader, entryPoint: 'vertexCircle' },
                 fragment: { module: renderGlowShader, entryPoint: 'fragmentCircle', targets: [{
@@ -3043,10 +3235,10 @@ export default defineComponent({
                 primitive: { topology: 'triangle-strip' },
             })
             // ---------------------------------------------------------------------------------------------------------
-            const renderMirrorShader = device.createShaderModule({ code: renderMirrorShaderCode });
+            const renderMirrorShader = device.createShaderModule({ code: renderMirrorShaderCode })
             renderMirrorGlowPipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderMirrorShader, entryPoint: 'mirrorVertexGlow' },
                 fragment: { module: renderMirrorShader, entryPoint: 'mirrorFragmentGlow', targets: [{
@@ -3057,7 +3249,7 @@ export default defineComponent({
             })
             renderMirrorCirclePipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderMirrorShader, entryPoint: 'mirrorVertexCircle' },
                 fragment: { module: renderMirrorShader, entryPoint: 'mirrorFragmentCircle', targets: [{
@@ -3068,7 +3260,7 @@ export default defineComponent({
             })
             renderMirrorCirclePipelineAdditive = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, glowOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderMirrorShader, entryPoint: 'mirrorVertexCircle' },
                 fragment: { module: renderMirrorShader, entryPoint: 'mirrorFragmentCircle', targets: [{
@@ -3078,10 +3270,10 @@ export default defineComponent({
                 primitive: { topology: 'triangle-strip' },
             })
             // ---------------------------------------------------------------------------------------------------------
-            const renderInfiniteShader = device.createShaderModule({ code: renderInfiniteShaderCode });
+            const renderInfiniteShader = device.createShaderModule({ code: renderInfiniteShaderCode })
             renderInfiniteGlowPipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderInfiniteShader, entryPoint: 'infiniteVertexGlow' },
                 fragment: { module: renderInfiniteShader, entryPoint: 'infiniteFragmentGlow', targets: [{
@@ -3092,7 +3284,7 @@ export default defineComponent({
             })
             renderInfiniteCirclePipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderInfiniteShader, entryPoint: 'infiniteVertexCircle' },
                 fragment: { module: renderInfiniteShader, entryPoint: 'infiniteFragmentCircle', targets: [{
@@ -3103,7 +3295,7 @@ export default defineComponent({
             })
             renderInfiniteCirclePipelineAdditive = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout]
+                    bindGroupLayouts: [particleBufferReadOnlyBindGroupLayout, simOptionsBindGroupLayout, cameraBindGroupLayout, infiniteRenderOptionsBindGroupLayout],
                 }),
                 vertex: { module: renderInfiniteShader, entryPoint: 'infiniteVertexCircle' },
                 fragment: { module: renderInfiniteShader, entryPoint: 'infiniteFragmentCircle', targets: [{
@@ -3113,14 +3305,13 @@ export default defineComponent({
                 primitive: { topology: 'triangle-strip' },
             })
             // ---------------------------------------------------------------------------------------------------------
-            const composeShader = device.createShaderModule({ code: composeHdrShaderCode });
+            const composeShader = device.createShaderModule({ code: composeHdrShaderCode })
             composeHdrPipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({
-                    bindGroupLayouts: [composeHdrBindGroupLayout]
+                    bindGroupLayouts: [composeHdrBindGroupLayout],
                 }),
                 vertex: { module: composeShader, entryPoint: 'vertexMain' },
-                fragment: { module: composeShader, entryPoint: 'fragmentMain',
-                    targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }]
+                fragment: { module: composeShader, entryPoint: 'fragmentMain', targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }],
                 },
                 primitive: { topology: 'triangle-list' },
             })
@@ -3129,7 +3320,8 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         const updateHdrTexture = () => {
-            if (hdrTexture) hdrTexture.destroy(); hdrTexture = undefined;
+            if (hdrTexture)
+                hdrTexture.destroy(); hdrTexture = undefined
 
             hdrTexture = device.createTexture({
                 size: [CANVAS_WIDTH, CANVAS_HEIGHT],
@@ -3161,7 +3353,7 @@ export default defineComponent({
             device.queue.copyExternalImageToTexture(
                 { source: imageBitmap },
                 { texture: heatmapTexture },
-                [imageBitmap.width, imageBitmap.height, 1]
+                [imageBitmap.width, imageBitmap.height, 1],
             )
 
             heatmapSampler = device.createSampler({
@@ -3175,9 +3367,10 @@ export default defineComponent({
         }
         const updateOffscreenMirrorResources = () => {
             if (offscreenTexture) {
-                offscreenTexture.destroy(); offscreenTexture = undefined;
+                offscreenTexture.destroy(); offscreenTexture = undefined
             }
-            if (!isInfiniteMirrorWrap) return
+            if (!isInfiniteMirrorWrap)
+                return
 
             const maxDimension = device.limits.maxTextureDimension2D
             const aspectRatio = SIM_WIDTH / SIM_HEIGHT
@@ -3190,7 +3383,8 @@ export default defineComponent({
                 if (aspectRatio > 1) {
                     desiredWidth = maxDimension
                     desiredHeight = Math.round(desiredWidth / aspectRatio)
-                } else {
+                }
+                else {
                     desiredHeight = maxDimension
                     desiredWidth = Math.round(desiredHeight * aspectRatio)
                 }
@@ -3199,7 +3393,8 @@ export default defineComponent({
                 if (aspectRatio > 1) {
                     desiredWidth = Math.max(desiredWidth, baseResolution2K)
                     desiredHeight = Math.round(desiredWidth / aspectRatio)
-                } else {
+                }
+                else {
                     desiredHeight = Math.max(desiredHeight, baseResolution2K)
                     desiredWidth = Math.round(desiredHeight * aspectRatio)
                 }
@@ -3219,18 +3414,21 @@ export default defineComponent({
                     magFilter: 'linear',
                     minFilter: 'linear',
                     addressModeU: 'repeat',
-                    addressModeV: 'repeat'
+                    addressModeV: 'repeat',
                 })
             }
 
-            if (isInfiniteMirrorWrap && composeInfinitePipeline) updateOffscreenTextureBindGroup()
+            if (isInfiniteMirrorWrap && composeInfinitePipeline)
+                updateOffscreenTextureBindGroup()
         }
         const drawWithBrush = () => {
-            if (isUpdatingParticles || isEraseCompleting || !isBrushActive || brushType !== 1) return
+            if (isUpdatingParticles || isEraseCompleting || !isBrushActive || brushType !== 1)
+                return
             isUpdatingParticles = true
 
             try {
-                if (!showBrushCircle) updateBrushOptionsBuffer() // Condition prevents duplicate updates
+                if (!showBrushCircle)
+                    updateBrushOptionsBuffer() // Condition prevents duplicate updates
 
                 const oldNumParticles = NUM_PARTICLES
                 const numParticlesToAdd = Math.floor(brushIntensity)
@@ -3264,7 +3462,8 @@ export default defineComponent({
                 NUM_PARTICLES = newNumParticles
                 particleLife.numParticles = newNumParticles
 
-                if (particleTempBuffer) particleTempBuffer?.destroy(); particleTempBuffer = undefined;
+                if (particleTempBuffer)
+                    particleTempBuffer?.destroy(); particleTempBuffer = undefined
                 particleTempBuffer = device.createBuffer({
                     size: particleBuffer.size,
                     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -3276,18 +3475,22 @@ export default defineComponent({
                 updateEraseCompactBindGroups()
                 updateInfiniteRenderOptions()
                 hasUpdateNumParticles = true
-            } catch (error) {
+            }
+            catch (error) {
                 console.error("Error drawing with brush:", error)
-            } finally {
+            }
+            finally {
                 isUpdatingParticles = false
             }
         }
         const eraseWithBrush = () => {
-            if (isUpdatingParticles || isEraseCompleting || !isBrushActive || brushType !== 0) return
+            if (isUpdatingParticles || isEraseCompleting || !isBrushActive || brushType !== 0)
+                return
             isUpdatingParticles = true
 
             try {
-                if (!showBrushCircle) updateBrushOptionsBuffer() // Condition prevents duplicate updates
+                if (!showBrushCircle)
+                    updateBrushOptionsBuffer() // Condition prevents duplicate updates
 
                 const encoder = device.createCommandEncoder({ label: 'Erase and Compact Encoder' })
                 encoder.clearBuffer(newParticleCountBuffer!, 0, 4)
@@ -3314,14 +3517,17 @@ export default defineComponent({
 
                 device.queue.submit([encoder.finish()])
                 isEraseCompletionPending = true
-            } catch (error) {
+            }
+            catch (error) {
                 console.error("Error during erase and compact operation:", error)
-            } finally {
+            }
+            finally {
                 isUpdatingParticles = false
             }
         }
         const completeEraseWithBrush = () => {
-            if (isEraseCompleting || !isEraseCompletionPending) return
+            if (isEraseCompleting || !isEraseCompletionPending)
+                return
             isEraseCompleting = true
 
             // Copy new particle count to readback buffer
@@ -3350,7 +3556,8 @@ export default defineComponent({
                     device.queue.submit([copyEncoder.finish()])
                     oldParticleBuffer?.destroy()
 
-                    if (particleTempBuffer) particleTempBuffer.destroy(); particleTempBuffer = undefined;
+                    if (particleTempBuffer)
+                        particleTempBuffer.destroy(); particleTempBuffer = undefined
                     particleTempBuffer = device.createBuffer({
                         size: particleBuffer.size,
                         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -3410,7 +3617,7 @@ export default defineComponent({
                         initialParticles.set(oldParticles)
                         for (let i = oldCount; i < newCount; i++) {
                             const baseIndex = i * 8
-                            initialParticles[baseIndex]     = Math.random() * SIM_WIDTH
+                            initialParticles[baseIndex] = Math.random() * SIM_WIDTH
                             initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
                             initialParticles[baseIndex + 2] = 0
                             initialParticles[baseIndex + 3] = 0
@@ -3418,19 +3625,22 @@ export default defineComponent({
                             initialParticles[baseIndex + 5] = 0
                             initialParticles[baseIndex + 6] = 0
                         }
-                    } else {
+                    }
+                    else {
                         // Shrink: keep all non-dormant particles first, then fill with dormants.
                         const nonDormant: number[] = []
                         const dormant: number[] = []
                         for (let i = 0; i < oldCount; i++) {
                             const t = Math.floor(oldParticles[i * 8 + 4])
-                            if (t === dormantType) dormant.push(i)
+                            if (t === dormantType)
+                                dormant.push(i)
                             else nonDormant.push(i)
                         }
                         let writeIdx = 0
                         // All non-dormant particles are preserved (matter, urges, neurons, clones).
                         for (const src of nonDormant) {
-                            if (writeIdx >= newCount) break // safety: shouldn't happen
+                            if (writeIdx >= newCount)
+                                break // safety: shouldn't happen
                             const dst = writeIdx * 8
                             const src8 = src * 8
                             for (let c = 0; c < 8; c++) initialParticles[dst + c] = oldParticles[src8 + c]
@@ -3438,7 +3648,8 @@ export default defineComponent({
                         }
                         // Fill remaining slots with dormant particles.
                         for (const src of dormant) {
-                            if (writeIdx >= newCount) break
+                            if (writeIdx >= newCount)
+                                break
                             const dst = writeIdx * 8
                             const src8 = src * 8
                             for (let c = 0; c < 8; c++) initialParticles[dst + c] = oldParticles[src8 + c]
@@ -3447,7 +3658,7 @@ export default defineComponent({
                         // If somehow still short (shouldn't happen), pad with fresh dormants.
                         while (writeIdx < newCount) {
                             const baseIndex = writeIdx * 8
-                            initialParticles[baseIndex]     = Math.random() * SIM_WIDTH
+                            initialParticles[baseIndex] = Math.random() * SIM_WIDTH
                             initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
                             initialParticles[baseIndex + 2] = 0
                             initialParticles[baseIndex + 3] = 0
@@ -3457,16 +3668,18 @@ export default defineComponent({
                             writeIdx++
                         }
                     }
-                } else {
+                }
+                else {
                     // Full resize (matter count / urge / neuron change): re-label everything.
                     if (newCount > oldCount) {
                         initialParticles.set(oldParticles)
                         for (let i = oldCount; i < newCount; i++) {
                             const baseIndex = i * 8
-                            initialParticles[baseIndex]     = Math.random() * SIM_WIDTH
+                            initialParticles[baseIndex] = Math.random() * SIM_WIDTH
                             initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
                         }
-                    } else {
+                    }
+                    else {
                         initialParticles.set(oldParticles.subarray(0, newCount * 8))
                         for (let i = newCount; i < oldCount; i++) {
                             const j = Math.floor(Math.random() * (i + 1))
@@ -3484,7 +3697,8 @@ export default defineComponent({
                 lastNonPoolCount = baseMatterCount + numUrges + numNeurons + numSenseNeurons
                 // Keep the slider in sync only when the change came from the matter slider;
                 // pool/urge/neuron-driven resizes must not clobber the user's matter count.
-                if (newCount === NEW_NUM_PARTICLES && !isPoolOnly) particleLife.numParticles = newCount
+                if (newCount === NEW_NUM_PARTICLES && !isPoolOnly)
+                    particleLife.numParticles = newCount
                 updateParticleBuffers(true) // Destroy and recreate particle buffers
                 updateEraseCompactBuffers()
                 updateParticleBindGroups() // Recreate bind groups that depend on particle buffers
@@ -3492,7 +3706,8 @@ export default defineComponent({
                 updateSimOptionsBuffer() // Update simulation options buffer
                 updateInfiniteRenderOptions() // Update infinite render options buffer
                 hasUpdateNumParticles = true
-            } finally {
+            }
+            finally {
                 isUpdatingParticles = false
                 isUpdateNumParticlesPending = NEW_NUM_PARTICLES !== NUM_PARTICLES
             }
@@ -3510,6 +3725,7 @@ export default defineComponent({
             await device.queue.onSubmittedWorkDone()
 
             try {
+                // eslint-disable-next-line unused-imports/no-unused-vars
                 const oldNumTypes = NUM_TYPES
                 const oldMatrixTypes = MATRIX_TYPES
                 NUM_TYPES = newNumTypes
@@ -3533,14 +3749,16 @@ export default defineComponent({
                 updateColorBuffer()
                 updateSimOptionsBuffer()
                 updateParticleBindGroups()
-            } finally {
+            }
+            finally {
                 isUpdatingParticles = false
                 isUpdateNumTypesPending = NEW_NUM_TYPES !== NUM_TYPES
             }
         }
         const setNewElectricalCounts = () => { isUpdateElectricalPending = true }
         const updateElectricalCounts = async () => {
-            if (isUpdatingParticles) return
+            if (isUpdatingParticles)
+                return
             isUpdatingParticles = true
             await device.queue.onSubmittedWorkDone()
             try {
@@ -3556,7 +3774,8 @@ export default defineComponent({
                 updateColorBuffer()
                 updateElectricalOptionsBuffer()
                 updateSimOptionsBuffer()
-            } finally {
+            }
+            finally {
                 isUpdatingParticles = false
                 isUpdateElectricalPending = false
             }
@@ -3564,26 +3783,34 @@ export default defineComponent({
         const loadPreset = async (options: { presetRules?: number[][], presetMinRadius?: number[][], presetMaxRadius?: number[][], presetColors?: Float32Array }, presetTypeCount: number, matchPresetCount: boolean) => {
             const { presetRules, presetMinRadius, presetMaxRadius, presetColors } = options
 
-            if (isUpdatingParticles) return
+            if (isUpdatingParticles)
+                return
             isUpdatingParticles = true
             await device.queue.onSubmittedWorkDone()
 
             try {
                 const oldNumTypes = NUM_TYPES
                 const newNumTypes = presetTypeCount
-                if (newNumTypes === 0) return
+                if (newNumTypes === 0)
+                    return
 
                 if (!matchPresetCount) {
                     const typesToUpdate = Math.min(NUM_TYPES, newNumTypes)
-                    if (presetColors) await adjustColors(presetColors, NUM_TYPES, typesToUpdate, true) // Update only the colors that fit within the current NUM_TYPES
-                    if (presetRules) setRulesMatrix(applyPresetSubMatrix(rulesMatrix, presetRules, NUM_TYPES, typesToUpdate))
-                    if (presetMinRadius) setMinRadiusMatrix(applyPresetSubMatrix(minRadiusMatrix, presetMinRadius, NUM_TYPES, typesToUpdate))
-                    if (presetMaxRadius) setMaxRadiusMatrix(applyPresetSubMatrix(maxRadiusMatrix, presetMaxRadius, NUM_TYPES, typesToUpdate))
-                } else {
+                    if (presetColors)
+                        await adjustColors(presetColors, NUM_TYPES, typesToUpdate, true) // Update only the colors that fit within the current NUM_TYPES
+                    if (presetRules)
+                        setRulesMatrix(applyPresetSubMatrix(rulesMatrix, presetRules, NUM_TYPES, typesToUpdate))
+                    if (presetMinRadius)
+                        setMinRadiusMatrix(applyPresetSubMatrix(minRadiusMatrix, presetMinRadius, NUM_TYPES, typesToUpdate))
+                    if (presetMaxRadius)
+                        setMaxRadiusMatrix(applyPresetSubMatrix(maxRadiusMatrix, presetMaxRadius, NUM_TYPES, typesToUpdate))
+                }
+                else {
                     if (presetColors) {
                         colors = presetColors
                         particleLife.currentColors = colors
-                    } else if (newNumTypes !== oldNumTypes) {
+                    }
+                    else if (newNumTypes !== oldNumTypes) {
                         await adjustColors(colors, oldNumTypes, newNumTypes)
                     }
 
@@ -3593,24 +3820,40 @@ export default defineComponent({
 
                         await adjustParticleTypes(oldNumTypes, newNumTypes)
 
-                        if (presetRules) setRulesMatrix(presetRules)
-                        else setRulesMatrix(resizeMatrix(rulesMatrix, oldNumTypes, newNumTypes, () => {
-                            return Math.round((Math.random() * 2 - 1) * 100) / 100
-                        }))
-                        if (presetMinRadius) setMinRadiusMatrix(presetMinRadius)
-                        else setMinRadiusMatrix(resizeMatrix(minRadiusMatrix, oldNumTypes, newNumTypes, () => {
-                            return Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])
-                        }))
-                        if (presetMaxRadius) setMaxRadiusMatrix(presetMaxRadius)
-                        else setMaxRadiusMatrix(resizeMatrix(maxRadiusMatrix, oldNumTypes, newNumTypes, () => {
-                            return Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])
-                        }))
+                        if (presetRules) {
+                            setRulesMatrix(presetRules)
+                        }
+                        else {
+                            setRulesMatrix(resizeMatrix(rulesMatrix, oldNumTypes, newNumTypes, () => {
+                                return Math.round((Math.random() * 2 - 1) * 100) / 100
+                            }))
+                        }
+                        if (presetMinRadius) {
+                            setMinRadiusMatrix(presetMinRadius)
+                        }
+                        else {
+                            setMinRadiusMatrix(resizeMatrix(minRadiusMatrix, oldNumTypes, newNumTypes, () => {
+                                return Math.floor(Math.random() * (particleLife.minRadiusRange[1] - particleLife.minRadiusRange[0] + 1) + particleLife.minRadiusRange[0])
+                            }))
+                        }
+                        if (presetMaxRadius) {
+                            setMaxRadiusMatrix(presetMaxRadius)
+                        }
+                        else {
+                            setMaxRadiusMatrix(resizeMatrix(maxRadiusMatrix, oldNumTypes, newNumTypes, () => {
+                                return Math.floor(Math.random() * (particleLife.maxRadiusRange[1] - particleLife.maxRadiusRange[0] + 1) + particleLife.maxRadiusRange[0])
+                            }))
+                        }
 
                         updateSimOptionsBuffer()
-                    } else {
-                        if (presetRules) setRulesMatrix(presetRules)
-                        if (presetMinRadius) setMinRadiusMatrix(presetMinRadius)
-                        if (presetMaxRadius) setMaxRadiusMatrix(presetMaxRadius)
+                    }
+                    else {
+                        if (presetRules)
+                            setRulesMatrix(presetRules)
+                        if (presetMinRadius)
+                            setMinRadiusMatrix(presetMinRadius)
+                        if (presetMaxRadius)
+                            setMaxRadiusMatrix(presetMaxRadius)
                     }
                 }
 
@@ -3623,13 +3866,15 @@ export default defineComponent({
                 colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
                 particleLife.currentColors = new Float32Array(colors)
                 updateColorBuffer()
-                if (matchPresetCount && (newNumTypes !== oldNumTypes)) updateParticleBindGroups()
-            } finally {
+                if (matchPresetCount && (newNumTypes !== oldNumTypes))
+                    updateParticleBindGroups()
+            }
+            finally {
                 isUpdatingParticles = false
                 success("Preset loaded.")
             }
         }
-        const applyPresetSubMatrix = (current: number[][], preset: number[][], numTypes: number, typesToUpdate: number,): number[][] => {
+        const applyPresetSubMatrix = (current: number[][], preset: number[][], numTypes: number, typesToUpdate: number): number[][] => {
             const result = current.map(row => row.slice())
             for (let i = 0; i < numTypes; i++) {
                 for (let j = 0; j < numTypes; j++) {
@@ -3642,11 +3887,12 @@ export default defineComponent({
         }
         const adjustColors = async (oldColors: Float32Array, oldNumTypes: number, newNumTypes: number, keepExtraColors: boolean = false) => {
             const newColors = new Float32Array((keepExtraColors ? oldNumTypes : newNumTypes) * 4)
-            if (keepExtraColors) newColors.set(colors)
+            if (keepExtraColors)
+                newColors.set(colors)
 
             for (let i = 0; i < newNumTypes; i++) {
                 const idx = i * 4
-                newColors[idx]     = oldColors[idx]     ?? Math.random()
+                newColors[idx] = oldColors[idx] ?? Math.random()
                 newColors[idx + 1] = oldColors[idx + 1] ?? Math.random()
                 newColors[idx + 2] = oldColors[idx + 2] ?? Math.random()
                 newColors[idx + 3] = oldColors[idx + 3] ?? 1
@@ -3665,7 +3911,8 @@ export default defineComponent({
                         particles[typeIndex] = Math.floor(Math.random() * newNumTypes)
                     }
                 }
-            } else if (newNumTypes > oldNumTypes) {
+            }
+            else if (newNumTypes > oldNumTypes) {
                 for (let i = 0; i < NUM_PARTICLES; i++) {
                     const typeIndex = i * 8 + 4
                     const t = particles[typeIndex]
@@ -3698,7 +3945,8 @@ export default defineComponent({
                 for (let j = 0; j < newNumTypes; j++) {
                     if (i < oldNumTypes && j < oldNumTypes) {
                         row.push(matrix[i][j])
-                    } else {
+                    }
+                    else {
                         row.push(randomFn())
                     }
                 }
@@ -3720,14 +3968,14 @@ export default defineComponent({
             out.set(base.subarray(0, Math.min(base.length, NUM_TYPES * 4)), 0)
             for (let k = 0; k < numUrges; k++) {
                 const t = numUrges <= 1 ? 0 : k / (numUrges - 1)
-                out[(NUM_TYPES + k) * 4]     = 0.35 + 0.65 * t
+                out[(NUM_TYPES + k) * 4] = 0.35 + 0.65 * t
                 out[(NUM_TYPES + k) * 4 + 1] = 0.85
                 out[(NUM_TYPES + k) * 4 + 2] = 1.0
                 out[(NUM_TYPES + k) * 4 + 3] = 1
             }
             for (let m = 0; m < numNeurons; m++) {
                 const t = numNeurons <= 1 ? 0 : m / (numNeurons - 1)
-                out[(NUM_TYPES + numUrges + m) * 4]     = 1.0
+                out[(NUM_TYPES + numUrges + m) * 4] = 1.0
                 out[(NUM_TYPES + numUrges + m) * 4 + 1] = 0.25 + 0.5 * t
                 out[(NUM_TYPES + numUrges + m) * 4 + 2] = 0.15 * (1 - t)
                 out[(NUM_TYPES + numUrges + m) * 4 + 3] = 1
@@ -3736,7 +3984,7 @@ export default defineComponent({
                 const t = numSenseNeurons <= 1 ? 0 : s / (numSenseNeurons - 1)
                 // Cool cyan -> magenta ramp: clearly distinct from urges (light blue->white)
                 // and motor neurons (red-orange->orange), so sensors read as their own class.
-                out[(NUM_TYPES + numUrges + numNeurons + s) * 4]     = 0.10 + 0.55 * t
+                out[(NUM_TYPES + numUrges + numNeurons + s) * 4] = 0.10 + 0.55 * t
                 out[(NUM_TYPES + numUrges + numNeurons + s) * 4 + 1] = 0.85 - 0.60 * t
                 out[(NUM_TYPES + numUrges + numNeurons + s) * 4 + 2] = 0.95
                 out[(NUM_TYPES + numUrges + numNeurons + s) * 4 + 3] = 1
@@ -3760,10 +4008,14 @@ export default defineComponent({
             for (let i = 0; i < NUM_PARTICLES; i++) {
                 const k = i * 8
                 let t: number
-                if (i < matterCount) t = i % NUM_TYPES
-                else if (i < matterCount + numUrges) t = NUM_TYPES + (i - matterCount)
-                else if (i < matterCount + numUrges + numNeurons) t = NUM_TYPES + numUrges + (i - matterCount - numUrges)
-                else if (i < matterCount + numUrges + numNeurons + numSenseNeurons) t = NUM_TYPES + numUrges + numNeurons + (i - matterCount - numUrges - numNeurons)
+                if (i < matterCount)
+                    t = i % NUM_TYPES
+                else if (i < matterCount + numUrges)
+                    t = NUM_TYPES + (i - matterCount)
+                else if (i < matterCount + numUrges + numNeurons)
+                    t = NUM_TYPES + numUrges + (i - matterCount - numUrges)
+                else if (i < matterCount + numUrges + numNeurons + numSenseNeurons)
+                    t = NUM_TYPES + numUrges + numNeurons + (i - matterCount - numUrges - numNeurons)
                 else t = dormantType // clone pool: dormant
                 arr[k + 4] = t
                 arr[k + 5] = 0 // control
@@ -3790,7 +4042,7 @@ export default defineComponent({
             applyTypeLayout(initialParticles)
         }
         function makeRandomMinRadiusMatrix() {
-            let matrix: number[][] = []
+            const matrix: number[][] = []
             const min: number = particleLife.minRadiusRange[0]
             const max: number = particleLife.minRadiusRange[1]
             for (let i = 0; i < MATRIX_TYPES; i++) {
@@ -3803,7 +4055,7 @@ export default defineComponent({
             return matrix
         }
         function makeRandomMaxRadiusMatrix() {
-            let matrix: number[][] = []
+            const matrix: number[][] = []
             const min: number = particleLife.maxRadiusRange[0]
             const max: number = particleLife.maxRadiusRange[1]
             for (let i = 0; i < MATRIX_TYPES; i++) {
@@ -3828,7 +4080,8 @@ export default defineComponent({
         }
         const updateColors = async (useRandomGenerator: boolean | Event = false) => {
             const shouldRandom = typeof useRandomGenerator === 'boolean' ? useRandomGenerator : false
-            if (shouldRandom) particleLife.selectedColorPaletteOption = paletteOptions[Math.floor(Math.random() * paletteOptions.length)].id
+            if (shouldRandom)
+                particleLife.selectedColorPaletteOption = paletteOptions[Math.floor(Math.random() * paletteOptions.length)].id
 
             colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
             particleLife.currentColors = new Float32Array(colors)
@@ -3836,14 +4089,16 @@ export default defineComponent({
         }
         const updateRulesMatrix = async (useRandomGenerator: boolean | Event = false) => {
             const shouldRandom = typeof useRandomGenerator === 'boolean' ? useRandomGenerator : false
-            if (shouldRandom) particleLife.selectedRulesOption = rulesOptions[Math.floor(Math.random() * rulesOptions.length)].id
+            if (shouldRandom)
+                particleLife.selectedRulesOption = rulesOptions[Math.floor(Math.random() * rulesOptions.length)].id
 
             setRulesMatrix(generateRules(particleLife.selectedRulesOption, NUM_TYPES))
             updateAllInteractionBuffers()
         }
         const updateParticlePositions = async (useRandomGenerator: boolean | Event = false) => {
             const shouldRandom = typeof useRandomGenerator === 'boolean' ? useRandomGenerator : false
-            if (shouldRandom) particleLife.selectedSpawnPositionOption = positionOptions[Math.floor(Math.random() * positionOptions.length)].id
+            if (shouldRandom)
+                particleLife.selectedSpawnPositionOption = positionOptions[Math.floor(Math.random() * positionOptions.length)].id
 
             initialParticles = generatePositions(particleLife.selectedSpawnPositionOption, NUM_PARTICLES, NUM_TYPES, SIM_WIDTH, SIM_HEIGHT)
             device.queue.writeBuffer(particleBuffer!, 0, initialParticles.buffer)
@@ -3851,19 +4106,24 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         const updateSimWidth = (newWidth: number | Event) => {
-            if (typeof(newWidth) !== 'number') return // Prevent input event like unfocus
-            if (particleLife.linkProportions) particleLife.simHeight = SIM_HEIGHT = baseSimHeight = Math.round(SIM_HEIGHT * (newWidth / SIM_WIDTH))
+            if (typeof (newWidth) !== 'number')
+                return // Prevent input event like unfocus
+            if (particleLife.linkProportions)
+                particleLife.simHeight = SIM_HEIGHT = baseSimHeight = Math.round(SIM_HEIGHT * (newWidth / SIM_WIDTH))
             particleLife.simWidth = SIM_WIDTH = baseSimWidth = newWidth
             applySimResize()
         }
         const updateSimHeight = (newHeight: number | Event) => {
-            if (typeof(newHeight) !== 'number') return // Prevent input event like unfocus
-            if (particleLife.linkProportions) particleLife.simWidth = SIM_WIDTH = baseSimWidth = Math.round(SIM_WIDTH * (newHeight / SIM_HEIGHT))
+            if (typeof (newHeight) !== 'number')
+                return // Prevent input event like unfocus
+            if (particleLife.linkProportions)
+                particleLife.simWidth = SIM_WIDTH = baseSimWidth = Math.round(SIM_WIDTH * (newHeight / SIM_HEIGHT))
             particleLife.simHeight = SIM_HEIGHT = baseSimHeight = newHeight
             applySimResize()
         }
         const applySimResize = async () => {
-            if (isTrackerActive) await stopTracker()
+            if (isTrackerActive)
+                await stopTracker()
             cancelAnimationLoop()
             setSimSize()
             updateSimOptionsBuffer()
@@ -3917,7 +4177,8 @@ export default defineComponent({
             let maxRandom = 0
             for (let i = 0; i < MATRIX_TYPES; i++) {
                 for (let j = 0; j < MATRIX_TYPES; j++) {
-                    if (maxRadiusMatrix[i][j] > maxRandom) maxRandom = maxRadiusMatrix[i][j]
+                    if (maxRadiusMatrix[i][j] > maxRandom)
+                        maxRandom = maxRadiusMatrix[i][j]
                 }
             }
             return maxRandom
@@ -3929,13 +4190,15 @@ export default defineComponent({
         const effectiveMaxRadius = () => Math.max(currentMaxRadius, particleLife.isElectricalEnabled ? Math.max(particleLife.urgeRadius, particleLife.senseRadius) : 0)
         const recomputeCellSize = () => {
             const newSize = Math.max(1, Math.ceil(effectiveMaxRadius() / CELL_SUBDIVISIONS))
-            if (newSize === CELL_SIZE) return // only rebuild the grid when it actually changes
+            if (newSize === CELL_SIZE)
+                return // only rebuild the grid when it actually changes
             CELL_SIZE = newSize
             setSimSize()
             updateSimOptionsBuffer()
         }
         const setCurrentMaxRadius = (value: number) => {
-            if (currentMaxRadius === value) return
+            if (currentMaxRadius === value)
+                return
             currentMaxRadius = value
             particleLife.currentMaxRadius = value
             recomputeCellSize()
@@ -3945,7 +4208,8 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         const colorRgbStrings = computed(() => {
             const arr = particleLife.currentColors
-            if (!arr) return []
+            if (!arr)
+                return []
             const result: string[] = []
             for (let i = 0; i < arr.length; i += 4) {
                 const r = Math.round(arr[i] * 255)
@@ -3958,9 +4222,10 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         const updateSingleColor = (colorId: number, hex: string) => {
             const rgb = hexToRgb(hex)
-            if (!rgb) return
+            if (!rgb)
+                return
             const idx = colorId * 4
-            colors[idx]     = rgb[0] / 255
+            colors[idx] = rgb[0] / 255
             colors[idx + 1] = rgb[1] / 255
             colors[idx + 2] = rgb[2] / 255
             particleLife.currentColors = new Float32Array(colors) // New reference to trigger reactivity
@@ -3987,7 +4252,7 @@ export default defineComponent({
         watch(() => particleLife.isAdditiveBlending, (value: boolean) => isAdditiveBlending = value)
         watch(() => particleLife.isBrushActive, (value: boolean) => isBrushActive = value)
         watch(() => particleLife.brushType, (value: number) => brushType = value)
-        watch(() => particleLife.brushes, (value: number[]) => { brushes = value; updateBrushesBuffer(); }, { deep: true })
+        watch(() => particleLife.brushes, (value: number[]) => { brushes = value; updateBrushesBuffer() }, { deep: true })
         watch(() => particleLife.brushRadius, (value: number) => brushRadius = value)
         watch(() => particleLife.brushIntensity, (value: number) => brushIntensity = value)
         watch(() => particleLife.repulseForce, (value: number) => repulseForce = value)
@@ -4001,11 +4266,11 @@ export default defineComponent({
         watch(() => particleLife.driftCamSpeed, (value: number) => driftCamSpeed = value)
         watch(() => particleLife.driftCamAmplitude, (value: number) => driftCamAmplitude = value)
         watch(() => particleLife.driftCamZoomRange, (value: number[]) => {
-            driftCamZoomRange = value;
+            driftCamZoomRange = value
             driftCamZoomCenter = (driftCamZoomRange[1] + driftCamZoomRange[0]) * 0.5 // Center zoom level for driftCam
             driftCamZoomAmplitude = (driftCamZoomRange[1] - driftCamZoomRange[0]) * 0.5 // Amplitude of zoom changes for driftCam
         }, { deep: true })
-        
+
         watch(() => particleLife.isTrackerIndicatorVisible, (value: boolean) => isTrackerIndicatorVisible = value)
         watch(() => particleLife.isTrackerSelectionActive, (value: boolean) => particleLife.isHudLocked = value)
         watch(() => particleLife.isTrackerActive, (value: boolean) => {
@@ -4013,9 +4278,11 @@ export default defineComponent({
             isCameraTracking = isTrackerActive && isTrackerCameraActive
         })
         watch(() => particleLife.isTrackerCameraActive, async (value: boolean) => {
-            if (isTrackerActive && !value) await syncCameraFromGPU()
+            if (isTrackerActive && !value)
+                await syncCameraFromGPU()
             // Update baseCameraX/Y to current camera position so smoothing starts from here when tracker camera is re-enabled.
-            if (isTrackerActive && value) device.queue.writeBuffer(trackerStateBuffer!, 24, new Float32Array([cameraCenter.x, cameraCenter.y]))
+            if (isTrackerActive && value)
+                device.queue.writeBuffer(trackerStateBuffer!, 24, new Float32Array([cameraCenter.x, cameraCenter.y]))
             resetTrackerCameraOffset()
             isTrackerCameraActive = value
             isCameraTracking = isTrackerActive && isTrackerCameraActive
@@ -4072,9 +4339,15 @@ export default defineComponent({
         watchElectrical(() => particleLife.senseMode)
         watch(() => particleLife.isDebugConnections, (value: boolean) => { isDebugConnections = value; updateSimOptionsBuffer() })
         // A larger urge radius needs a coarser grid so its field isn't clipped to the square scan window.
-        watch(() => particleLife.urgeRadius, () => { if (particleLife.isElectricalEnabled) recomputeCellSize() })
+        watch(() => particleLife.urgeRadius, () => {
+            if (particleLife.isElectricalEnabled)
+                recomputeCellSize()
+        })
         // Same for the sense perception disk: the bin scan must cover the full senseRadius.
-        watch(() => particleLife.senseRadius, () => { if (particleLife.isElectricalEnabled) recomputeCellSize() })
+        watch(() => particleLife.senseRadius, () => {
+            if (particleLife.isElectricalEnabled)
+                recomputeCellSize()
+        })
         watch(() => particleLife.isElectricalEnabled, () => recomputeCellSize())
 
         // ---- Urge Inspector: throttled, READ-ONLY GPU telemetry ---------------------------
@@ -4114,10 +4387,10 @@ export default defineComponent({
         const urgeGoalFor = (k: number) => {
             let mode: number
             switch (((particleLife.metricMode % 4) + 4) % 4) {
-                case 0: mode = k % 3; break   // cycle all three
-                case 1: mode = 0; break       // all maximize
-                case 2: mode = 1; break       // all minimize
-                default: mode = 2; break      // all homeostasis
+                case 0: mode = k % 3; break // cycle all three
+                case 1: mode = 0; break // all maximize
+                case 2: mode = 1; break // all minimize
+                default: mode = 2; break // all homeostasis
             }
             let targetValue = 1.0
             if (mode === 2) {
@@ -4138,39 +4411,49 @@ export default defineComponent({
         // Resolve the parent urge k for the currently selected row (clones use their parent's k).
         const selectedParentK = computed(() => {
             const id = selectedUrgeId.value
-            if (id >= 0) return id // original urge: id IS the parent k
+            if (id >= 0)
+                return id // original urge: id IS the parent k
             const row = urgeStats.value.find(s => s.id === id)
             return row?.cloneOf ?? 0
         })
         const markerColor = computed(() => {
-            if (selectedUrgeId.value === -1) return '#ffffff'
+            if (selectedUrgeId.value === -1)
+                return '#ffffff'
             const k = selectedParentK.value
             const idx = ((k % particleLife.numColors) + particleLife.numColors) % particleLife.numColors
             return colorRgbStrings.value[idx] ?? '#ffffff'
         })
         const markerObjective = computed(() => {
-            if (selectedUrgeId.value === -1) return ''
+            if (selectedUrgeId.value === -1)
+                return ''
             return objectiveLabelFor(selectedParentK.value)
         })
         // Display label for the on-canvas marker (clones show their lineage, e.g. "#3-C1").
         const markerLabel = computed(() => {
             const id = selectedUrgeId.value
-            if (id >= 0) return `#${id}`
+            if (id >= 0)
+                return `#${id}`
             const row = urgeStats.value.find(s => s.id === id)
-            if (row?.isClone && row.cloneOf !== undefined) return `#${row.cloneOf}-C${row.cloneId ?? 1}`
+            if (row?.isClone && row.cloneOf !== undefined)
+                return `#${row.cloneOf}-C${row.cloneId ?? 1}`
             return `#${id}`
         })
 
         // A single guarded readback. Never runs while a resize/erase is mutating buffers.
         const readUrgeStats = async () => {
-            if (!urgeInspectorOpen.value) return
-            if (isReadingBackUrges) return
-            if (isUpdatingParticles || isEraseCompleting) return
-            if (!particleBuffer || !device) return
+            if (!urgeInspectorOpen.value)
+                return
+            if (isReadingBackUrges)
+                return
+            if (isUpdatingParticles || isEraseCompleting)
+                return
+            if (!particleBuffer || !device)
+                return
 
             // No urges to sample: show the empty state and stop here (no GPU work).
             if (!particleLife.isElectricalEnabled || numUrges <= 0) {
-                if (urgeStats.value.length !== 0) urgeStats.value = [] // avoid reactive churn when already empty
+                if (urgeStats.value.length !== 0)
+                    urgeStats.value = [] // avoid reactive churn when already empty
                 prevUrgeValues.clear()
                 return
             }
@@ -4179,7 +4462,8 @@ export default defineComponent({
             try {
                 const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * 8 * 4)
                 // Re-check guards after the await — a resize/erase may have started meanwhile.
-                if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting) return
+                if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting)
+                    return
 
                 const particles = new Float32Array(arrayBuffer)
                 // Collect urges (originals + clones) and neurons. Clones are identified by the
@@ -4192,13 +4476,15 @@ export default defineComponent({
                     const idx = i * 8
                     const rawType = particles[idx + 4]
                     const intType = Math.floor(rawType)
-                    if (intType < NUM_TYPES) continue // matter (control/signal are always 0)
+                    if (intType < NUM_TYPES)
+                        continue // matter (control/signal are always 0)
                     const localType = intType - NUM_TYPES
                     if (localType < numUrges) {
                         const isClone = rawType - intType > 0.1 // fractional tag = clone
                         const goalB = Math.floor(particles[idx + 7])
                         urgeEntries.push({ k: localType, isClone, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], control: particles[idx + 5], signal: particles[idx + 6], goalB: goalB >= 0 ? goalB : -1 })
-                    } else if (localType - numUrges < numNeurons) {
+                    }
+                    else if (localType - numUrges < numNeurons) {
                         neuronPos.push({ x: particles[idx], y: particles[idx + 1] })
                     }
                 }
@@ -4211,12 +4497,19 @@ export default defineComponent({
                     for (let n = 0; n < neuronPos.length; n++) {
                         const dx = u.x - neuronPos[n].x
                         const dy = u.y - neuronPos[n].y
-                        if (dx * dx + dy * dy <= r2) wired++
+                        if (dx * dx + dy * dy <= r2)
+                            wired++
                     }
                     const id = u.isClone ? -((u.k + 1) * 10 + 1) : u.k
                     return {
-                        id, type: NUM_TYPES + u.k, targetColor: u.k % NUM_TYPES,
-                        control: u.control, signal: u.signal, trendControl: 0, trendSignal: 0, wiredNeurons: wired,
+                        id,
+                        type: NUM_TYPES + u.k,
+                        targetColor: u.k % NUM_TYPES,
+                        control: u.control,
+                        signal: u.signal,
+                        trendControl: 0,
+                        trendSignal: 0,
+                        wiredNeurons: wired,
                         goalB: u.goalB >= 0 ? u.goalB : undefined,
                         ...(u.isClone ? { isClone: true as const, cloneOf: u.k, cloneId: 1 } : {}),
                     }
@@ -4224,7 +4517,10 @@ export default defineComponent({
 
                 // Deduplicate by id (defensive: prevents stale buffer data from producing repeated rows).
                 const seen = new Set<number>()
-                const deduped = next.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true })
+                const deduped = next.filter((s) => {
+                    if (seen.has(s.id))
+                        return false; seen.add(s.id); return true
+                })
 
                 // Keep rows stable (by urge id) and compute the trend vs the previous readback.
                 deduped.sort((a, b) => a.id - b.id)
@@ -4256,12 +4552,14 @@ export default defineComponent({
 
                 // Refresh the live control/metric readout in the on-canvas marker (if one is tracked).
                 if (urgeMarkerStatEl.value && selectedUrgeId.value !== -1) {
-                    const sel = deduped.find((s) => s.id === selectedUrgeId.value)
+                    const sel = deduped.find(s => s.id === selectedUrgeId.value)
                     urgeMarkerStatEl.value.textContent = sel ? `control ${sel.control >= 0 ? '+' : ''}${sel.control.toFixed(2)} · metric ${sel.signal.toFixed(2)}` : ''
                 }
-            } catch {
+            }
+            catch {
                 // Ignore transient readback failures (e.g. a buffer swap mid-flight); the next tick retries.
-            } finally {
+            }
+            finally {
                 isReadingBackUrges = false
             }
         }
@@ -4274,7 +4572,8 @@ export default defineComponent({
         }
         const startUrgeReadback = () => {
             stopUrgeReadback()
-            if (!urgeInspectorOpen.value) return
+            if (!urgeInspectorOpen.value)
+                return
             prevUrgeValues.clear()
             void readUrgeStats() // immediate first sample so the panel isn't blank
             urgeReadbackTimer = window.setInterval(() => { void readUrgeStats() }, URGE_READBACK_INTERVAL_MS)
@@ -4285,7 +4584,8 @@ export default defineComponent({
         // marker glides smoothly between throttled readbacks.
         const updateUrgeMarker = () => {
             const el = urgeMarkerEl.value
-            if (!el) return
+            if (!el)
+                return
             const id = selectedUrgeId.value
             // Hide when nothing is selected, the layer is off, or the camera is GPU-tracked
             // (its centre lives on the GPU and we don't read it back every frame).
@@ -4297,8 +4597,10 @@ export default defineComponent({
             if (!p) { el.style.opacity = '0'; return } // not yet read back (or count changed)
 
             let dt = (performance.now() - lastReadTimeMs) / 1000
-            if (dt < 0) dt = 0
-            else if (dt > 0.3) dt = 0.3 // don't extrapolate too far ahead of the last sample
+            if (dt < 0)
+                dt = 0
+            else if (dt > 0.3)
+                dt = 0.3 // don't extrapolate too far ahead of the last sample
             const wx = p.x + p.vx * dt
             const wy = p.y + p.vy * dt
 
@@ -4314,7 +4616,9 @@ export default defineComponent({
         }
 
         watch(urgeInspectorOpen, (open) => {
-            if (open) startUrgeReadback()
+            if (open) {
+                startUrgeReadback()
+            }
             else {
                 stopUrgeReadback()
                 urgeStats.value = []
@@ -4356,7 +4660,7 @@ export default defineComponent({
         let sustainedBelow = new Map<number, number>()
 
         // --- Clone state (preserved from original cloning system) ---
-        let clonedUrges = new Set<number>()
+        const clonedUrges = new Set<number>()
         let sustainedAboveThreshold = new Map<number, number>()
 
         // --- Merge state ---
@@ -4376,19 +4680,20 @@ export default defineComponent({
         const killUrgeAndNeurons = (
             particles: Float32Array,
             urgeBufIdx: number,
-            x: number, y: number,
+            x: number,
+            y: number,
             dormantType: number,
             neurons: { idx: number, x: number, y: number }[],
             senses: { idx: number, x: number, y: number }[],
-            neuronRadius: number
+            neuronRadius: number,
         ) => {
             const u8 = urgeBufIdx * 8
             particles[u8 + 4] = dormantType // type → dormant sentinel (invisible, inert)
-            particles[u8 + 5] = 0           // zero control
-            particles[u8 + 6] = 0           // zero signal
-            particles[u8 + 7] = -1          // clear secondary goal
-            particles[u8 + 2] = 0           // zero velocity x
-            particles[u8 + 3] = 0           // zero velocity y
+            particles[u8 + 5] = 0 // zero control
+            particles[u8 + 6] = 0 // zero signal
+            particles[u8 + 7] = -1 // clear secondary goal
+            particles[u8 + 2] = 0 // zero velocity x
+            particles[u8 + 3] = 0 // zero velocity y
 
             const nr2 = neuronRadius * neuronRadius
             for (const n of neurons) {
@@ -4421,16 +4726,21 @@ export default defineComponent({
             // Run if ANY lifecycle feature is enabled (or cloning, which is always available)
             const anyEnabled = particleLife.isDeathEnabled || particleLife.isMergeEnabled
                 || particleLife.isMurderEnabled || particleLife.isCloningEnabled
-            if (!anyEnabled || !particleLife.isElectricalEnabled) return
-            if (numUrges <= 0) return
-            if (isLifecycleInFlight || isUpdatingParticles || isEraseCompleting) return
-            if (!particleBuffer || !device) return
+            if (!anyEnabled || !particleLife.isElectricalEnabled)
+                return
+            if (numUrges <= 0)
+                return
+            if (isLifecycleInFlight || isUpdatingParticles || isEraseCompleting)
+                return
+            if (!particleBuffer || !device)
+                return
 
             isLifecycleInFlight = true
             try {
                 const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * 8 * 4)
                 // Re-check guards after the await — a resize/erase may have started meanwhile.
-                if (isUpdatingParticles || isEraseCompleting) return
+                if (isUpdatingParticles || isEraseCompleting)
+                    return
 
                 const particles = new Float32Array(arrayBuffer)
                 // Dormant sentinel must include the sense band, or clone-pool slots are misread.
@@ -4456,14 +4766,17 @@ export default defineComponent({
                     const ptype = Math.floor(rawType) // floor (not round!) to handle clone fractional tags
                     if (ptype === dormantType) {
                         dormantSlots.push(i)
-                    } else if (ptype >= NUM_TYPES && ptype < motorBase) {
+                    }
+                    else if (ptype >= NUM_TYPES && ptype < motorBase) {
                         const localK = ptype - NUM_TYPES
                         const isClone = rawType - ptype > 0.1 // fractional tag = clone
                         urges.push({ bufIdx: i, k: localK, isClone, x: particles[idx8], y: particles[idx8 + 1], vx: particles[idx8 + 2], vy: particles[idx8 + 3], control: particles[idx8 + 5], signal: particles[idx8 + 6] })
-                    } else if (ptype >= motorBase && ptype < senseBase) {
+                    }
+                    else if (ptype >= motorBase && ptype < senseBase) {
                         const localM = ptype - motorBase
                         neurons.push({ idx: i, localM, x: particles[idx8], y: particles[idx8 + 1] })
-                    } else if (ptype >= senseBase && ptype < dormantType) {
+                    }
+                    else if (ptype >= senseBase && ptype < dormantType) {
                         const localS = ptype - senseBase
                         senses.push({ idx: i, localS, x: particles[idx8], y: particles[idx8 + 1] })
                     }
@@ -4482,7 +4795,8 @@ export default defineComponent({
                     const newSustainedBelow = new Map<number, number>()
 
                     for (const u of urges) {
-                        if (deadBufIdx.has(u.bufIdx)) continue // already dead this pass
+                        if (deadBufIdx.has(u.bufIdx))
+                            continue // already dead this pass
                         const id = urgeDisplayId(u.k, u.isClone)
                         if (u.signal < deathThreshold) {
                             const prev = sustainedBelow.get(id) ?? 0
@@ -4500,10 +4814,12 @@ export default defineComponent({
                                 const idStr = String(id)
                                 for (const key of [...sustainedProximity.keys()]) {
                                     const parts = key.split('_')
-                                    if (parts[0] === idStr || parts[1] === idStr) sustainedProximity.delete(key)
+                                    if (parts[0] === idStr || parts[1] === idStr)
+                                        sustainedProximity.delete(key)
                                 }
                             }
-                        } else {
+                        }
+                        else {
                             // Above threshold: reset counter (don't add to newSustainedBelow)
                         }
                     }
@@ -4519,17 +4835,21 @@ export default defineComponent({
                     const powerMargin = particleLife.murderPowerMargin
 
                     for (let a = 0; a < urges.length; a++) {
-                        if (deadBufIdx.has(urges[a].bufIdx)) continue // skip dead as killer
+                        if (deadBufIdx.has(urges[a].bufIdx))
+                            continue // skip dead as killer
                         for (let b = a + 1; b < urges.length; b++) {
-                            if (deadBufIdx.has(urges[b].bufIdx)) continue // skip dead as victim
+                            if (deadBufIdx.has(urges[b].bufIdx))
+                                continue // skip dead as victim
                             const dx = urges[a].x - urges[b].x
                             const dy = urges[a].y - urges[b].y
-                            if (dx * dx + dy * dy >= murderR2) continue
+                            if (dx * dx + dy * dy >= murderR2)
+                                continue
 
                             const pA = urgePower(urges[a].signal, urges[a].control)
                             const pB = urgePower(urges[b].signal, urges[b].control)
                             const gap = Math.abs(pA - pB)
-                            if (gap <= powerMargin) continue // dead-band: neither dies
+                            if (gap <= powerMargin)
+                                continue // dead-band: neither dies
 
                             // Weaker one dies immediately
                             const victim = pA < pB ? urges[a] : urges[b]
@@ -4544,7 +4864,8 @@ export default defineComponent({
                             const vidStr = String(vid)
                             for (const key of [...sustainedProximity.keys()]) {
                                 const parts = key.split('_')
-                                if (parts[0] === vidStr || parts[1] === vidStr) sustainedProximity.delete(key)
+                                if (parts[0] === vidStr || parts[1] === vidStr)
+                                    sustainedProximity.delete(key)
                             }
                         }
                     }
@@ -4562,12 +4883,15 @@ export default defineComponent({
                     const newProximity = new Map<string, number>()
 
                     for (let a = 0; a < urges.length; a++) {
-                        if (deadBufIdx.has(urges[a].bufIdx)) continue
+                        if (deadBufIdx.has(urges[a].bufIdx))
+                            continue
                         for (let b = a + 1; b < urges.length; b++) {
-                            if (deadBufIdx.has(urges[b].bufIdx)) continue
+                            if (deadBufIdx.has(urges[b].bufIdx))
+                                continue
                             const dx = urges[a].x - urges[b].x
                             const dy = urges[a].y - urges[b].y
-                            if (dx * dx + dy * dy >= mergeR2) continue
+                            if (dx * dx + dy * dy >= mergeR2)
+                                continue
 
                             // Within merge radius: track sustained proximity for this pair
                             const idA = urgeDisplayId(urges[a].k, urges[a].isClone)
@@ -4607,9 +4931,11 @@ export default defineComponent({
                                 const lidStr = String(lid)
                                 for (const k of [...sustainedProximity.keys()]) {
                                     const parts = k.split('_')
-                                    if (parts[0] === lidStr || parts[1] === lidStr) sustainedProximity.delete(k)
+                                    if (parts[0] === lidStr || parts[1] === lidStr)
+                                        sustainedProximity.delete(k)
                                 }
-                            } else {
+                            }
+                            else {
                                 newProximity.set(key, count)
                             }
                         }
@@ -4630,7 +4956,8 @@ export default defineComponent({
                     const readyToClone: { k: number, bufIdx: number, x: number, y: number, signal: number, neuronsInRange: NeuronEntry[] }[] = []
 
                     for (const u of urges) {
-                        if (deadBufIdx.has(u.bufIdx)) continue // skip dead urges
+                        if (deadBufIdx.has(u.bufIdx))
+                            continue // skip dead urges
                         // NOTE: there is NO one-time restriction. An urge keeps giving birth for as long
                         // as its metric stays above the threshold. Each birth halves its metric, so only
                         // genuinely high-metric ("highly successful") urges recover past the threshold
@@ -4641,7 +4968,8 @@ export default defineComponent({
                         for (const n of neurons) {
                             const dx = n.x - u.x
                             const dy = n.y - u.y
-                            if (dx * dx + dy * dy <= neuronR2) inRange.push(n)
+                            if (dx * dx + dy * dy <= neuronR2)
+                                inRange.push(n)
                         }
 
                         if (u.signal > threshold) {
@@ -4663,7 +4991,8 @@ export default defineComponent({
                     let slotPtr = 0
                     for (const urge of readyToClone) {
                         const totalNeeded = 1 + urge.neuronsInRange.length
-                        if (slotPtr + totalNeeded > dormantSlots.length) break // not enough pool remaining
+                        if (slotPtr + totalNeeded > dormantSlots.length)
+                            break // not enough pool remaining
 
                         const halfMetric = urge.signal * 0.5 // the split: parent and clone each keep half
 
@@ -4677,7 +5006,7 @@ export default defineComponent({
 
                         const angle = Math.random() * Math.PI * 2
                         const offsetDist = urgeRadius * 0.3 + Math.random() * urgeRadius * 0.3
-                        particles[s8]     = urge.x + Math.cos(angle) * offsetDist
+                        particles[s8] = urge.x + Math.cos(angle) * offsetDist
                         particles[s8 + 1] = urge.y + Math.sin(angle) * offsetDist
 
                         const shootAngle = angle + (Math.random() - 0.5) * 1.0
@@ -4693,7 +5022,8 @@ export default defineComponent({
 
                         // --- Clone ALL neurons in range of this urge ---
                         for (const srcNeuron of urge.neuronsInRange) {
-                            if (slotPtr >= dormantSlots.length) break
+                            if (slotPtr >= dormantSlots.length)
+                                break
                             const nSlotIdx = dormantSlots[slotPtr++]
                             const n8 = nSlotIdx * 8
                             particles[n8 + 4] = NUM_TYPES + numUrges + srcNeuron.localM
@@ -4701,7 +5031,7 @@ export default defineComponent({
                             particles[n8 + 6] = 0
                             const relX = srcNeuron.x - urge.x
                             const relY = srcNeuron.y - urge.y
-                            particles[n8]     = particles[s8] + relX * 0.5
+                            particles[n8] = particles[s8] + relX * 0.5
                             particles[n8 + 1] = particles[s8 + 1] + relY * 0.5
                             particles[n8 + 2] = particles[s8 + 2] * 0.7
                             particles[n8 + 3] = particles[s8 + 3] * 0.7
@@ -4714,9 +5044,11 @@ export default defineComponent({
                 if (bufferModified) {
                     device.queue.writeBuffer(particleBuffer, 0, particles)
                 }
-            } catch {
+            }
+            catch {
                 // Ignore transient readback failures
-            } finally {
+            }
+            finally {
                 isLifecycleInFlight = false
             }
         }
@@ -4747,7 +5079,8 @@ export default defineComponent({
             () => particleLife.isMergeEnabled,
             () => particleLife.isMurderEnabled,
         ], () => {
-            if (anyLifecycleEnabled()) startLifecycleCheck()
+            if (anyLifecycleEnabled())
+                startLifecycleCheck()
             else stopLifecycleCheck()
         })
         // Reset all lifecycle state when urge count changes (indices are no longer valid)
@@ -4758,14 +5091,14 @@ export default defineComponent({
             sustainedProximity.clear()
         })
 
-
         // Handle numClonePool changes: the pool ADDS dormant slots on top of the base matter
         // population, so resize the buffer accordingly (never steal slots from real matter).
         const desiredTotalParticles = () => baseMatterCount + numUrges + numNeurons + numSenseNeurons + numClonePool
         watch(() => particleLife.numClonePool, (newPool) => {
             numClonePool = newPool
             const target = desiredTotalParticles()
-            if (target === NUM_PARTICLES) return // nothing to do
+            if (target === NUM_PARTICLES)
+                return // nothing to do
             NEW_NUM_PARTICLES = target
             isUpdateNumParticlesPending = true
         })
@@ -4777,28 +5110,34 @@ export default defineComponent({
         })
         watch(() => particleLife.manualDeltaTime, (value: number) => {
             manualDeltaTime = value
-            if (manualDeltaTimeEnabled) updateDeltaTimeBuffer(value)
+            if (manualDeltaTimeEnabled)
+                updateDeltaTimeBuffer(value)
         })
 
         watch(() => particleLife.minRadiusRange, (value: number[]) => {
-            if (value[0] > value[1]) particleLife.minRadiusRange[0] = value[1]
-            if (value[1] > particleLife.maxRadiusRange[0]) particleLife.maxRadiusRange[0] = value[1]
+            if (value[0] > value[1])
+                particleLife.minRadiusRange[0] = value[1]
+            if (value[1] > particleLife.maxRadiusRange[0])
+                particleLife.maxRadiusRange[0] = value[1]
         }, { deep: true })
         watch(() => particleLife.maxRadiusRange, (value: number[]) => {
-            if (value[0] > value[1]) particleLife.maxRadiusRange[1] = value[0]
-            if (value[0] < particleLife.minRadiusRange[1]) particleLife.minRadiusRange[1] = value[0]
+            if (value[0] > value[1])
+                particleLife.maxRadiusRange[1] = value[0]
+            if (value[0] < particleLife.minRadiusRange[1])
+                particleLife.minRadiusRange[1] = value[0]
         }, { deep: true })
 
         watch(() => particleLife.isDebugBinsActive, (value: boolean) => {
             isDebugBinsActive = value
-            if (!isRunning && isDebugBinsActive) step() // Force step for debug bins update
+            if (!isRunning && isDebugBinsActive)
+                step() // Force step for debug bins update
         })
         watch(() => particleLife.isDebugHeatmapActive, (value: boolean) => {
             isDebugHeatmapActive = value
             updateDebugOptionsBuffer()
             particleLife.isDebugBinsActive = true
         })
-        watch(() => particleLife.debugMaxParticleCount, (value: number) => { debugMaxParticleCount = value; updateDebugOptionsBuffer(); })
+        watch(() => particleLife.debugMaxParticleCount, (value: number) => { debugMaxParticleCount = value; updateDebugOptionsBuffer() })
         watch(() => particleLife.cellSubdivisions, (value: number) => {
             CELL_SUBDIVISIONS = value
             recomputeCellSize()
@@ -4811,15 +5150,21 @@ export default defineComponent({
             () => particleLife.isMirrorWrap,
             () => particleLife.isInfiniteMirrorWrap,
         ], ([newRepel, newWrap, newMirror, newInfinite], [oldRepel, oldWrap, oldMirror, oldInfinite]) => {
-            if (isUpdatingWallState) return
+            if (isUpdatingWallState)
+                return
 
             let changedProp = ''
-            if (newRepel !== oldRepel) changedProp = 'isWallRepel'
-            else if (newWrap !== oldWrap) changedProp = 'isWallWrap'
-            else if (newMirror !== oldMirror) changedProp = 'isMirrorWrap'
-            else if (newInfinite !== oldInfinite) changedProp = 'isInfiniteMirrorWrap'
+            if (newRepel !== oldRepel)
+                changedProp = 'isWallRepel'
+            else if (newWrap !== oldWrap)
+                changedProp = 'isWallWrap'
+            else if (newMirror !== oldMirror)
+                changedProp = 'isMirrorWrap'
+            else if (newInfinite !== oldInfinite)
+                changedProp = 'isInfiniteMirrorWrap'
 
-            if (!changedProp) return
+            if (!changedProp)
+                return
 
             isUpdatingWallState = true
 
@@ -4827,19 +5172,24 @@ export default defineComponent({
                 particleLife.isWallWrap = false
                 particleLife.isMirrorWrap = false
                 particleLife.isInfiniteMirrorWrap = false
-            } else if (changedProp === 'isWallWrap') {
+            }
+            else if (changedProp === 'isWallWrap') {
                 if (newWrap) {
                     particleLife.isWallRepel = false
-                    if (!newMirror && !newInfinite) particleLife.isMirrorWrap = true
-                } else {
+                    if (!newMirror && !newInfinite)
+                        particleLife.isMirrorWrap = true
+                }
+                else {
                     particleLife.isMirrorWrap = false
                     particleLife.isInfiniteMirrorWrap = false
                 }
-            } else if (changedProp === 'isMirrorWrap' && newMirror) {
+            }
+            else if (changedProp === 'isMirrorWrap' && newMirror) {
                 particleLife.isWallWrap = true
                 particleLife.isWallRepel = false
                 particleLife.isInfiniteMirrorWrap = false
-            } else if (changedProp === 'isInfiniteMirrorWrap' && newInfinite) {
+            }
+            else if (changedProp === 'isInfiniteMirrorWrap' && newInfinite) {
                 particleLife.isWallWrap = true
                 particleLife.isWallRepel = false
                 particleLife.isMirrorWrap = false
@@ -4853,7 +5203,8 @@ export default defineComponent({
             setSimSize()
             if (changedProp === 'isWallWrap' || changedProp === 'isWallRepel' || (changedProp === 'isMirrorWrap' && newMirror && !oldWrap) || (changedProp === 'isInfiniteMirrorWrap' && newInfinite && !oldWrap)) {
                 updateSimOptionsBuffer()
-                if (!isRunning && isDebugBinsActive) step() // Force step for debug bins update
+                if (!isRunning && isDebugBinsActive)
+                    step() // Force step for debug bins update
             }
 
             nextTick(() => {
@@ -4862,111 +5213,111 @@ export default defineComponent({
         })
         // -------------------------------------------------------------------------------------------------------------
         const destroyBuffers = async (keepTexture: boolean = false) => {
-            currentPositionBuffer?.destroy(); currentPositionBuffer = undefined;
-            nextPositionBuffer?.destroy(); nextPositionBuffer = undefined;
-            velocityBuffer?.destroy(); velocityBuffer = undefined;
-            typeBuffer?.destroy(); typeBuffer = undefined;
-            typeBufferPacked?.destroy(); typeBufferPacked = undefined;
-            colorBuffer?.destroy(); colorBuffer = undefined;
-            deltaTimeBuffer?.destroy(); deltaTimeBuffer = undefined;
-            cameraBuffer?.destroy(); cameraBuffer = undefined;
-            interactionMatrixBuffer?.destroy(); interactionMatrixBuffer = undefined;
-            simOptionsBuffer?.destroy(); simOptionsBuffer = undefined;
-            glowOptionsBuffer?.destroy(); glowOptionsBuffer = undefined;
-            infiniteRenderOptionsBuffer?.destroy(); infiniteRenderOptionsBuffer = undefined;
-            debugOptionsBuffer?.destroy(); debugOptionsBuffer = undefined;
-            brushOptionsBuffer?.destroy(); brushOptionsBuffer = undefined;
-            brushesBuffer?.destroy(); brushesBuffer = undefined;
-            particleHashesBuffer?.destroy(); particleHashesBuffer = undefined;
-            cellHeadsBuffer?.destroy(); cellHeadsBuffer = undefined;
-            particleNextIndicesBuffer?.destroy(); particleNextIndicesBuffer = undefined;
-            particleBuffer?.destroy(); particleBuffer = undefined;
-            particleTempBuffer?.destroy(); particleTempBuffer = undefined;
-            binOffsetBuffer?.destroy(); binOffsetBuffer = undefined;
-            binOffsetTempBuffer?.destroy(); binOffsetTempBuffer = undefined;
-            binPrefixSumStepSizeBuffer?.destroy(); binPrefixSumStepSizeBuffer = undefined;
+            currentPositionBuffer?.destroy(); currentPositionBuffer = undefined
+            nextPositionBuffer?.destroy(); nextPositionBuffer = undefined
+            velocityBuffer?.destroy(); velocityBuffer = undefined
+            typeBuffer?.destroy(); typeBuffer = undefined
+            typeBufferPacked?.destroy(); typeBufferPacked = undefined
+            colorBuffer?.destroy(); colorBuffer = undefined
+            deltaTimeBuffer?.destroy(); deltaTimeBuffer = undefined
+            cameraBuffer?.destroy(); cameraBuffer = undefined
+            interactionMatrixBuffer?.destroy(); interactionMatrixBuffer = undefined
+            simOptionsBuffer?.destroy(); simOptionsBuffer = undefined
+            glowOptionsBuffer?.destroy(); glowOptionsBuffer = undefined
+            infiniteRenderOptionsBuffer?.destroy(); infiniteRenderOptionsBuffer = undefined
+            debugOptionsBuffer?.destroy(); debugOptionsBuffer = undefined
+            brushOptionsBuffer?.destroy(); brushOptionsBuffer = undefined
+            brushesBuffer?.destroy(); brushesBuffer = undefined
+            particleHashesBuffer?.destroy(); particleHashesBuffer = undefined
+            cellHeadsBuffer?.destroy(); cellHeadsBuffer = undefined
+            particleNextIndicesBuffer?.destroy(); particleNextIndicesBuffer = undefined
+            particleBuffer?.destroy(); particleBuffer = undefined
+            particleTempBuffer?.destroy(); particleTempBuffer = undefined
+            binOffsetBuffer?.destroy(); binOffsetBuffer = undefined
+            binOffsetTempBuffer?.destroy(); binOffsetTempBuffer = undefined
+            binPrefixSumStepSizeBuffer?.destroy(); binPrefixSumStepSizeBuffer = undefined
 
-            particleKeepFlagsBuffer?.destroy(); particleKeepFlagsBuffer = undefined;
-            newParticleCountBuffer?.destroy(); newParticleCountBuffer = undefined;
-            newParticleCountReadBuffer?.destroy(); newParticleCountReadBuffer = undefined;
-            particleCompactBuffer?.destroy(); particleCompactBuffer = undefined;
-            
-            trackerStateBuffer?.destroy(); trackerStateBuffer = undefined;
-            trackerLevelsBuffer?.destroy(); trackerLevelsBuffer = undefined;
-            trackerCameraOptionsBuffer?.destroy(); trackerCameraOptionsBuffer = undefined;
+            particleKeepFlagsBuffer?.destroy(); particleKeepFlagsBuffer = undefined
+            newParticleCountBuffer?.destroy(); newParticleCountBuffer = undefined
+            newParticleCountReadBuffer?.destroy(); newParticleCountReadBuffer = undefined
+            particleCompactBuffer?.destroy(); particleCompactBuffer = undefined
+
+            trackerStateBuffer?.destroy(); trackerStateBuffer = undefined
+            trackerLevelsBuffer?.destroy(); trackerLevelsBuffer = undefined
+            trackerCameraOptionsBuffer?.destroy(); trackerCameraOptionsBuffer = undefined
 
             if (!keepTexture) {
-                offscreenTexture?.destroy(); offscreenTexture = undefined;
-                offscreenTextureView = undefined as any;
-                offscreenSampler = undefined as any;
-                hdrTexture?.destroy(); hdrTexture = undefined;
-                hdrTextureView = undefined as any;
+                offscreenTexture?.destroy(); offscreenTexture = undefined
+                offscreenTextureView = undefined as any
+                offscreenSampler = undefined as any
+                hdrTexture?.destroy(); hdrTexture = undefined
+                hdrTextureView = undefined as any
             }
 
             await nextTick() // Ensure GPU resources are cleaned up before creating new ones
         }
         const destroyPipelinesAndBindGroups = () => {
-            particleErasePipeline = undefined as any;
-            particleCompactPipeline = undefined as any;
-            particleCompactBindGroup = undefined as any;
-            particleCompactBindGroupLayout = undefined as any;
-            particleEraseBindGroup = undefined as any;
-            particleEraseBindGroupLayout = undefined as any;
+            particleErasePipeline = undefined as any
+            particleCompactPipeline = undefined as any
+            particleCompactBindGroup = undefined as any
+            particleCompactBindGroupLayout = undefined as any
+            particleEraseBindGroup = undefined as any
+            particleEraseBindGroupLayout = undefined as any
 
-            renderPipeline = undefined as any;
-            renderOffscreenPipeline = undefined as any;
-            composeInfinitePipeline = undefined as any;
-            renderMirrorPipeline = undefined as any;
-            renderGlowPipeline = undefined as any;
-            renderCirclePipeline = undefined as any;
-            renderMirrorGlowPipeline = undefined as any;
-            renderMirrorCirclePipeline = undefined as any;
-            composeHdrPipeline = undefined as any;
+            renderPipeline = undefined as any
+            renderOffscreenPipeline = undefined as any
+            composeInfinitePipeline = undefined as any
+            renderMirrorPipeline = undefined as any
+            renderGlowPipeline = undefined as any
+            renderCirclePipeline = undefined as any
+            renderMirrorGlowPipeline = undefined as any
+            renderMirrorCirclePipeline = undefined as any
+            composeHdrPipeline = undefined as any
 
-            renderPipelineAdditive = undefined as any;
-            renderMirrorPipelineAdditive = undefined as any;
-            renderInfinitePipelineAdditive = undefined as any;
-            renderCirclePipelineAdditive = undefined as any;
-            renderMirrorCirclePipelineAdditive = undefined as any;
-            renderInfiniteCirclePipelineAdditive = undefined as any;
+            renderPipelineAdditive = undefined as any
+            renderMirrorPipelineAdditive = undefined as any
+            renderInfinitePipelineAdditive = undefined as any
+            renderCirclePipelineAdditive = undefined as any
+            renderMirrorCirclePipelineAdditive = undefined as any
+            renderInfiniteCirclePipelineAdditive = undefined as any
 
-            binClearSizePipeline = undefined as any;
-            binFillSizePipeline = undefined as any;
-            binPrefixSumPipeline = undefined as any;
-            particleSortClearSizePipeline = undefined as any;
-            particleSortPipeline = undefined as any;
-            bruteForceComputePipeline = undefined as any;
-            particleComputeForcesPipeline = undefined as any;
-            particleAdvancePipeline = undefined as any;
+            binClearSizePipeline = undefined as any
+            binFillSizePipeline = undefined as any
+            binPrefixSumPipeline = undefined as any
+            particleSortClearSizePipeline = undefined as any
+            particleSortPipeline = undefined as any
+            bruteForceComputePipeline = undefined as any
+            particleComputeForcesPipeline = undefined as any
+            particleAdvancePipeline = undefined as any
 
-            particleBufferReadOnlyBindGroup = undefined as any;
-            binFillSizeBindGroup = undefined as any;
+            particleBufferReadOnlyBindGroup = undefined as any
+            binFillSizeBindGroup = undefined as any
             if (binPrefixSumBindGroup) {
                 for (let i = 0; i < binPrefixSumBindGroup.length; i++) {
-                    binPrefixSumBindGroup[i] = undefined as any;
+                    binPrefixSumBindGroup[i] = undefined as any
                 }
             }
-            binPrefixSumBindGroup = [];
-            particleSortBindGroup = undefined as any;
-            bruteForceBindGroup = undefined as any;
-            particleComputeForcesBindGroup = undefined as any;
+            binPrefixSumBindGroup = []
+            particleSortBindGroup = undefined as any
+            bruteForceBindGroup = undefined as any
+            particleComputeForcesBindGroup = undefined as any
 
-            particleBufferBindGroup = undefined as any;
-            simOptionsBindGroup = undefined as any;
-            deltaTimeBindGroup = undefined as any;
-            cameraBindGroup = undefined as any;
-            offscreenTextureBindGroup = undefined as any;
-            composeHdrBindGroup = undefined as any;
-            glowOptionsBindGroup = undefined as any;
-            brushOptionsBindGroup = undefined as any;
+            particleBufferBindGroup = undefined as any
+            simOptionsBindGroup = undefined as any
+            deltaTimeBindGroup = undefined as any
+            cameraBindGroup = undefined as any
+            offscreenTextureBindGroup = undefined as any
+            composeHdrBindGroup = undefined as any
+            glowOptionsBindGroup = undefined as any
+            brushOptionsBindGroup = undefined as any
 
-            trackerAccumulatePipeline = undefined as any;
-            trackerFinalizePipeline = undefined as any;
-            trackerCameraUpdatePipeline = undefined as any;
-            renderTrackerPipeline = undefined as any;
-            trackerComputeBindGroup = undefined as any;
-            trackerCameraUpdateBindGroup = undefined as any;
-            trackerRenderBindGroup = undefined as any;
+            trackerAccumulatePipeline = undefined as any
+            trackerFinalizePipeline = undefined as any
+            trackerCameraUpdatePipeline = undefined as any
+            renderTrackerPipeline = undefined as any
+            trackerComputeBindGroup = undefined as any
+            trackerCameraUpdateBindGroup = undefined as any
+            trackerRenderBindGroup = undefined as any
         }
         const cancelAnimationLoop = () => {
             if (animationFrameId) {
@@ -4980,7 +5331,8 @@ export default defineComponent({
             if (sidebarLeftElement) {
                 if (value) {
                     sidebarLeftElement.classList.add('force-hover-effect')
-                } else {
+                }
+                else {
                     sidebarLeftElement.classList.remove('force-hover-effect')
                 }
             }
@@ -4995,12 +5347,15 @@ export default defineComponent({
         })
 
         const releaseGpuDevice = () => {
-            if (!device && !ctx) return
+            if (!device && !ctx)
+                return
             cancelAnimationLoop()
             // if (device) device.onuncapturederror = null
 
-            try { ctx?.unconfigure?.() } catch {}
-            try { device?.destroy?.() } catch {}
+            try { ctx?.unconfigure?.() }
+            catch {}
+            try { device?.destroy?.() }
+            catch {}
             device = undefined as any
             ctx = undefined as any
         }
@@ -5009,18 +5364,57 @@ export default defineComponent({
             emit('switch-renderer', 'gpu3d')
         }
 
-            return {
-                particleLife, canvasRef, fps, executionTime, displayedDeltaTime, showLiveDeltaTime, colorRgbStrings,
-                urgeInspectorOpen, urgeStats, electricalParams, selectedUrgeId, urgeMarkerEl, urgeMarkerStatEl, markerColor, markerObjective, markerLabel, objectiveLabelFor,
-                handleZoom, toggleFullscreen, isFullscreen, smoothCenterView, regenerateLife, step, randomizeRadius, randomizeRulesAndRadius,
-                updateSimWidth, updateSimHeight, updateNumParticles, setNewNumParticles, setNewNumTypes,
-                updateRulesMatrixValue, updateMinMatrixValue, updateMaxMatrixValue, newRandomRulesMatrix,
-                updateRulesMatrix, updateParticlePositions, updateColors, loadPreset, updateSingleColor,
-                startTrackerSelection, cancelTrackerSelection, stopTracker, onTrackerZoneSelected,
-                rulesOptions, paletteOptions, positionOptions, switchTo3D
-            }
-    }
-});
+        return {
+            particleLife,
+            canvasRef,
+            fps,
+            executionTime,
+            displayedDeltaTime,
+            showLiveDeltaTime,
+            colorRgbStrings,
+            urgeInspectorOpen,
+            urgeStats,
+            electricalParams,
+            selectedUrgeId,
+            urgeMarkerEl,
+            urgeMarkerStatEl,
+            markerColor,
+            markerObjective,
+            markerLabel,
+            objectiveLabelFor,
+            handleZoom,
+            toggleFullscreen,
+            isFullscreen,
+            smoothCenterView,
+            regenerateLife,
+            step,
+            randomizeRadius,
+            randomizeRulesAndRadius,
+            updateSimWidth,
+            updateSimHeight,
+            updateNumParticles,
+            setNewNumParticles,
+            setNewNumTypes,
+            updateRulesMatrixValue,
+            updateMinMatrixValue,
+            updateMaxMatrixValue,
+            newRandomRulesMatrix,
+            updateRulesMatrix,
+            updateParticlePositions,
+            updateColors,
+            loadPreset,
+            updateSingleColor,
+            startTrackerSelection,
+            cancelTrackerSelection,
+            stopTracker,
+            onTrackerZoneSelected,
+            rulesOptions,
+            paletteOptions,
+            positionOptions,
+            switchTo3D,
+        }
+    },
+})
 </script>
 
 <style scoped>

@@ -1,48 +1,54 @@
 <template>
     <section w-full flex flex-col>
         <!-- Tab bar -->
-        <div class="flex space-x-1 p-0.75 bg-slate-700/80 rounded-[0.625rem] shadow-md">
-            <button @click="openTab = 1" :class="openTab === 1 ? 'bg-slate-900/80' : 'hover:bg-slate-800/80'" class="pl-1 text-sm flex-1 py-1 rounded-lg focus:outline-none transition-all duration-100">
+        <div class="flex rounded-[0.625rem] bg-slate-700/80 p-0.75 shadow-md space-x-1">
+            <button :class="openTab === 1 ? 'bg-slate-900/80' : 'hover:bg-slate-800/80'" class="flex-1 rounded-lg py-1 pl-1 text-sm transition-all duration-100 focus:outline-none" @click="openTab = 1">
                 Forces
             </button>
-            <button @click="openTab = 2" :class="openTab === 2 ? 'bg-slate-900/80' : 'hover:bg-slate-800/80'" class="pl-1 text-sm flex-1 py-1 rounded-lg focus:outline-none transition-all duration-100">
+            <button :class="openTab === 2 ? 'bg-slate-900/80' : 'hover:bg-slate-800/80'" class="flex-1 rounded-lg py-1 pl-1 text-sm transition-all duration-100 focus:outline-none" @click="openTab = 2">
                 Min Radius
             </button>
-            <button @click="openTab = 3" :class="openTab === 3 ? 'bg-slate-900/80' : 'hover:bg-slate-800/80'" class="pl-1 text-sm flex-1 py-1 rounded-lg focus:outline-none transition-all duration-100">
+            <button :class="openTab === 3 ? 'bg-slate-900/80' : 'hover:bg-slate-800/80'" class="flex-1 rounded-lg py-1 pl-1 text-sm transition-all duration-100 focus:outline-none" @click="openTab = 3">
                 Max Radius
             </button>
         </div>
 
-        <div mt-2 class="p-2 rounded-lg shadow-md bg-slate-700/40">
+        <div mt-2 class="rounded-lg bg-slate-700/40 p-2 shadow-md">
             <div flex-1>
-                <div grid gap-px :style="`grid-template-rows: repeat(${ cellRowCount }, minmax(0, 1fr))`">
-                    <div v-for="(col, i) in cellRowCount" :key="i" w-full grid gap-px :style="`grid-template-columns: repeat(${ cellColCount }, minmax(0, 1fr))`">
+                <div grid gap-px :style="`grid-template-rows: repeat(${cellRowCount}, minmax(0, 1fr))`">
+                    <div v-for="(col, i) in cellRowCount" :key="i" grid w-full gap-px :style="`grid-template-columns: repeat(${cellColCount}, minmax(0, 1fr))`">
                         <div v-for="(row, j) in cellColCount" :key="j" class="aspect-square">
                             <!-- Top-left corner -->
                             <div v-if="j === 0 && i === 0" h-full w-full class="pp-12">
-                                <div bg-black w-full h-full rounded-full></div>
+                                <div h-full w-full rounded-full bg-black />
                             </div>
                             <!-- Column headers: matter color swatches -->
-                            <div v-else-if="i === 0 && j > 0" h-full w-full class="pp-6" :title="'Matter color ' + (j - 1)">
-                                <div class="h-full w-full rounded-full ring-1 ring-slate-500/40" :style="{ backgroundColor: getColorStyleById(j-1) }"></div>
+                            <div v-else-if="i === 0 && j > 0" h-full w-full class="pp-6" :title="`Matter color ${j - 1}`">
+                                <div class="h-full w-full rounded-full ring-1 ring-slate-500/40" :style="{ backgroundColor: getColorStyleById(j - 1) }" />
                             </div>
                             <!-- Row headers: urge index labels -->
-                            <div v-else-if="j === 0 && i > 0" h-full w-full class="pp-6" :title="'Urge ' + (i - 1)">
-                                <div class="h-full w-full rounded-full flex items-center justify-center text-[9px] font-mono text-white/80 bg-slate-800/70 ring-1 ring-slate-600/50 select-none">
+                            <div v-else-if="j === 0 && i > 0" h-full w-full class="pp-6" :title="`Urge ${i - 1}`">
+                                <div class="h-full w-full flex select-none items-center justify-center rounded-full bg-slate-800/70 text-[9px] text-white/80 font-mono ring-1 ring-slate-600/50">
                                     <span class="truncate px-0.5">{{ i - 1 }}</span>
                                 </div>
                             </div>
                             <!-- Data cells -->
-                            <div v-else h-full w-full relative cursor-ew-resize select-none
-                                 :class="(isHoveredCell(i-1, j-1) || isCellSelected(i-1, j-1)) && 'hovered-cell'"
-                                 :style="{ backgroundColor: getCellStyleColor(i-1, j-1) }"
-                                 @mouseenter="mouseenter(i-1, j-1)"
-                                 @mouseleave="mouseleave"
-                                 @mousedown="mousedown($event, i-1, j-1)">
-                                <div class="-mt-9 -translate-x-1/2 left-1/2"
-                                     :class="isHoveredCell(i-1, j-1) || (isCellSelected(i-1, j-1) && selectedCells![selectedCells!.length - 1][0] === i-1 && selectedCells![selectedCells!.length - 1][1] === j-1) ? 'visible' : 'invisible'"
-                                     absolute px-3 py-2 bg-gray-800 rounded-full pointer-events-none>
-                                    <p text-sm m-0>{{ getCellValue(i-1, j-1) }}</p>
+                            <div
+                                v-else relative h-full w-full cursor-ew-resize select-none
+                                :class="(isHoveredCell(i - 1, j - 1) || isCellSelected(i - 1, j - 1)) && 'hovered-cell'"
+                                :style="{ backgroundColor: getCellStyleColor(i - 1, j - 1) }"
+                                @mouseenter="mouseenter(i - 1, j - 1)"
+                                @mouseleave="mouseleave"
+                                @mousedown="mousedown($event, i - 1, j - 1)"
+                            >
+                                <div
+                                    class="left-1/2 -mt-9 -translate-x-1/2"
+                                    :class="isHoveredCell(i - 1, j - 1) || (isCellSelected(i - 1, j - 1) && selectedCells![selectedCells!.length - 1][0] === i - 1 && selectedCells![selectedCells!.length - 1][1] === j - 1) ? 'visible' : 'invisible'"
+                                    pointer-events-none absolute rounded-full bg-gray-800 px-3 py-2
+                                >
+                                    <p m-0 text-sm>
+                                        {{ getCellValue(i - 1, j - 1) }}
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -51,42 +57,60 @@
             </div>
 
             <!-- Slider -->
-            <RangeInput v-if="openTab === 1" input :min="-1" :max="1" :step="0.01" v-model="selectedValue" mt-2>
+            <RangeInput v-if="openTab === 1" v-model="selectedValue" input :min="-1" :max="1" :step="0.01" mt-2>
                 <template #customLabel>
-                    <div class="w-2/3 px-2 py-0.5 bg-slate-900/80 border-2 border-slate-500/80" rounded-lg>
-                        <div v-if="!selectedCells" font-bold text-center text-gray-300>All Cells</div>
-                        <div v-else-if="selectedCells?.length === 1" flex items-center justify-between>
-                            <div class="rounded-full w-5 h-5 bg-slate-800/70 ring-1 ring-slate-600/50 flex items-center justify-center text-[9px] font-mono text-white/80">{{ selectedCells[0][0] }}</div>
-                            <div i-tabler-arrow-narrow-right text-xl mx-1 text-gray></div>
-                            <div class="rounded-full w-5 h-5" :style="`background-color: ${getColorStyleById(selectedCells[0][1])}`"></div>
+                    <div class="w-2/3 border-2 border-slate-500/80 bg-slate-900/80 px-2 py-0.5" rounded-lg>
+                        <div v-if="!selectedCells" text-center text-gray-300 font-bold>
+                            All Cells
                         </div>
-                        <div v-else font-bold text-center text-gray-300>Selection</div>
+                        <div v-else-if="selectedCells?.length === 1" flex items-center justify-between>
+                            <div class="h-5 w-5 flex items-center justify-center rounded-full bg-slate-800/70 text-[9px] text-white/80 font-mono ring-1 ring-slate-600/50">
+                                {{ selectedCells[0][0] }}
+                            </div>
+                            <div i-tabler-arrow-narrow-right mx-1 text-xl text-gray />
+                            <div class="h-5 w-5 rounded-full" :style="`background-color: ${getColorStyleById(selectedCells[0][1])}`" />
+                        </div>
+                        <div v-else text-center text-gray-300 font-bold>
+                            Selection
+                        </div>
                     </div>
                 </template>
             </RangeInput>
-            <RangeInput v-else-if="openTab === 2" input :min="1" :max="getMaxSliderBound()" :step="1" v-model="selectedValue" mt-2>
+            <RangeInput v-else-if="openTab === 2" v-model="selectedValue" input :min="1" :max="getMaxSliderBound()" :step="1" mt-2>
                 <template #customLabel>
-                    <div class="w-2/3 px-2 py-0.5 bg-slate-900/80 border-2 border-slate-500/80" rounded-lg>
-                        <div v-if="!selectedCells" font-bold text-center text-gray-300>All Cells</div>
-                        <div v-else-if="selectedCells?.length === 1" flex items-center justify-between>
-                            <div class="rounded-full w-5 h-5 bg-slate-800/70 ring-1 ring-slate-600/50 flex items-center justify-center text-[9px] font-mono text-white/80">{{ selectedCells[0][0] }}</div>
-                            <div i-tabler-arrow-narrow-right text-xl mx-1 text-gray></div>
-                            <div class="rounded-full w-5 h-5" :style="`background-color: ${getColorStyleById(selectedCells[0][1])}`"></div>
+                    <div class="w-2/3 border-2 border-slate-500/80 bg-slate-900/80 px-2 py-0.5" rounded-lg>
+                        <div v-if="!selectedCells" text-center text-gray-300 font-bold>
+                            All Cells
                         </div>
-                        <div v-else font-bold text-center text-gray-300>Selection</div>
+                        <div v-else-if="selectedCells?.length === 1" flex items-center justify-between>
+                            <div class="h-5 w-5 flex items-center justify-center rounded-full bg-slate-800/70 text-[9px] text-white/80 font-mono ring-1 ring-slate-600/50">
+                                {{ selectedCells[0][0] }}
+                            </div>
+                            <div i-tabler-arrow-narrow-right mx-1 text-xl text-gray />
+                            <div class="h-5 w-5 rounded-full" :style="`background-color: ${getColorStyleById(selectedCells[0][1])}`" />
+                        </div>
+                        <div v-else text-center text-gray-300 font-bold>
+                            Selection
+                        </div>
                     </div>
                 </template>
             </RangeInput>
-            <RangeInput v-else input :min="1" :max="300" :step="1" v-model="selectedValue" mt-2>
+            <RangeInput v-else v-model="selectedValue" input :min="1" :max="300" :step="1" mt-2>
                 <template #customLabel>
-                    <div class="w-2/3 px-2 py-0.5 bg-slate-900/80 border-2 border-slate-500/80" rounded-lg>
-                        <div v-if="!selectedCells" font-bold text-center text-gray-300>All Cells</div>
-                        <div v-else-if="selectedCells?.length === 1" flex items-center justify-between>
-                            <div class="rounded-full w-5 h-5 bg-slate-800/70 ring-1 ring-slate-600/50 flex items-center justify-center text-[9px] font-mono text-white/80">{{ selectedCells[0][0] }}</div>
-                            <div i-tabler-arrow-narrow-right text-xl mx-1 text-gray></div>
-                            <div class="rounded-full w-5 h-5" :style="`background-color: ${getColorStyleById(selectedCells[0][1])}`"></div>
+                    <div class="w-2/3 border-2 border-slate-500/80 bg-slate-900/80 px-2 py-0.5" rounded-lg>
+                        <div v-if="!selectedCells" text-center text-gray-300 font-bold>
+                            All Cells
                         </div>
-                        <div v-else font-bold text-center text-gray-300>Selection</div>
+                        <div v-else-if="selectedCells?.length === 1" flex items-center justify-between>
+                            <div class="h-5 w-5 flex items-center justify-center rounded-full bg-slate-800/70 text-[9px] text-white/80 font-mono ring-1 ring-slate-600/50">
+                                {{ selectedCells[0][0] }}
+                            </div>
+                            <div i-tabler-arrow-narrow-right mx-1 text-xl text-gray />
+                            <div class="h-5 w-5 rounded-full" :style="`background-color: ${getColorStyleById(selectedCells[0][1])}`" />
+                        </div>
+                        <div v-else text-center text-gray-300 font-bold>
+                            Selection
+                        </div>
                     </div>
                 </template>
             </RangeInput>
@@ -95,15 +119,17 @@
 </template>
 
 <script lang="ts">
-import { defineComponent } from "vue";
+import { defineComponent } from "vue"
 import { hslToRgb, rgbToHex } from '~/helpers/utils/colorConversion'
+
 export default defineComponent({
     props: {
         store: {
             type: Object,
             required: true,
-        }
+        },
     },
+    emits: ['update-max', 'update-min', 'update-rule'],
     setup(props, { emit }) {
         const particleLife = props.store
         const openTab = ref<number>(1)
@@ -130,14 +156,17 @@ export default defineComponent({
 
         // Get the appropriate matrix based on the active tab
         const getMatrix = () => {
-            if (openTab.value === 1) return particleLife.urgeRulesMatrix
-            if (openTab.value === 2) return particleLife.urgeMinRadiusMatrix
+            if (openTab.value === 1)
+                return particleLife.urgeRulesMatrix
+            if (openTab.value === 2)
+                return particleLife.urgeMinRadiusMatrix
             return particleLife.urgeMaxRadiusMatrix
         }
 
         const getCellValue = (i: number, j: number): number => {
             const m = getMatrix()
-            if (!m || !m[i]) return 0
+            if (!m || !m[i])
+                return 0
             return m[i][j] ?? 0
         }
 
@@ -146,7 +175,8 @@ export default defineComponent({
             if (openTab.value === 1) {
                 // Rule: interpolate between repulsion and attraction
                 return interpolateRuleColor(value)
-            } else {
+            }
+            else {
                 // Radius: interpolate from dark to target color based on relative magnitude
                 return interpolateRadiusColor(value)
             }
@@ -169,16 +199,18 @@ export default defineComponent({
             set: (newValue) => {
                 if (openTab.value === 1) {
                     newValue = Math.max(-1, Math.min(1, newValue))
-                } else {
+                }
+                else {
                     newValue = Math.max(1, Math.round(newValue))
                 }
                 if (selectedCell.value) {
                     updateMatrixForSelectedCells(newValue)
-                } else {
+                }
+                else {
                     noSelectionValue.value = newValue
                     updateMatrixForAllCells(newValue)
                 }
-            }
+            },
         })
 
         watch(() => [particleLife.numColors, particleLife.numUrges], () => {
@@ -218,7 +250,8 @@ export default defineComponent({
                     if (toDeselect) {
                         if (event.ctrlKey) {
                             groupSelect(selectedCell.value![0], selectedCell.value![1])
-                        } else {
+                        }
+                        else {
                             select(selectedCell.value![0], selectedCell.value![1])
                         }
                         toDeselect = false
@@ -242,12 +275,14 @@ export default defineComponent({
             if ((!isCellSelected(i, j)) || !selectedCells.value) {
                 if (event.ctrlKey) {
                     groupSelect(i, j)
-                } else {
+                }
+                else {
                     select(i, j)
                 }
             }
             dragging = true
-            if (!event.ctrlKey) document.addEventListener('mousemove', handleDrag, true)
+            if (!event.ctrlKey)
+                document.addEventListener('mousemove', handleDrag, true)
         }
 
         function handleDrag(event: MouseEvent) {
@@ -259,7 +294,8 @@ export default defineComponent({
                         particleLife.isLockedPointer = true
                         targetElement.requestPointerLock()
                     }
-                } else {
+                }
+                else {
                     console.log('PointerLock API not supported in this device.')
                 }
 
@@ -269,7 +305,8 @@ export default defineComponent({
                 let value: number
                 if (openTab.value === 1) {
                     value = getCellValue(i, j) + (event.movementX > 0 ? 0.01 : -0.01)
-                } else {
+                }
+                else {
                     value = Math.round(getCellValue(i, j)) + (event.movementX > 0 ? 1 : -1)
                 }
                 updateMatrixForSelectedCells(value)
@@ -330,8 +367,10 @@ export default defineComponent({
             const numColors = particleLife.numColors
             for (let i = 0; i < numUrges; i++) {
                 for (let j = 0; j < numColors; j++) {
-                    if (openTab.value === 1) emit('update-rule', i, j, value)
-                    else if (openTab.value === 2) emit('update-min', i, j, value)
+                    if (openTab.value === 1)
+                        emit('update-rule', i, j, value)
+                    else if (openTab.value === 2)
+                        emit('update-min', i, j, value)
                     else emit('update-max', i, j, value)
                 }
             }
@@ -340,8 +379,10 @@ export default defineComponent({
         function updateMatrixForSelectedCells(value: number) {
             for (let i = 0; i < selectedCells.value!.length; i++) {
                 const [x, y] = selectedCells.value![i]
-                if (openTab.value === 1) emit('update-rule', x, y, value)
-                else if (openTab.value === 2) emit('update-min', x, y, value)
+                if (openTab.value === 1)
+                    emit('update-rule', x, y, value)
+                else if (openTab.value === 2)
+                    emit('update-min', x, y, value)
                 else emit('update-max', x, y, value)
             }
         }
@@ -372,7 +413,8 @@ export default defineComponent({
 
         function getColorStyleById(id: number): string {
             const colors = particleLife.currentColors
-            if (!colors) return "rgb(12,12,12)"
+            if (!colors)
+                return "rgb(12,12,12)"
             if (colors instanceof Float32Array) {
                 const i = id * 4
                 const r = Math.round(colors[i] * 255)
@@ -385,7 +427,8 @@ export default defineComponent({
 
         function getColorHexById(id: number): string {
             const colors = particleLife.currentColors
-            if (!colors) return '#0C0C0C'
+            if (!colors)
+                return '#0C0C0C'
             if (colors instanceof Float32Array) {
                 const i = id * 4
                 return rgbToHex(Math.round(colors[i] * 255), Math.round(colors[i + 1] * 255), Math.round(colors[i + 2] * 255))
@@ -397,12 +440,24 @@ export default defineComponent({
 
         // -------------------------------------------------------------------------------------------------------------
         return {
-            particleLife, openTab, cellRowCount, cellColCount, selectedValue, selectedCells,
-            mousedown, mouseenter, mouseleave,
-            getCellValue, getCellStyleColor, getMaxSliderBound,
-            isCellSelected, isHoveredCell, getColorStyleById, getColorHexById
+            particleLife,
+            openTab,
+            cellRowCount,
+            cellColCount,
+            selectedValue,
+            selectedCells,
+            mousedown,
+            mouseenter,
+            mouseleave,
+            getCellValue,
+            getCellStyleColor,
+            getMaxSliderBound,
+            isCellSelected,
+            isHoveredCell,
+            getColorStyleById,
+            getColorHexById,
         }
-    }
+    },
 })
 </script>
 
