@@ -1770,34 +1770,9 @@ export default defineComponent({
                 renderPass.end()
             }
 
-            // Debug: draw dotted lines connecting each urge to the neurons wired to it.
-            // Capped so maxing both sliders can't trigger an O(urges*neurons) compute blowup.
-            // Capped so maxing the sliders can't trigger an O(urges×neurons) compute blowup, and
-            // so the by-type scan (O(urges×particles)) stays cheap even at large particle counts.
-            if (isDebugConnections && numUrges > 0 && numNeurons > 0 && numUrges * numNeurons <= 60000 && numUrges * NUM_PARTICLES <= 32_000_000) {
-                encoder.clearBuffer(connCountBuffer!, 0, 4)
-                const connPass = encoder.beginComputePass()
-                connPass.setPipeline(debugConnectionsPipeline)
-                connPass.setBindGroup(0, connectionsComputeBindGroup)
-                connPass.setBindGroup(1, simOptionsBindGroup)
-                connPass.setBindGroup(2, electricalBindGroup)
-                connPass.dispatchWorkgroups(Math.ceil(numUrges / 64))
-                connPass.end()
-
-                const connRenderPass = encoder.beginRenderPass({
-                    colorAttachments: [{
-                        view: ctx.getCurrentTexture().createView(),
-                        loadOp: 'load',
-                        storeOp: 'store',
-                    }],
-                })
-                connRenderPass.setPipeline(renderConnectionsPipeline)
-                connRenderPass.setBindGroup(0, connectionsRenderBindGroup)
-                connRenderPass.setBindGroup(1, cameraBindGroup)
-                connRenderPass.setBindGroup(2, simOptionsBindGroup)
-                connRenderPass.draw(4, MAX_CONN_DOTS)
-                connRenderPass.end()
-            }
+            // Debug connections: now rendered inline in the main particle pass via
+            // isDebugConnections flag in SimOptions. Urges render a black-and-white dotted
+            // circle at neuronRadius; neurons get a smaller dotted ring. No separate compute pass needed.
         }
         // -------------------------------------------------------------------------------------------------------------
         const renderBrushCircle = (encoder: GPUCommandEncoder) => {
@@ -2142,7 +2117,7 @@ export default defineComponent({
             }
         }
         const updateSimOptionsBuffer = () => {
-            const simOptionsData = new ArrayBuffer(84) // 80 + matrixStride (4 bytes)
+            const simOptionsData = new ArrayBuffer(96) // 84 + numUrges + neuronRadius + isDebugConnections
             const simOptionsView = new DataView(simOptionsData)
             simOptionsView.setFloat32(0, SIM_WIDTH, true)
             simOptionsView.setFloat32(4, SIM_HEIGHT, true)
@@ -2166,6 +2141,10 @@ export default defineComponent({
             simOptionsView.setUint32(72, mirrorWrapCount, true)
             simOptionsView.setUint32(76, CELL_SUBDIVISIONS, true)
             simOptionsView.setUint32(80, MATRIX_TYPES, true) // matrixStride for the interaction matrix
+            // Render-layer fields (offset 84+)
+            simOptionsView.setUint32(84, numUrges, true)
+            simOptionsView.setFloat32(88, Math.max(particleLife.neuronRadius, 1), true)
+            simOptionsView.setUint32(92, isDebugConnections ? 1 : 0, true)
 
             if (!simOptionsBuffer) {
                 simOptionsBuffer = device.createBuffer({
@@ -4014,7 +3993,7 @@ export default defineComponent({
         watchElectrical(() => particleLife.neuronAuthority)
         watchElectrical(() => particleLife.maxAuthority)
         watchElectrical(() => particleLife.cohesion)
-        watch(() => particleLife.isDebugConnections, (value: boolean) => isDebugConnections = value)
+        watch(() => particleLife.isDebugConnections, (value: boolean) => { isDebugConnections = value; updateSimOptionsBuffer() })
         // A larger urge radius needs a coarser grid so its field isn't clipped to the square scan window.
         watch(() => particleLife.urgeRadius, () => { if (particleLife.isElectricalEnabled) recomputeCellSize() })
         watch(() => particleLife.isElectricalEnabled, () => recomputeCellSize())

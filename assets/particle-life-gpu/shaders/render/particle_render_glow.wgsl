@@ -18,6 +18,11 @@ struct SimOptions {
     gridOffsetX: u32,
     gridOffsetY: u32,
     mirrorWrapCount: u32,
+    cellSubdivisions: u32,  // padding (unused by render)
+    matrixStride: u32,      // padding (unused by render)
+    numUrges: u32,          // number of urge types (for category detection)
+    neuronRadius: f32,      // world-unit radius for the debug dotted circle
+    isDebugConnections: u32,// flag: draw dotted circles around urges/neurons
 };
 struct Particle {
     x : f32,
@@ -27,7 +32,7 @@ struct Particle {
     particleType : f32,
     control : f32,
     signal  : f32,
-    goalB   : f32, // secondary goal index (local k), -1 if none
+    goalB   : f32,
 }
 struct Camera {
     centerX: f32,
@@ -51,6 +56,8 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) offset: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) particleType: f32,
+    @location(3) isDebugCircle: f32,
 }
 
 const QUAD_VERTICES = array<vec2<f32>, 4>(
@@ -67,67 +74,122 @@ fn srgb_to_linear(color: vec3f) -> vec3f {
     return select(linear_high, linear_low, color <= cutoff);
 }
 
-fn vertex_main(instanceIndex: u32, vertexIndex: u32, size: f32) -> VertexOutput {
+// Shared vertex logic: computes position, size, and debug circle flag
+fn compute_vertex(instanceIndex: u32, vertexIndex: u32, sizeMultiplier: f32) -> VertexOutput {
     if (instanceIndex >= options.numParticles) {
-        return VertexOutput(vec4f(0.0), vec2f(0.0), vec4f(0.0));
+        return VertexOutput(vec4f(0.0), vec2f(0.0), vec4f(0.0), 0.0, 0.0);
     }
     let particle = particles[instanceIndex];
-    // Clamp to the color-table length so out-of-range/stale types render as the last entry
-    // (the invisible dormant slot) instead of reading past the buffer.
-    var color = colors[min(u32(particle.particleType), arrayLength(&colors) - 1u)]; // var: reassigned below with state-driven brightness
-    // Quantum/electrical: brightness driven by the particle's live state.
-    //   urges  -> glow with |control| (how hard they've learned to attract/repel)
-    //   neurons-> pulse with signal   (activity = nearby urges). matter has both = 0.
+    let pType = u32(particle.particleType);
+    var color = colors[min(pType, arrayLength(&colors) - 1u)];
     let bright = 1.0 + 0.9 * abs(particle.control) + 0.35 * min(particle.signal, 6.0);
     color = vec4f(color.rgb * bright, color.a);
-    let particleCenterPos = vec2f(particle.x, particle.y);
 
+    let isUrge = pType >= options.numTypes && pType < options.numTypes + options.numUrges;
+    let isNeuron = pType >= options.numTypes + options.numUrges && pType < u32(arrayLength(&colors)) - 1u;
+    var size: f32 = options.particleSize * sizeMultiplier;
+    var isDebugCircle: f32 = 0.0;
+    if (options.isDebugConnections != 0u) {
+        if (isUrge) {
+            size = options.neuronRadius;
+            isDebugCircle = 1.0;
+        } else if (isNeuron) {
+            size = options.particleSize * 2.5;
+            isDebugCircle = 1.0;
+        }
+    }
+
+    let particleCenterPos = vec2f(particle.x, particle.y);
     let cameraScale = vec2f(camera.scaleX, -camera.scaleY);
     let cameraCenter = vec2f(camera.centerX, camera.centerY);
     let transformedCenterPos = fma(particleCenterPos, cameraScale, -cameraCenter * cameraScale);
 
-    let quadOffset = QUAD_VERTICES[vertexIndex];
-    let vertexOffset = quadOffset * size * cameraScale;
+    let vertexOffset = QUAD_VERTICES[vertexIndex] * size * cameraScale;
     let finalPos = transformedCenterPos + vertexOffset;
 
     return VertexOutput(
         vec4f(finalPos, 0.0, 1.0),
-        quadOffset,
-        color
+        QUAD_VERTICES[vertexIndex],
+        color,
+        f32(pType),
+        isDebugCircle
     );
 }
+
 @vertex
 fn vertexGlow(@builtin(instance_index) instanceIndex: u32, @builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    return vertex_main(instanceIndex, vertexIndex, options.particleSize * glowOptions.glowSize);
+    return compute_vertex(instanceIndex, vertexIndex, glowOptions.glowSize);
 }
 @vertex
 fn vertexCircle(@builtin(instance_index) instanceIndex: u32, @builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    return vertex_main(instanceIndex, vertexIndex, options.particleSize);
+    return compute_vertex(instanceIndex, vertexIndex, 1.0);
+}
+
+// Shared dotted circle fragment logic
+fn debug_circle_fragment(in: VertexOutput) -> vec4f {
+    let dist = length(in.offset);
+    let ringRadius = 0.92;
+    let ringWidth = 0.06;
+    let inRing = abs(dist - ringRadius) < ringWidth;
+    if (!inRing) { discard; }
+
+    let angle = atan2(in.offset.y, in.offset.x);
+    let numDots = 16.0;
+    let segIdx = i32(floor((angle + 3.14159265) / (6.2831853 * 2.0 / numDots)));
+    let dotAngle = fract(f32(segIdx) + (angle + 3.14159265) / (6.2831853 * 2.0 / numDots) - f32(segIdx));
+    // Simpler: just check if we're in the first half of our segment
+    let localAngle = (angle + 3.14159265) - f32(segIdx) * (6.2831853 * 2.0 / numDots);
+    let inDot = localAngle < (6.2831853 * 2.0 / numDots) * 0.5;
+    if (!inDot) { discard; }
+
+    let white = (segIdx % 2) == 0;
+    let edgeFade = 1.0 - smoothstep(ringWidth * 0.5, ringWidth, abs(dist - ringRadius));
+    if (white) {
+        return vec4f(1.0, 1.0, 1.0, 0.9 * edgeFade);
+    } else {
+        return vec4f(0.0, 0.0, 0.0, 0.9 * edgeFade);
+    }
 }
 
 @fragment
-fn fragmentGlow(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragmentGlow(in: VertexOutput) -> @location(0) vec4f {
+    // In debug circle mode, skip the glow (the dotted ring is drawn by fragmentCircle)
+    if (in.isDebugCircle == 1.0) { discard; }
+
     let dist_sq = dot(in.offset, in.offset);
     if (dist_sq > 1.0) { discard; }
 
     let falloff = saturate(1.0 - dist_sq);
-//    let falloff = 1.0 - dist_sq; // Alternative falloff calculation (less steep, more uniform, but less glow effect) (faster)
-
     let alpha = pow(falloff, glowOptions.glowSteepness) * glowOptions.glowIntensity;
-//    let alpha = falloff * falloff * glowOptions.glowIntensity; // Alternative falloff calculation
-
     if (alpha < 0.0001) { discard; }
-    return vec4<f32>(in.color.rgb * alpha, alpha);
+    return vec4f(in.color.rgb * alpha, alpha);
 }
+
 @fragment
-fn fragmentCircle(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragmentCircle(in: VertexOutput) -> @location(0) vec4f {
+    // Debug dotted circle takes priority
+    if (in.isDebugCircle == 1.0) {
+        return debug_circle_fragment(in);
+    }
+
     let dist_sq = dot(in.offset, in.offset);
+    let dist = sqrt(dist_sq);
     let edge_width = fwidth(dist_sq);
-    let alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
+    var alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
 
-//    let linear_color = in.color.rgb; // Use original color for circle rendering (no gamma correction)
-    let linear_color = pow(in.color.rgb, vec3<f32>(2.2)); // Convert color to linear space for proper blending
-//    let linear_color = srgb_to_linear(in.color.rgb); // Convert color to linear space for proper blending (precise / slower)
+    // Border for electrical particles
+    let isElectrical = in.particleType >= f32(options.numTypes);
+    if (isElectrical && alpha > 0.0) {
+        let borderDist = 0.88;
+        let borderWidth = 0.06;
+        let inBorder = abs(dist - borderDist) < borderWidth;
+        if (inBorder) {
+            let borderFade = 1.0 - smoothstep(borderWidth * 0.5, borderWidth, abs(dist - borderDist));
+            let linear_border = vec3f(1.0);
+            return vec4f(linear_border, max(in.color.a * options.particleOpacity * alpha, borderFade * options.particleOpacity * alpha));
+        }
+    }
 
-    return vec4<f32>(linear_color, in.color.a * options.particleOpacity * alpha);
+    let linear_color = pow(in.color.rgb, vec3<f32>(2.2));
+    return vec4f(linear_color, in.color.a * options.particleOpacity * alpha);
 }
