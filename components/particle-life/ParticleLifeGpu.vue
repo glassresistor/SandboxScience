@@ -746,6 +746,7 @@ import particleAdvanceShaderCode from 'assets/particle-life-gpu/shaders/compute/
 import particleAdvanceBrushShaderCode from 'assets/particle-life-gpu/shaders/compute/particleAdvance_brush.wgsl?raw'
 import particleCompactShaderCode from 'assets/particle-life-gpu/shaders/compute/particleCompact.wgsl?raw'
 
+import brainStepShaderCode from 'assets/particle-life-gpu/shaders/compute/brainStep.wgsl?raw'
 import particleComputeForcesShaderCode from 'assets/particle-life-gpu/shaders/compute/particleComputeForces.wgsl?raw'
 import particleDrawShaderCode from 'assets/particle-life-gpu/shaders/compute/particleDraw.wgsl?raw'
 import particleEraseShaderCode from 'assets/particle-life-gpu/shaders/compute/particleErase.wgsl?raw'
@@ -1007,6 +1008,13 @@ export default defineComponent({
         let particleSortPipeline: GPUComputePipeline
         let bruteForceComputePipeline: GPUComputePipeline
         let particleComputeForcesPipeline: GPUComputePipeline
+        let brainStepPipeline: GPUComputePipeline
+        let brainStateBuffer: GPUBuffer | undefined
+        let brainWeightsBuffer: GPUBuffer | undefined
+        let neuronModsBuffer: GPUBuffer | undefined
+        let brainOptsBuffer: GPUBuffer | undefined
+        let brainBindGroup: GPUBindGroup
+        let brainOptsBindGroup: GPUBindGroup
         let particleAdvancePipeline: GPUComputePipeline
         // eslint-disable-next-line unused-imports/no-unused-vars
         let debugConnectionsPipeline: GPUComputePipeline // emits debug connection dots
@@ -1763,6 +1771,18 @@ export default defineComponent({
         const step = () => {
             const encoder = device.createCommandEncoder()
 
+            // ---- BRAIN STEP: recurrent network maps urge errors → neuron modulations ----
+            // Runs first so the force pass can read the output. Reads particleBuffer
+            // (previous-frame state in original order) and writes neuronModsBuffer.
+            if (particleLife.isElectricalEnabled && numUrges > 0 && numNeurons > 0) {
+                const brainPass = encoder.beginComputePass()
+                brainPass.setPipeline(brainStepPipeline)
+                brainPass.setBindGroup(0, brainBindGroup)
+                brainPass.setBindGroup(1, brainOptsBindGroup)
+                brainPass.dispatchWorkgroups(1) // single workgroup of 64 threads
+                brainPass.end()
+            }
+
             if (!useSpatialHash) {
                 encoder.copyBufferToBuffer(particleBuffer!, 0, particleTempBuffer!, 0, particleBuffer!.size)
             }
@@ -2122,6 +2142,7 @@ export default defineComponent({
             updateElectricalOptionsBuffer() // Urge/neuron (quantum-electrical) layer parameters
             createConnectionBuffers() // Debug urge<->neuron line buffers
             updateParticleBuffers(true)
+            updateBrainBuffers()
             updateEraseCompactBuffers()
             updateBinningBuffers()
             updateColorBuffer()
@@ -2206,6 +2227,65 @@ export default defineComponent({
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             })
         }
+        // ---- BRAIN BUFFERS: recurrent network for urge→neuron modulation ----
+        const BRAIN_H = 8
+        const BRAIN_G = 16
+        const BRAIN_MAX_URGES = 64
+        const BRAIN_MAX_NEURONS = 128
+        // Total floats in BrainWeights struct: 512+8+64+128+128+64+64+64 = 1032
+        const BRAIN_WEIGHTS_SIZE = 1032 * 4
+
+        const updateBrainBuffers = () => {
+            if (brainStateBuffer) brainStateBuffer.destroy()
+            if (brainWeightsBuffer) brainWeightsBuffer.destroy()
+            if (neuronModsBuffer) neuronModsBuffer.destroy()
+            if (brainOptsBuffer) brainOptsBuffer.destroy()
+
+            // Hidden state: H floats, initialized to zero
+            brainStateBuffer = device.createBuffer({
+                size: BRAIN_H * 4,
+                usage: GPUBufferUsage.STORAGE,
+            })
+
+            // Weights: hardcoded random init for the experiment
+            const w = new Float32Array(1032)
+            // W_down [H * MAX_URGES] = first 512 floats
+            for (let i = 0; i < 512; i++) w[i] = (Math.random() - 0.5) * 0.6
+            // b_down [H] = next 8
+            // W_recur [H*H] = next 64
+            for (let i = 520; i < 584; i++) w[i] = (Math.random() - 0.5) * 0.1
+            // groupW [G*H] = next 128
+            for (let i = 584; i < 712; i++) w[i] = (Math.random() - 0.5) * 0.6
+            // biases [MAX_NEURONS] = next 128
+            for (let i = 712; i < 840; i++) w[i] = (Math.random() - 0.5) * 0.3
+            // driveTargets [64]: deterministic per-urge targets in [0.6, 1.4]
+            for (let i = 840; i < 904; i++) w[i] = 0.6 + ((i * 7919) % 100) / 125
+            // driveScales [64]: all 0.5
+            for (let i = 904; i < 968; i++) w[i] = 0.5
+            // driveGains [64]: all 1.0
+            for (let i = 968; i < 1032; i++) w[i] = 1.0
+
+            brainWeightsBuffer = device.createBuffer({
+                size: BRAIN_WEIGHTS_SIZE,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            })
+            device.queue.writeBuffer(brainWeightsBuffer, 0, w)
+
+            // Neuron modulations output: MAX_NEURONS floats
+            neuronModsBuffer = device.createBuffer({
+                size: BRAIN_MAX_NEURONS * 4,
+                usage: GPUBufferUsage.STORAGE,
+            })
+
+            // Brain opts: numUrges, numNeurons, numTypes (3 u32s)
+            brainOptsBuffer = device.createBuffer({
+                size: 12,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            })
+            const optsData = new Uint32Array([numUrges, numNeurons, NUM_TYPES])
+            device.queue.writeBuffer(brainOptsBuffer, 0, optsData)
+        }
+
         const updateEraseCompactBuffers = () => {
             if (particleKeepFlagsBuffer)
                 particleKeepFlagsBuffer.destroy(); particleKeepFlagsBuffer = undefined
@@ -2644,6 +2724,23 @@ export default defineComponent({
                     { binding: 1, resource: { buffer: particleBuffer! } },
                     { binding: 2, resource: { buffer: binOffsetBuffer! } },
                     { binding: 3, resource: { buffer: interactionMatrixBuffer! } },
+                    { binding: 4, resource: { buffer: neuronModsBuffer! } }, // brain output
+                ],
+            })
+            // ---- Brain bind groups ----
+            brainBindGroup = device.createBindGroup({
+                layout: brainStepPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: particleBuffer! } },        // read particles (prev frame, original order)
+                    { binding: 1, resource: { buffer: brainStateBuffer! } },      // persistent hidden state
+                    { binding: 2, resource: { buffer: brainWeightsBuffer! } },    // network weights
+                    { binding: 3, resource: { buffer: neuronModsBuffer! } },      // output modulations
+                ],
+            })
+            brainOptsBindGroup = device.createBindGroup({
+                layout: brainStepPipeline.getBindGroupLayout(1),
+                entries: [
+                    { binding: 0, resource: { buffer: brainOptsBuffer! } },       // numUrges, numNeurons, numTypes
                 ],
             })
             bruteForceBindGroup = device.createBindGroup({
@@ -2754,6 +2851,7 @@ export default defineComponent({
                     { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // particleBuffer
                     { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // binOffsetBuffer
                     { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // interactionMatrixBuffer (includes urge + neuron rows)
+                    { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // neuronModsBuffer (brain output)
                 ],
             })
             electricalBindGroupLayout = device.createBindGroupLayout({
@@ -2950,6 +3048,28 @@ export default defineComponent({
                     ],
                 }),
                 compute: { module: particleComputeForcesShader, entryPoint: 'computeForces' },
+            })
+            // ---- Brain step pipeline (single workgroup recurrent network) ----
+            const brainStepShader = device.createShaderModule({ code: brainStepShaderCode })
+            brainStepPipeline = device.createComputePipeline({
+                layout: device.createPipelineLayout({
+                    bindGroupLayouts: [
+                        device.createBindGroupLayout({
+                            entries: [
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // particles (read)
+                                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // brainState (read_write)
+                                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // weights (read)
+                                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // neuronMods (write)
+                            ],
+                        }),
+                        device.createBindGroupLayout({
+                            entries: [
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // brainOpts (uniform)
+                            ],
+                        }),
+                    ],
+                }),
+                compute: { module: brainStepShader, entryPoint: 'main' },
             })
             const bruteForceShader = device.createShaderModule({ code: bruteForceShaderCode })
             bruteForceComputePipeline = device.createComputePipeline({
@@ -5259,6 +5379,10 @@ export default defineComponent({
             particleNextIndicesBuffer?.destroy(); particleNextIndicesBuffer = undefined
             particleBuffer?.destroy(); particleBuffer = undefined
             particleTempBuffer?.destroy(); particleTempBuffer = undefined
+            brainStateBuffer?.destroy(); brainStateBuffer = undefined
+            brainWeightsBuffer?.destroy(); brainWeightsBuffer = undefined
+            neuronModsBuffer?.destroy(); neuronModsBuffer = undefined
+            brainOptsBuffer?.destroy(); brainOptsBuffer = undefined
             binOffsetBuffer?.destroy(); binOffsetBuffer = undefined
             binOffsetTempBuffer?.destroy(); binOffsetTempBuffer = undefined
             binPrefixSumStepSizeBuffer?.destroy(); binPrefixSumStepSizeBuffer = undefined

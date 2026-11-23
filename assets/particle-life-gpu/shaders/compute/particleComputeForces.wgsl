@@ -192,6 +192,7 @@ fn urgeGoal(k: u32) -> UrgeGoal {
 @group(0) @binding(1) var<storage, read_write> particlesDestination : array<Particle>;
 @group(0) @binding(2) var<storage, read> binOffset : array<u32>;
 @group(0) @binding(3) var<storage, read> interactions: InteractionMatrix;
+@group(0) @binding(4) var<storage, read> neuronMods : array<f32>; // brain output: per-neuron modulation [-1,1]
 
 @group(1) @binding(0) var<uniform> options : SimOptions;
 @group(2) @binding(0) var<uniform> deltaTime : f32;
@@ -406,6 +407,14 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
                 }
             }
         }
+    }
+
+    // ---- BRAIN MODULATION: add global network output to neuron drive --------
+    // The brain pass (runs before this one) computed per-neuron modulations from
+    // all urge errors. We add it here as an additional input on top of the local
+    // spatial urge scanning, so both mechanisms coexist.
+    if (isNeuron && eOn) {
+        drive += neuronMods[mIdx] * 1.5; // brainGain = 1.5 (tunable)
     }
 
     let forceFactor = options.forceFactor * deltaTime * 60.0;
