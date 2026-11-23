@@ -166,15 +166,15 @@
                             <div flex items-center justify-between gap-2 mt-2>
                                 <p class="w-1/3 text-2sm shrink-0">
                                     Urge Goal Family
-                                    <TooltipInfo container="#mainContainer" tooltip="The family of goals each urge is drawn from. Within a family the exact goal (attract vs repel, density vs fraction) still varies per urge by its index, so the population stays diverse. <br> <b>Mixed Density</b>: attract/repel by local density. <br> <b>Mixed Fraction</b>: attract/repel by local fraction. <br> <b>Density/Fraction</b>: attract by density, repel by fraction. <br> <b>Cycle All</b>: cycles all four combinations across the population." />
+                                    <TooltipInfo container="#mainContainer" tooltip="The goal family for urges. Each urge targets a different color (by index). <br> <b>Cycle All</b>: each urge cycles through maximize, minimize, and homeostasis by its index — most diverse. <br> <b>All Maximize</b>: every urge wants to increase density of its target color. <br> <b>All Minimize</b>: every urge wants to decrease density of its target color. <br> <b>All Homeostasis</b>: every urge keeps its target color's density at a per-urge set point." />
                                 </p>
                                 <SelectInput name="urge-metric-mode" class="max-w-full!"
                                              v-model="particleLife.metricMode"
                                              :options="[
-                                                 { id: 0, name: 'Mixed Density', category: 'Goal' },
-                                                 { id: 1, name: 'Mixed Fraction', category: 'Goal' },
-                                                 { id: 2, name: 'Density / Fraction', category: 'Goal' },
-                                                 { id: 3, name: 'Cycle All', category: 'Goal' },
+                                                 { id: 0, name: 'Cycle All', category: 'Goal' },
+                                                 { id: 1, name: 'All Maximize', category: 'Goal' },
+                                                 { id: 2, name: 'All Minimize', category: 'Goal' },
+                                                 { id: 3, name: 'All Homeostasis', category: 'Goal' },
                                              ]">
                                 </SelectInput>
                             </div>
@@ -3728,7 +3728,9 @@ export default defineComponent({
                 else t = dormantType // clone pool: dormant
                 arr[k + 4] = t
                 arr[k + 5] = 0 // control
-                arr[k + 6] = 0 // signal
+                // Urges start at signal=1.0 (the normalized mean) so nothing dies on frame 0
+                // and there's no spurious dM kick. Other particles start at 0.
+                arr[k + 6] = (t >= NUM_TYPES && t < NUM_TYPES + numUrges) ? 1.0 : 0
                 arr[k + 7] = -1 // goalB: no secondary goal
             }
         }
@@ -4050,36 +4052,28 @@ export default defineComponent({
             cohesion: particleLife.cohesion,
         }))
 
-        // Per-urge goal (mirrors the shader's urgeGoal): diversity by index k, no extra state.
+        // Per-urge goal (mirrors the shader's urgeGoal): each urge has a target color and a goal mode.
         const urgeGoalFor = (k: number) => {
-            let polarity = 1
-            let useCount = true
+            let mode: number
             switch (((particleLife.metricMode % 4) + 4) % 4) {
-                case 0:
-                    if ((k % 2) !== 0) polarity = -1
-                    break
-                case 1:
-                    if ((k % 2) !== 0) polarity = -1
-                    useCount = false
-                    break
-                case 2:
-                    if ((k % 2) !== 0) { polarity = -1; useCount = false }
-                    break
-                default: {
-                    const quad = Math.floor(k / 2) % 4
-                    if (quad === 1 || quad === 3) polarity = -1
-                    if (quad === 1 || quad === 2) useCount = false
-                    break
-                }
+                case 0: mode = k % 3; break   // cycle all three
+                case 1: mode = 0; break       // all maximize
+                case 2: mode = 1; break       // all minimize
+                default: mode = 2; break      // all homeostasis
             }
-            return { polarity, useCount }
+            let targetValue = 1.0
+            if (mode === 2) {
+                const hash = Math.abs(Math.sin(k * 12.9898 + 78.233) * 43758.5453) % 1
+                targetValue = 0.6 + hash * 0.8
+            }
+            return { mode, targetValue }
         }
         const objectiveLabelFor = (k: number): string => {
             const g = urgeGoalFor(k)
             const n = (k % NUM_TYPES) + 1
-            const verb = g.polarity >= 0 ? 'attract' : 'repel'
-            const metric = g.useCount ? 'density' : 'fraction'
-            return `drive nearby neurons to ${verb} Color ${n} (${metric})`
+            const modeName = ['maximize', 'minimize', 'homeostasis'][g.mode]
+            const targetStr = g.mode === 2 ? ` @ ${g.targetValue.toFixed(2)}` : ''
+            return `${modeName} density of Color ${n}${targetStr}`
         }
 
         // Colour + short objective for the on-canvas marker (reactive; only changes on selection/metric change).

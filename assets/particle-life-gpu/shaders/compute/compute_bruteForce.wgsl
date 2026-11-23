@@ -53,27 +53,27 @@ struct ElectricalOptions {
     cohesion: f32,
 };
 
-// Per-urge goal (see particleComputeForces.wgsl): diversity by index k, no extra buffer fields.
+// Per-urge goal (see particleComputeForces.wgsl): each urge has a target color and a goal mode.
 struct UrgeGoal {
-    polarity: f32,  // +1 attract / -1 repel
-    useCount: u32,  // metric is a raw count when set, else a local fraction
+    mode: u32,        // 0 = maximize density, 1 = minimize density, 2 = homeostasis
+    targetValue: f32, // for homeostasis: the desired normalized metric value (O(1) scale)
 }
 fn urgeGoal(k: u32) -> UrgeGoal {
     let numTypes = options.numTypes;
-    if (numTypes == 0u) { return UrgeGoal(1.0, 1u); }
-    var polarity: f32 = 1.0;
-    var useCount: u32 = 1u;
+    if (numTypes == 0u) { return UrgeGoal(0u, 1.0); }
+    var mode: u32;
     switch (electrical.metricMode % 4u) {
-        case 0u: { if ((k % 2u) != 0u) { polarity = -1.0; } }
-        case 1u: { if ((k % 2u) != 0u) { polarity = -1.0; } useCount = 0u; }
-        case 2u: { if ((k % 2u) != 0u) { polarity = -1.0; useCount = 0u; } }
-        default: {
-            let quad = (k / 2u) % 4u;
-            if ((quad == 1u) || (quad == 3u)) { polarity = -1.0; }
-            if ((quad == 1u) || (quad == 2u)) { useCount = 0u; }
-        }
+        case 0u: { mode = k % 3u; break; } // cycle all three
+        case 1u: { mode = 0u; break; }     // all maximize
+        case 2u: { mode = 1u; break; }     // all minimize
+        default: { mode = 2u; break; }     // all homeostasis
     }
-    return UrgeGoal(polarity, useCount);
+    var targetValue: f32 = 1.0;
+    if (mode == 2u) {
+        let hash = fract(sin(f32(k) * 12.9898 + 78.233) * 43758.5453);
+        targetValue = 0.6 + hash * 0.8;
+    }
+    return UrgeGoal(mode, targetValue);
 }
 
 fn get_interaction(index: u32, numTypes: u32) -> vec3<f32> {
@@ -149,7 +149,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var velocitySum = vec2<f32>(0.0, 0.0);
     var metricCount: f32 = 0.0;
     var metricCountB: f32 = 0.0; // secondary goal target-color count (for merged urges)
-    var matterTotal: f32 = 0.0;
     var drive: f32 = 0.0;      // neuron: signed sum of nearby urges' previous-frame control
     var firing: f32 = 0.0;     // neuron: magnitude of that drive (its "firing activity")
     var cohesionForce = vec2<f32>(0.0, 0.0);
@@ -210,7 +209,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // ---- an urge gathering the metric for ITS OWN goal ------------------------------
         // (no direct urge->matter field: urges act on matter only by driving neurons)
         if (isUrge && oCat == 0u && dist < eR) {
-            matterTotal += 1.0;
             if (typeB == urgeTarget) { metricCount += 1.0; }
             if (hasGoalB && typeB == goalB_target) { metricCountB += 1.0; }
         }
@@ -252,18 +250,34 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         particle.vy += (velocitySum.y + cohesionForce.y) * forceFactor;
 
         if (isUrge) {
-            let M = select(metricCount, select(0.0, metricCount / matterTotal, matterTotal > 0.0), goal.useCount == 1u);
+            // Normalize metric to O(1): mean=1.0 at baseline uniform distribution.
+            let numTypesF = f32(options.numTypes);
+            let area = options.simWidth * options.simHeight;
+            let numMatterApprox = max(f32(options.numParticles) - f32(electrical.numUrges + electrical.numNeurons), 1.0);
+            let eR = max(electrical.urgeRadius, 1.0);
+            let expectedCount = numMatterApprox * 3.14159265 * eR * eR / area / numTypesF;
+
+            let M = metricCount / max(expectedCount, 0.001);
 
             // Combined metric: if a secondary goal exists (merged urge), add its contribution.
             var M_combined = M;
             if (hasGoalB) {
-                let goalB_struct = urgeGoal(goalB_kIdx);
-                let M_B = select(metricCountB, select(0.0, metricCountB / matterTotal, matterTotal > 0.0), goalB_struct.useCount == 1u);
+                let M_B = metricCountB / max(expectedCount, 0.001);
                 M_combined = M + M_B;
             }
 
+            // Learning rule depends on the urge's goal mode:
             let dM = M_combined - particle.signal;
-            var newControl = particle.control + electrical.controlGain * goal.polarity * dM;
+            var newControl: f32;
+            if (goal.mode == 0u) {
+                newControl = particle.control + electrical.controlGain * dM; // maximize
+            } else if (goal.mode == 1u) {
+                newControl = particle.control - electrical.controlGain * dM; // minimize
+            } else {
+                let error = goal.targetValue - M_combined;
+                let targetCtrl = clamp(error, -1.0, 1.0) * electrical.controlMax;
+                newControl = mix(particle.control, targetCtrl, electrical.controlGain); // homeostasis
+            }
             newControl = clamp(newControl, -electrical.controlMax, electrical.controlMax);
             particle.control = newControl;
             particle.signal = mix(particle.signal, M_combined, 0.15);

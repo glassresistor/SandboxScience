@@ -895,29 +895,22 @@ export default defineComponent({
         }
 
         // Per-urge goal (mirrors the GPU shader's urgeGoal)
-        const urgeGoalFor = (k: number): { polarity: number, useCount: boolean } => {
-            let polarity = 1
-            let useCount = true
-            const mode = ((particleLife.metricMode % 4) + 4) % 4
-            switch (mode) {
-                case 0:
-                    if ((k % 2) !== 0) polarity = -1
-                    break
-                case 1:
-                    if ((k % 2) !== 0) polarity = -1
-                    useCount = false
-                    break
-                case 2:
-                    if ((k % 2) !== 0) { polarity = -1; useCount = false }
-                    break
-                default: {
-                    const quad = Math.floor(k / 2) % 4
-                    if (quad === 1 || quad === 3) polarity = -1
-                    if (quad === 1 || quad === 2) useCount = false
-                    break
-                }
+        const urgeGoalFor = (k: number): { mode: number, targetValue: number } => {
+            let mode: number
+            const globalMode = ((particleLife.metricMode % 4) + 4) % 4
+            switch (globalMode) {
+                case 0: mode = k % 3; break   // cycle all three
+                case 1: mode = 0; break       // all maximize
+                case 2: mode = 1; break       // all minimize
+                default: mode = 2; break      // all homeostasis
             }
-            return { polarity, useCount }
+            let targetValue = 1.0
+            if (mode === 2) {
+                // Deterministic pseudo-random in [0.6, 1.4]
+                const hash = Math.abs(Math.sin(k * 12.9898 + 78.233) * 43758.5453) % 1
+                targetValue = 0.6 + hash * 0.8
+            }
+            return { mode, targetValue }
         }
 
         function processRules2D() {
@@ -978,7 +971,7 @@ export default defineComponent({
 
                     let velocityXSum = 0, velocityYSum = 0
                     // Electrical accumulators
-                    let metricCount = 0, matterTotal = 0, drive = 0, cohesionFX = 0, cohesionFY = 0
+                    let metricCount = 0, drive = 0, cohesionFX = 0, cohesionFY = 0
 
                     const isMatterA = catA === 0
                     const isUrgeA = catA === 1
@@ -1035,7 +1028,6 @@ export default defineComponent({
 
                             // ---- 3) Urge gathering metric for its goal ----
                             if (isUrgeA && catB === 0 && distance < eR) {
-                                matterTotal++
                                 if (typeB === urgeTarget) metricCount++
                             }
 
@@ -1083,9 +1075,26 @@ export default defineComponent({
                         // Update electrical state
                         if (isUrgeA) {
                             const goal = urgeGoalFor(kIdx)
-                            const M = goal.useCount ? metricCount : (matterTotal > 0 ? metricCount / matterTotal : 0)
+                            // Normalize metric to O(1): mean=1.0 at baseline uniform
+                            const numTypesF = numColors
+                            const area = gridWidth * gridHeight
+                            const numMatterApprox = Math.max(numParticles - numUrges - numNeurons, 1)
+                            const expectedCount = numMatterApprox * Math.PI * eR * eR / area / numTypesF
+                            const M = metricCount / Math.max(expectedCount, 0.001)
                             const dM = M - signal[indexA]
-                            let newControl = control[indexA] + particleLife.controlGain * goal.polarity * dM
+                            let newControl: number
+                            if (goal.mode === 0) {
+                                // MAXIMIZE density
+                                newControl = control[indexA] + particleLife.controlGain * dM
+                            } else if (goal.mode === 1) {
+                                // MINIMIZE density
+                                newControl = control[indexA] - particleLife.controlGain * dM
+                            } else {
+                                // HOMEOSTASIS: proportional controller toward target
+                                const error = goal.targetValue - M
+                                const targetCtrl = Math.max(-1, Math.min(1, error)) * particleLife.controlMax
+                                newControl = control[indexA] + (targetCtrl - control[indexA]) * particleLife.controlGain
+                            }
                             const cMax = particleLife.controlMax
                             if (newControl > cMax) newControl = cMax
                             if (newControl < -cMax) newControl = -cMax
@@ -1170,7 +1179,7 @@ export default defineComponent({
                     const catA = particleCat(typeA)
 
                     let velocityXSum = 0, velocityYSum = 0
-                    let metricCount = 0, matterTotal = 0, drive = 0, cohesionFX = 0, cohesionFY = 0
+                    let metricCount = 0, drive = 0, cohesionFX = 0, cohesionFY = 0
 
                     const isMatterA = catA === 0
                     const isUrgeA = catA === 1
@@ -1233,7 +1242,6 @@ export default defineComponent({
 
                             // ---- 3) Urge gathering metric for its goal ----
                             if (isUrgeA && catB === 0 && distance < eR) {
-                                matterTotal++
                                 if (typeB === urgeTarget) metricCount++
                             }
 
@@ -1280,9 +1288,26 @@ export default defineComponent({
 
                         if (isUrgeA) {
                             const goal = urgeGoalFor(kIdx)
-                            const M = goal.useCount ? metricCount : (matterTotal > 0 ? metricCount / matterTotal : 0)
+                            // Normalize metric to O(1): mean=1.0 at baseline uniform
+                            const numTypesF = numColors
+                            const area = gridWidth * gridHeight
+                            const numMatterApprox = Math.max(numParticles - numUrges - numNeurons, 1)
+                            const expectedCount = numMatterApprox * Math.PI * eR * eR / area / numTypesF
+                            const M = metricCount / Math.max(expectedCount, 0.001)
                             const dM = M - signal[indexA]
-                            let newControl = control[indexA] + particleLife.controlGain * goal.polarity * dM
+                            let newControl: number
+                            if (goal.mode === 0) {
+                                // MAXIMIZE density
+                                newControl = control[indexA] + particleLife.controlGain * dM
+                            } else if (goal.mode === 1) {
+                                // MINIMIZE density
+                                newControl = control[indexA] - particleLife.controlGain * dM
+                            } else {
+                                // HOMEOSTASIS: proportional controller toward target
+                                const error = goal.targetValue - M
+                                const targetCtrl = Math.max(-1, Math.min(1, error)) * particleLife.controlMax
+                                newControl = control[indexA] + (targetCtrl - control[indexA]) * particleLife.controlGain
+                            }
                             const cMax = particleLife.controlMax
                             if (newControl > cMax) newControl = cMax
                             if (newControl < -cMax) newControl = -cMax
@@ -2332,9 +2357,9 @@ export default defineComponent({
         const objectiveLabelFor = (k: number): string => {
             const g = urgeGoalFor(k)
             const n = (k % numColors) + 1
-            const verb = g.polarity >= 0 ? 'attract' : 'repel'
-            const metric = g.useCount ? 'density' : 'fraction'
-            return `drive nearby neurons to ${verb} Color ${n} (${metric})`
+            const modeName = ['maximize', 'minimize', 'homeostasis'][g.mode]
+            const targetStr = g.mode === 2 ? ` @ ${g.targetValue.toFixed(2)}` : ''
+            return `${modeName} density of Color ${n}${targetStr}`
         }
 
         watch(() => particleLife.isLockedPointer, (value) => {

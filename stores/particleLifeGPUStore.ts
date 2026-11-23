@@ -68,11 +68,11 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
     const numUrges = ref<number>(30) // Number of urge particles (each has its own objective)
     const numNeurons = ref<number>(80) // Number of neuron particles (each is an actuator for one color, driven by nearby urges)
-    const metricMode = ref<number>(0) // goal family: 0 mixed density / 1 mixed fraction / 2 density-fraction / 3 cycle all (per-urge polarity/type varies by index)
+    const metricMode = ref<number>(0) // goal family: 0 = cycle all three per-urge (maximize/minimize/homeostasis), 1 = all maximize, 2 = all minimize, 3 = all homeostasis
     const urgeRadius = ref<number>(45) // Radius over which an urge measures its goal metric & a neuron pushes/pulls its color
     const neuronRadius = ref<number>(30) // Radius (from the neuron) within which an urge drives it
-    const urgeForce = ref<number>(1.2) // Strength of a neuron's field on its color, scaled by the drive from nearby urges
-    const controlGain = ref<number>(0.05) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign
+    const urgeForce = ref<number>(0.2) // Strength of a neuron's field on its color, scaled by the drive from nearby urges (tuned: controlMax*urgeForce ≈ 1.15× F_pair)
+    const controlGain = ref<number>(0.2) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign (tuned for O(1) normalized metric)
     const controlMax = ref<number>(2.0) // Clamp on |control| (+ attract / - repel)
     const neuronInfluence = ref<number>(0.6) // (legacy, unused) strength of a single neuron's vote on an urge's control
     const neuronAuthority = ref<number>(0.4) // (legacy, unused) extra authority gained per nearby neuron
@@ -82,14 +82,14 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
 
     // ---- Urge Cloning system -----------------------------------------------------------
     const isCloningEnabled = ref<boolean>(false) // Master switch for the clone-on-high-metric system
-    const cloneMetricThreshold = ref<number>(0.5) // Metric value above which an urge triggers a clone
+    const cloneMetricThreshold = ref<number>(1.5) // Normalized metric above which an urge triggers a clone (>50% above expected → "highly successful")
     const birthSustainedTicks = ref<number>(2) // Consecutive 500 ms ticks above threshold before a birth (1 = immediately whenever above)
     const cloneImpulse = ref<number>(1500) // Initial velocity magnitude for clones (enough to exit radius, stay in area)
     const numClonePool = ref<number>(100) // Number of dormant slots available for cloning (added to total particle count)
 
     // ---- Urge Lifecycle: Death, Merges & Murders ---------------------------------------
     const isDeathEnabled = ref<boolean>(false) // Starvation death: urge dies when metric stays near zero
-    const deathMetricThreshold = ref<number>(0.05) // Signal below this counts as "starved" (0–2)
+    const deathMetricThreshold = ref<number>(0.4) // Normalized signal below this counts as "genuinely starved" (<60% below expected)
     const deathSustainedTicks = ref<number>(12) // Consecutive 500 ms ticks below threshold before death (12×500 ms ≈ 6 s)
 
     const isMergeEnabled = ref<boolean>(false) // Two urges that stay close merge into one

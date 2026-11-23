@@ -6,7 +6,7 @@
 //   [numTypes, numTypes + numUrges)     -> urges.  local index k = type - numTypes
 //                                         Each urge has its OWN goal, derived deterministically
 //                                         from k (no extra buffer fields): a target color and an
-//                                         objective polarity. Some attract their color, some repel.
+//                                         goal mode (maximize / minimize / homeostasis).
 //   [numTypes+numUrges, TOTAL_TYPES)    -> neurons. local index m = type - numTypes - numUrges
 //                                         target color = m % numTypes  (fixed for its lifetime)
 //
@@ -147,35 +147,34 @@ fn cat(t: u32) -> u32 {
 }
 
 // Per-urge goal, derived deterministically from the urge's local index k so the population is
-// diverse with NO extra buffer fields. metricMode picks the *family* of goals; the index then
-// varies both the objective type and its polarity (attract + / repel −) within that family.
+// diverse with NO extra buffer fields. Each urge has:
+//   - a target color: k % numTypes (each urge acts on a different color)
+//   - a goal mode: 0 = maximize density, 1 = minimize density, 2 = homeostasis (keep at target)
+// metricMode controls the global family: 0 = cycle all three per-urge, 1 = all maximize,
+//   2 = all minimize, 3 = all homeostasis.
 struct UrgeGoal {
-    polarity: f32,  // +1 = wants to attract its color, -1 = wants to repel it
-    useCount: u32,  // metric is a raw count (density) when set, else a local fraction
+    mode: u32,        // 0 = maximize density, 1 = minimize density, 2 = homeostasis
+    targetValue: f32, // for homeostasis: the desired normalized metric value (O(1) scale)
 }
 fn urgeGoal(k: u32) -> UrgeGoal {
     let numTypes = options.numTypes;
-    if (numTypes == 0u) { return UrgeGoal(1.0, 1u); }
-    var polarity: f32 = 1.0;
-    var useCount: u32 = 1u;
+    if (numTypes == 0u) { return UrgeGoal(0u, 1.0); }
+    var mode: u32;
     switch (electrical.metricMode % 4u) {
-        case 0u: { // mix of attract & repel, all by local density
-            if ((k % 2u) != 0u) { polarity = -1.0; }
+        case 0u: { // cycle all three modes across the population
+            mode = k % 3u;
         }
-        case 1u: { // mix of attract & repel, all by local fraction
-            if ((k % 2u) != 0u) { polarity = -1.0; }
-            useCount = 0u;
-        }
-        case 2u: { // attract-by-density / repel-by-fraction
-            if ((k % 2u) != 0u) { polarity = -1.0; useCount = 0u; }
-        }
-        default: { // cycle attract/repel AND density/fraction across the population
-            let quad = (k / 2u) % 4u;
-            if ((quad == 1u) || (quad == 3u)) { polarity = -1.0; }
-            if ((quad == 1u) || (quad == 2u)) { useCount = 0u; }
-        }
+        case 1u: { mode = 0u; break; } // all maximize
+        case 2u: { mode = 1u; break; } // all minimize
+        default: { mode = 2u; break; } // all homeostasis
     }
-    return UrgeGoal(polarity, useCount);
+    // Homeostasis target: deterministic pseudo-random in [0.6, 1.4] based on k
+    var targetValue: f32 = 1.0;
+    if (mode == 2u) {
+        let hash = fract(sin(f32(k) * 12.9898 + 78.233) * 43758.5453);
+        targetValue = 0.6 + hash * 0.8; // [0.6, 1.4]
+    }
+    return UrgeGoal(mode, targetValue);
 }
 
 @group(0) @binding(0) var<storage, read> particlesSource : array<Particle>;
@@ -204,7 +203,7 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     let isUrge = myCat == 1u;
     let isNeuron = myCat == 2u;
 
-    // Per-urge goal: the target color it acts on and the objective polarity/type it wants.
+    // Per-urge goal: the target color it acts on and its goal mode (maximize/minimize/homeostasis).
     let kIdx = myType - options.numTypes;                       // local urge index (valid if isUrge)
     let mIdx = myType - options.numTypes - electrical.numUrges; // local neuron index (valid if isNeuron)
     let goal = urgeGoal(kIdx);
@@ -231,7 +230,6 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     // accumulators used by the electrical layer
     var metricCount: f32 = 0.0;   // this urge's target-color matter within urgeRadius (density metric)
     var metricCountB: f32 = 0.0;  // secondary goal target-color count (for merged urges)
-    var matterTotal: f32 = 0.0;   // all matter within urgeRadius (denominator for the fraction metric)
     var drive: f32 = 0.0;         // neuron: signed sum of nearby urges' previous-frame control
     var firing: f32 = 0.0;        // neuron: magnitude of that drive (its "firing activity")
     var cohesionForce = vec2f(0.0, 0.0);
@@ -308,7 +306,6 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
                 // (There is no direct urge->matter field anymore: urges act on matter ONLY by
                 //  driving neurons, which then push/pull their single color.)
                 if (isUrge && oCat == 0u && dist < eR) {
-                    matterTotal += 1.0;
                     if (oType == urgeTarget) { metricCount += 1.0; }
                     if (hasGoalB && oType == goalB_target) { metricCountB += 1.0; }
                 }
@@ -360,22 +357,43 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
         particle.vy = fma(totalForce.y + cohesionForce.y, forceFactor, particle.vy);
 
         if (isUrge) {
-            // The metric value for this urge's OWN goal, evaluated from the previous frame.
-            let M = select(metricCount, select(0.0, metricCount / matterTotal, matterTotal > 0.0), goal.useCount == 1u);
+            // Normalize metric to O(1): mean=1.0 at baseline uniform distribution.
+            // This makes birth/death thresholds interpretable: >1 = above expected, <1 = below.
+            let numTypesF = f32(options.numTypes);
+            let area = options.simWidth * options.simHeight;
+            let numMatterApprox = max(f32(options.numParticles) - f32(electrical.numUrges + electrical.numNeurons), 1.0);
+            let expectedCount = numMatterApprox * 3.14159265 * eR * eR / area / numTypesF;
+
+            // The metric value for this urge's OWN goal: normalized density of its target color.
+            let M = metricCount / max(expectedCount, 0.001);
 
             // Combined metric: if a secondary goal exists (merged urge), add its contribution.
-            // Same goal → double the metric (stronger). Different goals → sum of both metrics.
             var M_combined = M;
             if (hasGoalB) {
-                let goalB_struct = urgeGoal(goalB_kIdx);
-                let M_B = select(metricCountB, select(0.0, metricCountB / matterTotal, matterTotal > 0.0), goalB_struct.useCount == 1u);
+                // Secondary goal also uses normalized density of ITS target color.
+                let M_B = metricCountB / max(expectedCount, 0.001);
                 M_combined = M + M_B;
             }
 
-            // Hebbian rule toward the goal's polarity: when the metric moves in the direction the
-            // urge wants (dM has the sign of its polarity) it pushes harder; otherwise it backs off.
+            // Learning rule depends on the urge's goal mode:
             let dM = M_combined - particle.signal; // gradient vs the previous frame's stored value
-            var newControl = particle.control + electrical.controlGain * goal.polarity * dM;
+            var newControl: f32;
+            if (goal.mode == 0u) {
+                // MAXIMIZE density: Hebbian with polarity +1.
+                // If metric is rising (dM > 0), reinforce attraction (control increases).
+                newControl = particle.control + electrical.controlGain * dM;
+            } else if (goal.mode == 1u) {
+                // MINIMIZE density: Hebbian with polarity -1.
+                // If metric is rising (dM > 0), reinforce repulsion (control decreases).
+                newControl = particle.control - electrical.controlGain * dM;
+            } else {
+                // HOMEOSTASIS: proportional controller toward the target value.
+                // error = target - M; positive means "too little" → attract,
+                // negative means "too much" → repel. Blend toward the ideal control level.
+                let error = goal.targetValue - M_combined;
+                let targetCtrl = clamp(error, -1.0, 1.0) * electrical.controlMax;
+                newControl = mix(particle.control, targetCtrl, electrical.controlGain);
+            }
             newControl = clamp(newControl, -electrical.controlMax, electrical.controlMax);
 
             particle.control = newControl;

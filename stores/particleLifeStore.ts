@@ -64,11 +64,11 @@ export const useParticleLifeStore = defineStore('particleLife', () => {
     const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
     const numUrges = ref<number>(30) // Number of urge particles
     const numNeurons = ref<number>(80) // Number of neuron particles
-    const metricMode = ref<number>(0) // goal family: 0 mixed density / 1 mixed fraction / 2 density-fraction / 3 cycle all
+    const metricMode = ref<number>(0) // goal family: 0 = cycle all three per-urge (maximize/minimize/homeostasis), 1 = all maximize, 2 = all minimize, 3 = all homeostasis
     const urgeRadius = ref<number>(45) // Radius over which an urge measures its goal metric & a neuron pushes/pulls its color
     const neuronRadius = ref<number>(30) // Radius (from the neuron) within which an urge drives it
-    const urgeForce = ref<number>(1.2) // Strength of a neuron's field on its color, scaled by drive from nearby urges
-    const controlGain = ref<number>(0.05) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign
+    const urgeForce = ref<number>(0.2) // Strength of a neuron's field on its color, scaled by drive from nearby urges (tuned: controlMax*urgeForce ≈ 1.15× F_pair)
+    const controlGain = ref<number>(0.2) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign (tuned for O(1) normalized metric)
     const controlMax = ref<number>(2.0) // Clamp on |control| (+ attract / - repel)
     const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
 
