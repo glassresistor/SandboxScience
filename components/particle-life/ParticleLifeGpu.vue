@@ -4706,18 +4706,13 @@ export default defineComponent({
         // Helper: compute power for a live urge (single scalar)
         const urgePower = (signal: number, control: number): number => signal + 0.1 * Math.abs(control)
 
-        // Helper: kill an urge particle and all live neurons AND sense neurons within neuronRadius
-        // of it (a dying urge takes its local effectors and sensors with it — for consistency).
+        // Helper: kill an urge particle (set to dormant). Neurons and sense neurons are NOT
+        // killed — they remain alive for other urges (or the killer) to acquire.
         // Mutates the particles Float32Array in place. Returns nothing.
-        const killUrgeAndNeurons = (
+        const killUrge = (
             particles: Float32Array,
             urgeBufIdx: number,
-            x: number,
-            y: number,
             dormantType: number,
-            neurons: { idx: number, x: number, y: number }[],
-            senses: { idx: number, x: number, y: number }[],
-            neuronRadius: number,
         ) => {
             const u8 = urgeBufIdx * 8
             particles[u8 + 4] = dormantType // type → dormant sentinel (invisible, inert)
@@ -4726,32 +4721,6 @@ export default defineComponent({
             particles[u8 + 7] = -1 // clear secondary goal
             particles[u8 + 2] = 0 // zero velocity x
             particles[u8 + 3] = 0 // zero velocity y
-
-            const nr2 = neuronRadius * neuronRadius
-            for (const n of neurons) {
-                const dx = n.x - x
-                const dy = n.y - y
-                if (dx * dx + dy * dy <= nr2) {
-                    const n8 = n.idx * 8
-                    particles[n8 + 4] = dormantType // neuron also dies
-                    particles[n8 + 5] = 0
-                    particles[n8 + 6] = 0
-                    particles[n8 + 2] = 0
-                    particles[n8 + 3] = 0
-                }
-            }
-            for (const s of senses) {
-                const dx = s.x - x
-                const dy = s.y - y
-                if (dx * dx + dy * dy <= nr2) {
-                    const s8 = s.idx * 8
-                    particles[s8 + 4] = dormantType // local sensor dies with its urge
-                    particles[s8 + 5] = 0
-                    particles[s8 + 6] = 0
-                    particles[s8 + 2] = 0
-                    particles[s8 + 3] = 0
-                }
-            }
         }
 
         const checkUrgeLifecycle = async () => {
@@ -4836,7 +4805,7 @@ export default defineComponent({
                             newSustainedBelow.set(id, count)
                             if (count >= deathTicks) {
                                 // THIS URGE DIES NOW
-                                killUrgeAndNeurons(particles, u.bufIdx, u.x, u.y, dormantType, neurons, senses, neuronRadius)
+                                killUrge(particles, u.bufIdx, dormantType)
                                 deadBufIdx.add(u.bufIdx)
                                 bufferModified = true
                                 // Clear all tracking for this id
@@ -4885,7 +4854,7 @@ export default defineComponent({
 
                             // Weaker one dies immediately
                             const victim = pA < pB ? urges[a] : urges[b]
-                            killUrgeAndNeurons(particles, victim.bufIdx, victim.x, victim.y, dormantType, neurons, senses, neuronRadius)
+                            killUrge(particles, victim.bufIdx, dormantType)
                             deadBufIdx.add(victim.bufIdx)
                             bufferModified = true
 
@@ -4951,7 +4920,7 @@ export default defineComponent({
                                 particles[s8 + 7] = loser.k // goalB = loser's local urge index
 
                                 // Loser dies along with its neurons
-                                killUrgeAndNeurons(particles, loser.bufIdx, loser.x, loser.y, dormantType, neurons, senses, neuronRadius)
+                                killUrge(particles, loser.bufIdx, dormantType)
                                 deadBufIdx.add(loser.bufIdx)
                                 bufferModified = true
 
@@ -4985,8 +4954,9 @@ export default defineComponent({
                     const neuronR2 = neuronRadius * neuronRadius
 
                     const newSustainedAbove = new Map<number, number>()
-                    const readyToClone: { k: number, bufIdx: number, x: number, y: number, signal: number, neuronsInRange: NeuronEntry[] }[] = []
+                    const readyToClone: { k: number, bufIdx: number, x: number, y: number, signal: number, neuronsInRange: NeuronEntry[], sensesInRange: SenseEntry[] }[] = []
 
+                    const senseR2 = particleLife.senseRadius * particleLife.senseRadius
                     for (const u of urges) {
                         if (deadBufIdx.has(u.bufIdx))
                             continue // skip dead urges
@@ -4995,7 +4965,7 @@ export default defineComponent({
                         // genuinely high-metric ("highly successful") urges recover past the threshold
                         // fast enough to replicate again — marginal ones stall or starve.
 
-                        // Count neurons within neuronRadius of this urge (they are cloned along with it)
+                        // Collect motor neurons within neuronRadius (cloned along with the urge)
                         const inRange: NeuronEntry[] = []
                         for (const n of neurons) {
                             const dx = n.x - u.x
@@ -5003,13 +4973,21 @@ export default defineComponent({
                             if (dx * dx + dy * dy <= neuronR2)
                                 inRange.push(n)
                         }
+                        // Collect sense neurons within senseRadius (also cloned)
+                        const sensesInRange: SenseEntry[] = []
+                        for (const s of senses) {
+                            const dx = s.x - u.x
+                            const dy = s.y - u.y
+                            if (dx * dx + dy * dy <= senseR2)
+                                sensesInRange.push(s)
+                        }
 
                         if (u.signal > threshold) {
                             const prev = sustainedAboveThreshold.get(u.k) ?? 0
                             const count = prev + 1
                             newSustainedAbove.set(u.k, count)
                             if (count >= birthTicks) {
-                                readyToClone.push({ k: u.k, bufIdx: u.bufIdx, x: u.x, y: u.y, signal: u.signal, neuronsInRange: inRange })
+                                readyToClone.push({ k: u.k, bufIdx: u.bufIdx, x: u.x, y: u.y, signal: u.signal, neuronsInRange: inRange, sensesInRange })
                             }
                         }
                     }
@@ -5022,7 +5000,7 @@ export default defineComponent({
                     // climbs back fast and keeps replicating, a marginal one does not.
                     let slotPtr = 0
                     for (const urge of readyToClone) {
-                        const totalNeeded = 1 + urge.neuronsInRange.length
+                        const totalNeeded = 1 + urge.neuronsInRange.length + urge.sensesInRange.length
                         if (slotPtr + totalNeeded > dormantSlots.length)
                             break // not enough pool remaining
 
@@ -5052,7 +5030,7 @@ export default defineComponent({
 
                         clonedUrges.add(urge.k)
 
-                        // --- Clone ALL neurons in range of this urge ---
+                        // --- Clone ALL motor neurons in range of this urge ---
                         for (const srcNeuron of urge.neuronsInRange) {
                             if (slotPtr >= dormantSlots.length)
                                 break
@@ -5067,6 +5045,22 @@ export default defineComponent({
                             particles[n8 + 1] = particles[s8 + 1] + relY * 0.5
                             particles[n8 + 2] = particles[s8 + 2] * 0.7
                             particles[n8 + 3] = particles[s8 + 3] * 0.7
+                        }
+                        // --- Clone ALL sense neurons in range of this urge ---
+                        for (const srcSense of urge.sensesInRange) {
+                            if (slotPtr >= dormantSlots.length)
+                                break
+                            const ssSlotIdx = dormantSlots[slotPtr++]
+                            const ss8 = ssSlotIdx * 8
+                            particles[ss8 + 4] = NUM_TYPES + numUrges + numNeurons + srcSense.localS
+                            particles[ss8 + 5] = 0
+                            particles[ss8 + 6] = 0
+                            const relX = srcSense.x - urge.x
+                            const relY = srcSense.y - urge.y
+                            particles[ss8] = particles[s8] + relX * 0.5
+                            particles[ss8 + 1] = particles[s8 + 1] + relY * 0.5
+                            particles[ss8 + 2] = particles[s8 + 2] * 0.7
+                            particles[ss8 + 3] = particles[s8 + 3] * 0.7
                         }
                         bufferModified = true
                     }
