@@ -28,6 +28,9 @@ struct Particle {
     control : f32,
     signal  : f32,
     goalB   : f32, // secondary goal index (local k), -1 if none
+    driveTarget : f32, // brain: desired metric value (homeostasis setpoint)
+    driveScale  : f32, // brain: error normalisation (sensitivity)
+    driveGain   : f32, // brain: weight of this urge's error into the network
 }
 
 @group(0) @binding(0) var<storage, read> oldParticleBuffer: array<Particle>;

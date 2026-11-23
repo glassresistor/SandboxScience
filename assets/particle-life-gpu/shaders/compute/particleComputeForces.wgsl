@@ -65,6 +65,9 @@ struct Particle {
     control : f32, // urge: learned attract(+) / repel(-) intent — read by nearby neurons. Persists.
     signal  : f32, // urge: prior-frame objective metric (for dM/dt). neuron: firing activity. Persists.
     goalB   : f32, // secondary goal index (local k), -1 if none. Set on merge.
+    driveTarget : f32, // brain: desired metric value (homeostasis setpoint)
+    driveScale  : f32, // brain: error normalisation (sensitivity)
+    driveGain   : f32, // brain: weight of this urge's error into the network
 }
 struct ElectricalOptions {
     enabled: u32,        // master switch for the whole electrical layer

@@ -160,18 +160,18 @@
                             </span>
                         </div>
 
-                        <!-- brain drive model: this urge's target / scale / gain (stable per index) -->
+                        <!-- brain drive model: live per-particle target / scale / gain (mutates over time) -->
                         <div
-                            v-if="brainDriveFor(s)"
+                            v-if="s.driveTarget !== undefined"
                             class="mt-1.5 flex items-center gap-1.5 rounded bg-indigo-500/5 px-1.5 py-1 ring-1 ring-indigo-500/20"
-                            title="Brain drive model: the recurrent network reads this urge's error = (target - metric) / scale, weighted by gain."
+                            title="Brain drive model (live): error = (target - metric) / scale × gain. These values drift slowly via mutation."
                         >
                             <span class="i-tabler-brain shrink-0 text-indigo-300" />
                             <span class="text-[0.62rem] uppercase tracking-wide font-mono text-indigo-300/80">drive</span>
                             <span class="ml-auto flex items-center gap-2 font-mono tabular-nums text-[0.7rem]">
-                                <span class="text-indigo-200" title="Target: the metric value this urge wants to reach (homeostasis setpoint)">t&nbsp;{{ fmt(brainDriveFor(s)!.target) }}</span>
-                                <span class="text-sky-300" title="Scale: error normalisation — smaller = more sensitive to deviation">s&nbsp;{{ fmt(brainDriveFor(s)!.scale) }}</span>
-                                <span class="text-emerald-300" title="Gain: how strongly this urge's error feeds the brain (its importance)">g&nbsp;{{ fmt(brainDriveFor(s)!.gain) }}</span>
+                                <span class="text-indigo-200" title="Target: the metric value this urge wants to reach (homeostasis setpoint)">t&nbsp;{{ fmt(s.driveTarget) }}</span>
+                                <span class="text-sky-300" title="Scale: error normalisation — smaller = more sensitive to deviation">s&nbsp;{{ fmt(s.driveScale) }}</span>
+                                <span class="text-emerald-300" title="Gain: how strongly this urge's error feeds the brain (its importance)">g&nbsp;{{ fmt(s.driveGain) }}</span>
                             </span>
                         </div>
                     </li>
@@ -202,6 +202,9 @@ export interface UrgeStat {
     cloneOf?: number // parent urge k (only set when isClone)
     cloneId?: number // per-parent sequential clone number (1 = first clone of that parent)
     goalB?: number // secondary goal index (local k) from a merge; undefined if none
+    driveTarget?: number // brain: desired metric value (homeostasis setpoint), mutates over time
+    driveScale?: number // brain: error normalisation (sensitivity), mutates over time
+    driveGain?: number // brain: weight of this urge's error into the network, mutates over time
 }
 
 // One urge's brain drive model parameters (the per-urge "constitution" the recurrent

@@ -35,6 +35,9 @@ struct Particle {
     control : f32,
     signal  : f32,
     goalB   : f32,
+    driveTarget : f32, // brain: desired metric value (homeostasis setpoint)
+    driveScale  : f32, // brain: error normalisation (sensitivity)
+    driveGain   : f32, // brain: weight of this urge's error into the network
 }
 struct Camera {
     centerX: f32,
