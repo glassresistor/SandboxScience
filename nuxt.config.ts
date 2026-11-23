@@ -1,5 +1,10 @@
 import { appDescription, appName, appURL } from './constants/index'
 
+// Compute the base path for static assets (GitHub Pages project site).
+// NUXT_APP_BASE_URL is set in CI (e.g. "/particle-life/"); defaults to "/" locally.
+const appBase = (process.env.NUXT_APP_BASE_URL || '/').replace(/\/+$/, '')
+const assetPath = (file: string) => `${appBase}/${file}`
+
 export default defineNuxtConfig({
     devtools: {
         enabled: false,
@@ -37,13 +42,13 @@ export default defineNuxtConfig({
                 lang: 'en',
             },
             link: [
-                { rel: 'icon', href: '/favicon.ico?v=1', sizes: 'any' },
-                { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png?v=1' },
-                { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png?v=1' },
-                { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png?v=1' },
-                { rel: 'manifest', href: '/site.webmanifest?v=1' },
-                { rel: 'mask-icon', type: 'image/svg+xml', href: '/safari-pinned-tab.svg?v=1', color: '#264653' },
-                { rel: 'shortcut icon', href: '/favicon.ico?v=1' },
+                { rel: 'icon', href: assetPath('favicon.ico?v=1'), sizes: 'any' },
+                { rel: 'icon', type: 'image/png', sizes: '16x16', href: assetPath('favicon-16x16.png?v=1') },
+                { rel: 'icon', type: 'image/png', sizes: '32x32', href: assetPath('favicon-32x32.png?v=1') },
+                { rel: 'apple-touch-icon', sizes: '180x180', href: assetPath('apple-touch-icon.png?v=1') },
+                { rel: 'manifest', href: assetPath('site.webmanifest?v=1') },
+                { rel: 'mask-icon', type: 'image/svg+xml', href: assetPath('safari-pinned-tab.svg?v=1'), color: '#264653' },
+                { rel: 'shortcut icon', href: assetPath('favicon.ico?v=1') },
             ],
             meta: [
                 { name: 'author', content: 'DicSo92' },

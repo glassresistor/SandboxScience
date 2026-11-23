@@ -137,6 +137,8 @@ fn vertexMain(
 @fragment
 fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     let dist_sq = dot(in.offset, in.offset);
+    // fwidth must be called from uniform control flow — compute before any per-fragment branch.
+    let edge_width = fwidth(dist_sq);
     let dist = sqrt(dist_sq);
 
     // ---- Debug dotted circle mode (urges/neurons when isDebugConnections is on) ----
@@ -177,7 +179,6 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     // Sense-neuron band (for the accent border): ends at the dormant entry, starts numSenseNeurons before.
     let senseBaseF = f32(u32(arrayLength(&colors)) - 1u) - f32(options.numSenseNeurons);
     let isSenseBorder = in.particleType >= senseBaseF && in.particleType < f32(u32(arrayLength(&colors)) - 1u);
-    let edge_width = fwidth(dist_sq);
     var alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
 
     // Draw a thin border ring for electrical particles (urges & motor neurons: solid white,

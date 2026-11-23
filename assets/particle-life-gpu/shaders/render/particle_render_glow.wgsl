@@ -184,14 +184,16 @@ fn fragmentGlow(in: VertexOutput) -> @location(0) vec4f {
 
 @fragment
 fn fragmentCircle(in: VertexOutput) -> @location(0) vec4f {
+    // fwidth must be called from uniform control flow — compute before any per-fragment branch.
+    let dist_sq = dot(in.offset, in.offset);
+    let edge_width = fwidth(dist_sq);
+
     // Debug dotted circle takes priority
     if (in.isDebugCircle == 1.0) {
         return debug_circle_fragment(in);
     }
 
-    let dist_sq = dot(in.offset, in.offset);
     let dist = sqrt(dist_sq);
-    let edge_width = fwidth(dist_sq);
     var alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
 
     // Border for electrical particles: urges & motor neurons get the solid white border (as today);
