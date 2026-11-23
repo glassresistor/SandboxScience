@@ -5127,6 +5127,10 @@ export default defineComponent({
                                 // Combine goals: survivor now pursues both its own goal and the loser's.
                                 // If same k → double metric strength. If different → dual objective.
                                 particles[s8 + 7] = loser.k // goalB = loser's local urge index
+                                const l8 = loser.bufIdx * 11
+                                particles[s8 + 8] = (particles[s8 + 8] + particles[l8 + 8]) * 0.5 // driveTarget: blended
+                                particles[s8 + 9] = (particles[s8 + 9] + particles[l8 + 9]) * 0.5 // driveScale: blended
+                                particles[s8 + 10] = (particles[s8 + 10] + particles[l8 + 10]) * 0.5 // driveGain: blended
 
                                 // Loser dies along with its neurons
                                 killUrge(particles, loser.bufIdx, dormantType)
@@ -5222,6 +5226,11 @@ export default defineComponent({
                         particles[s8 + 5] = 0
                         particles[s8 + 6] = halfMetric // child inherits the other half of the parent's metric
                         particles[s8 + 7] = -1 // goalB: clones start with no secondary goal
+                        // Clone inherits parent's drive params with small mutation (evolutionary drift)
+                        const pDriveBase = urge.bufIdx * 11
+                        particles[s8 + 8] = Math.min(3.0, Math.max(0.1, particles[pDriveBase + 8] + (Math.random() - 0.5) * 0.1))
+                        particles[s8 + 9] = Math.min(2.0, Math.max(0.05, particles[pDriveBase + 9] + (Math.random() - 0.5) * 0.06))
+                        particles[s8 + 10] = Math.min(3.0, Math.max(0.0, particles[pDriveBase + 10] + (Math.random() - 0.5) * 0.06))
 
                         const angle = Math.random() * Math.PI * 2
                         const offsetDist = urgeRadius * 0.3 + Math.random() * urgeRadius * 0.3

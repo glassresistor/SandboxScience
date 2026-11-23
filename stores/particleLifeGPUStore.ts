@@ -87,7 +87,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const isDebugConnections = ref<boolean>(false) // Debug: draw dotted lines between urges and the neurons wired to them
 
     // ---- Urge Cloning system -----------------------------------------------------------
-    const isCloningEnabled = ref<boolean>(false) // Master switch for the clone-on-high-metric system
+    const isCloningEnabled = ref<boolean>(true) // Master switch for the clone-on-high-metric system
     const cloneMetricThreshold = ref<number>(1.5) // Normalized metric above which an urge triggers a clone (>50% above expected → "highly successful")
     const birthSustainedTicks = ref<number>(2) // Consecutive 500 ms ticks above threshold before a birth (1 = immediately whenever above)
     const cloneImpulse = ref<number>(1500) // Initial velocity magnitude for clones (enough to exit radius, stay in area)
@@ -98,7 +98,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const deathMetricThreshold = ref<number>(0.4) // Normalized signal below this counts as "genuinely starved" (<60% below expected)
     const deathSustainedTicks = ref<number>(12) // Consecutive 500 ms ticks below threshold before death (12×500 ms ≈ 6 s)
 
-    const isMergeEnabled = ref<boolean>(false) // Two urges that stay close merge into one
+    const isMergeEnabled = ref<boolean>(true) // Two urges that stay close merge into one
     const mergeRadius = ref<number>(27) // World-unit distance for "close" (default ≈ urgeRadius × 0.6)
     const mergeSustainedTicks = ref<number>(8) // Consecutive ticks of proximity before merge (8×500 ms ≈ 4 s)
 
