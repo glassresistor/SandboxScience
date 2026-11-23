@@ -40,6 +40,7 @@ struct ElectricalOptions {
     neuronAuthority: f32,
     maxAuthority: f32,
     cohesion: f32,
+    numSenseNeurons: u32,// needed for the dormant sentinel (sense band sits between motor neurons and the pool)
 };
 struct Particle {
     x : f32,
@@ -85,11 +86,12 @@ fn emitConnections(@builtin(global_invocation_id) id: vec3u) {
     }
     if (!found) { return; }
 
-    // Neurons are the type codes at/above numTypes + numUrges; they too are scattered, so we
-    // scan every particle and skip anything that is not a neuron.
+    // Motor neurons are the type codes in [numTypes+numUrges, +numNeurons); they too are
+    // scattered, so we scan every particle and skip anything that is not a motor neuron.
     let neuronBase = f32(options.numTypes + electrical.numUrges);
-    // Dormant clone-pool slots (type == numTypes + numUrges + numNeurons) are not neurons.
-    let dormantType = f32(options.numTypes + electrical.numUrges + electrical.numNeurons);
+    // Sense neurons (next band) and dormant clone-pool slots (type == the full sentinel)
+    // are NOT motor neurons: they do not get urge->neuron connection lines.
+    let dormantType = f32(options.numTypes + electrical.numUrges + electrical.numNeurons + electrical.numSenseNeurons);
     let halfW = options.simWidth * 0.5;
     let halfH = options.simHeight * 0.5;
     let wrapping = options.isWallWrap == 1u;

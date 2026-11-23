@@ -225,6 +225,39 @@
                                         :min="0" :max="3" :step="0.01" v-model="particleLife.cohesion">
                             </RangeInput>
 
+                            <!-- Sense Neurons: sensors that perceive one target color (no actuation) -->
+                            <template v-if="particleLife.isElectricalEnabled">
+                                <hr border-gray-500 my-2>
+                                <p underline text-gray-300 class="-mt-0.5" mb-1>Sense Neurons :</p>
+                                <RangeInput input label="Sense Count"
+                                            tooltip="Number of sense neuron particles (sensors). Each senses EXACTLY ONE color = index % species and stores its perception in the particle's signal (magnitude 0–1) and control (bearing, radians) fields. They never push or pull matter."
+                                            :min="0" :max="2000" :step="1" v-model="particleLife.numSenseNeurons">
+                                </RangeInput>
+                                <RangeInput input label="Sense Radius" mt-2
+                                            tooltip="Perception radius (world units) shared by all three senses: sight cone range, smell/sound scan disk."
+                                            :min="4" :max="160" :step="1" v-model="particleLife.senseRadius">
+                                </RangeInput>
+                                <RangeInput input label="Sight Cone Half-Angle" mt-2
+                                            tooltip="Half-angle of the sight cone in the direction of motion. Sight only counts target-color matter inside this forward cone (magnitude only, no bearing)."
+                                            :min="1" :max="90" :step="1" v-model="particleLife.senseConeHalfAngleDeg">
+                                </RangeInput>
+                                <div flex items-center justify-between gap-2 mt-2>
+                                    <p class="w-1/3 text-2sm shrink-0">
+                                        Sense Mode
+                                        <TooltipInfo container="#mainContainer" tooltip="Which sense each sense neuron uses. <br> <b>Cycle All</b>: senses cycle sight / smell / sound by index — a diverse population. <br> <b>All Sight</b>: forward cone, magnitude only (nothing behind is seen). <br> <b>All Smell</b>: bearing toward the NEAREST high-density cluster of the target color (near-biased weighting). <br> <b>All Sound</b>: bearing + loudness with NO far/near discrimination (uniform weight)." />
+                                    </p>
+                                    <SelectInput name="sense-mode" class="max-w-full!"
+                                                 v-model="particleLife.senseMode"
+                                                 :options="[
+                                                     { id: 0, name: 'Cycle All', category: 'Sense' },
+                                                     { id: 1, name: 'All Sight', category: 'Sense' },
+                                                     { id: 2, name: 'All Smell', category: 'Sense' },
+                                                     { id: 3, name: 'All Sound', category: 'Sense' },
+                                                 ]">
+                                    </SelectInput>
+                                </div>
+                            </template>
+
                             <hr border-gray-500 my-2>
                             <div flex items-center justify-between gap-2 mb-1>
                                 <p class="w-2/3 text-2sm">
@@ -248,7 +281,7 @@
                                             :min="200" :max="5000" :step="50" v-model="particleLife.cloneImpulse" mt-1>
                                 </RangeInput>
                                 <RangeInput input label="Clone Pool Size"
-                                            tooltip="Number of dormant slots reserved for cloning. Each clone permanently consumes one slot. Total particles = matter + urges + neurons + pool. Changing this re-labels the population."
+                                            tooltip="Number of dormant slots reserved for cloning. Each clone permanently consumes one slot. Total particles = matter + urges + neurons + sense + pool. Changing this re-labels the population."
                                             :min="0" :max="1000" :step="10" v-model="particleLife.numClonePool" mt-1>
                                 </RangeInput>
                             </template>
@@ -745,8 +778,8 @@ export default defineComponent({
         let forceFactor: number = particleLife.forceFactor // Adjust the overall force applied between particles (can't be 0)
         let frictionFactor: number = particleLife.frictionFactor // Slow down the particles (0 to 1, where 0 is no friction)
         let NUM_PARTICLES: number = particleLife.numParticles
-        // The matter count the user actually asked for. Special particles (urges/neurons) and the
-        // dormant clone pool are ADDED on top of this, so growing/shrinking the pool never steals
+        // The matter count the user actually asked for. Special particles (urges/neurons/sense)
+        // and the dormant clone pool are ADDED on top of this, so growing/shrinking the pool never steals
         // slots from real matter (which previously made ~numClonePool matter particles invisible).
         let baseMatterCount: number = NUM_PARTICLES
         let NEW_NUM_PARTICLES: number = NUM_PARTICLES
@@ -757,10 +790,11 @@ export default defineComponent({
         // Quantum / electrical layer counts (each urge/neuron is a distinct type above the matter range)
         let numUrges: number = particleLife.numUrges
         let numNeurons: number = particleLife.numNeurons
+        let numSenseNeurons: number = particleLife.numSenseNeurons // sense neurons (sensors; one target color each)
         let numClonePool: number = particleLife.numClonePool // dormant slots for the cloning system
-        // Tracks the non-pool particle count (matter + urges + neurons) after the last successful
-        // resize. Used to detect pool-only resizes at execution time (robust against watcher ordering).
-        let lastNonPoolCount: number = baseMatterCount + numUrges + numNeurons
+        // Tracks the non-pool particle count (matter + urges + neurons + sense neurons) after the last
+        // successful resize. Used to detect pool-only resizes at execution time (robust against watcher ordering).
+        let lastNonPoolCount: number = baseMatterCount + numUrges + numNeurons + numSenseNeurons
         let isParticleGlow: boolean = particleLife.isParticleGlow // Enable glow effect for the particles
         let isDebugConnections: boolean = particleLife.isDebugConnections // Debug: draw urge<->neuron dotted lines
         let isAdditiveBlending = particleLife.isAdditiveBlending // Use additive blending for rendering particles
@@ -1448,7 +1482,7 @@ export default defineComponent({
             // Do this SYNCHRONOUSLY, before initParticles()/createBuffers() run, so every buffer
             // is created at the final size. (An async resize here would read back and rebuild the
             // particle buffers on frame 1, racing the render pass and leaving it black.)
-            NUM_PARTICLES = baseMatterCount + numUrges + numNeurons + numClonePool
+            NUM_PARTICLES = baseMatterCount + numUrges + numNeurons + numSenseNeurons + numClonePool
             NEW_NUM_PARTICLES = NUM_PARTICLES
             if (NUM_PARTICLES !== particleLife.numParticles) particleLife.numParticles = NUM_PARTICLES
             // Main interaction matrix: (numColors+2)×(numColors+2) — matter + urge + neuron rows/cols.
@@ -1859,7 +1893,8 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         const updateElectricalOptionsBuffer = () => {
-            const data = new ArrayBuffer(56)
+            // 68 bytes: the original 56 + sense-neuron fields at 52/56/60/64 (see ElectricalOptions in the shaders)
+            const data = new ArrayBuffer(68)
             const v = new DataView(data)
             v.setUint32(0, particleLife.isElectricalEnabled ? 1 : 0, true)
             v.setUint32(4, particleLife.metricMode, true)
@@ -1874,6 +1909,11 @@ export default defineComponent({
             v.setFloat32(40, particleLife.neuronAuthority, true)
             v.setFloat32(44, particleLife.maxAuthority, true)
             v.setFloat32(48, particleLife.cohesion, true)
+            // Sense-neuron fields (must match the WGSL ElectricalOptions struct field order)
+            v.setUint32(52, numSenseNeurons, true)
+            v.setFloat32(56, particleLife.senseRadius, true)
+            v.setFloat32(60, particleLife.senseConeHalfAngleDeg * Math.PI / 180, true) // radians
+            v.setUint32(64, particleLife.senseMode, true)
 
             if (!electricalOptionsBuffer) {
                 electricalOptionsBuffer = device.createBuffer({
@@ -2117,7 +2157,10 @@ export default defineComponent({
             }
         }
         const updateSimOptionsBuffer = () => {
-            const simOptionsData = new ArrayBuffer(96) // 84 + numUrges + neuronRadius + isDebugConnections
+            // 104 bytes: core (84) + render fields numUrges/neuronRadius/isDebugConnections (84/88/92)
+            // + numSenseNeurons (96, splits motor vs sense in the render shaders)
+            // + senseRadius (100, world-unit radius for the sense debug dotted circle)
+            const simOptionsData = new ArrayBuffer(104)
             const simOptionsView = new DataView(simOptionsData)
             simOptionsView.setFloat32(0, SIM_WIDTH, true)
             simOptionsView.setFloat32(4, SIM_HEIGHT, true)
@@ -2145,6 +2188,8 @@ export default defineComponent({
             simOptionsView.setUint32(84, numUrges, true)
             simOptionsView.setFloat32(88, Math.max(particleLife.neuronRadius, 1), true)
             simOptionsView.setUint32(92, isDebugConnections ? 1 : 0, true)
+            simOptionsView.setUint32(96, numSenseNeurons, true)
+            simOptionsView.setFloat32(100, particleLife.senseRadius, true)
 
             if (!simOptionsBuffer) {
                 simOptionsBuffer = device.createBuffer({
@@ -2157,7 +2202,7 @@ export default defineComponent({
             } else if (isEraseCompletionPending) {
                 // Skip writing numParticles during erase to avoid conflicts with GPU-side copyBufferToBuffer
                 device.queue.writeBuffer(simOptionsBuffer, 0, simOptionsData, 0, 20)
-                device.queue.writeBuffer(simOptionsBuffer, 24, simOptionsData, 24, 56)
+                device.queue.writeBuffer(simOptionsBuffer, 24, simOptionsData, 24, 80)
             } else {
                 device.queue.writeBuffer(simOptionsBuffer, 0, simOptionsData)
             }
@@ -3328,7 +3373,7 @@ export default defineComponent({
         const setNewNumParticles = (newCount: number) => {
             // The particle-count slider sets the MATTER count; urges/neurons/clone pool are added on top.
             baseMatterCount = newCount
-            NEW_NUM_PARTICLES = newCount + numUrges + numNeurons + numClonePool
+            NEW_NUM_PARTICLES = newCount + numUrges + numNeurons + numSenseNeurons + numClonePool
             isUpdateNumParticlesPending = true
         }
         const updateNumParticles = async (newCount: number) => {
@@ -3345,10 +3390,10 @@ export default defineComponent({
                 const oldParticles = new Float32Array(oldParticlesData)
                 initialParticles = new Float32Array(newCount * 8)
 
-                // Detect pool-only resize: the non-pool count (matter+urges+neurons) is unchanged.
-                // This is robust against watcher ordering — if matter/urges/neurons also changed,
+                // Detect pool-only resize: the non-pool count (matter+urges+neurons+sense) is unchanged.
+                // This is robust against watcher ordering — if matter/urges/neurons/sense also changed,
                 // lastNonPoolCount won't match and we fall through to the full relabel path.
-                const currentNonPool = baseMatterCount + numUrges + numNeurons
+                const currentNonPool = baseMatterCount + numUrges + numNeurons + numSenseNeurons
                 const isPoolOnly = (currentNonPool === lastNonPoolCount)
 
                 if (isPoolOnly) {
@@ -3356,9 +3401,9 @@ export default defineComponent({
                     // The spatial sort scatters particles throughout the buffer, so we CANNOT use
                     // index-based layout. Instead:
                     //   Grow  → keep all old data, append new dormant pool entries at the tail.
-                    //   Shrink → keep ALL non-dormant particles (matter/urges/neurons/clones),
+                    //   Shrink → keep ALL non-dormant particles (matter/urges/neurons/sense/clones),
                     //             then fill remaining slots with dormants. Never drop a real particle.
-                    const dormantType = NUM_TYPES + numUrges + numNeurons
+                    const dormantType = NUM_TYPES + numUrges + numNeurons + numSenseNeurons
 
                     if (newCount > oldCount) {
                         // Grow: copy everything, append new dormant particles at the end.
@@ -3436,7 +3481,7 @@ export default defineComponent({
                 }
 
                 NUM_PARTICLES = newCount
-                lastNonPoolCount = baseMatterCount + numUrges + numNeurons
+                lastNonPoolCount = baseMatterCount + numUrges + numNeurons + numSenseNeurons
                 // Keep the slider in sync only when the change came from the matter slider;
                 // pool/urge/neuron-driven resizes must not clobber the user's matter count.
                 if (newCount === NEW_NUM_PARTICLES && !isPoolOnly) particleLife.numParticles = newCount
@@ -3500,8 +3545,10 @@ export default defineComponent({
             await device.queue.onSubmittedWorkDone()
             try {
                 // No matrix resize needed: the main matrix has fixed urge/neuron rows regardless of count.
+                // (Sense neurons do NOT get their own matrix row — they ride the neuron row for drift.)
                 numUrges = particleLife.numUrges
                 numNeurons = particleLife.numNeurons
+                numSenseNeurons = particleLife.numSenseNeurons
                 updateAllInteractionBuffers() // rebuild the GPU buffer before relabeling
                 await relabelPopulation()
                 colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
@@ -3662,11 +3709,12 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
-        // Build a full color table covering matter + urges + neurons + dormant so the render pass can
-        // look up colors[u32(particleType)] for every type. Matter uses the chosen palette;
-        // urges are a cyan->white ramp, neurons a magenta->orange ramp, dormant is invisible (alpha=0).
+        // Build a full color table covering matter + urges + motor neurons + sense neurons + dormant
+        // so the render pass can look up colors[u32(particleType)] for every type. Matter uses the
+        // chosen palette; urges are a cyan->white ramp, motor neurons a red-orange->orange ramp,
+        // sense neurons a cool cyan->magenta ramp (distinct from both), dormant is invisible (alpha=0).
         function generateExtendedColors(paletteId: number): Float32Array {
-            const total = NUM_TYPES + numUrges + numNeurons + 1 // +1 for the dormant type entry
+            const total = NUM_TYPES + numUrges + numNeurons + numSenseNeurons + 1 // +1 for the dormant type entry
             const out = new Float32Array(total * 4)
             const base = generateColors(paletteId, NUM_TYPES)
             out.set(base.subarray(0, Math.min(base.length, NUM_TYPES * 4)), 0)
@@ -3684,18 +3732,29 @@ export default defineComponent({
                 out[(NUM_TYPES + numUrges + m) * 4 + 2] = 0.15 * (1 - t)
                 out[(NUM_TYPES + numUrges + m) * 4 + 3] = 1
             }
+            for (let s = 0; s < numSenseNeurons; s++) {
+                const t = numSenseNeurons <= 1 ? 0 : s / (numSenseNeurons - 1)
+                // Cool cyan -> magenta ramp: clearly distinct from urges (light blue->white)
+                // and motor neurons (red-orange->orange), so sensors read as their own class.
+                out[(NUM_TYPES + numUrges + numNeurons + s) * 4]     = 0.10 + 0.55 * t
+                out[(NUM_TYPES + numUrges + numNeurons + s) * 4 + 1] = 0.85 - 0.60 * t
+                out[(NUM_TYPES + numUrges + numNeurons + s) * 4 + 2] = 0.95
+                out[(NUM_TYPES + numUrges + numNeurons + s) * 4 + 3] = 1
+            }
             // Dormant type: invisible (alpha=0) — clone pool slots when not activated
-            const dormantIdx = NUM_TYPES + numUrges + numNeurons
+            const dormantIdx = NUM_TYPES + numUrges + numNeurons + numSenseNeurons
             out[dormantIdx * 4] = 0; out[dormantIdx * 4 + 1] = 0; out[dormantIdx * 4 + 2] = 0; out[dormantIdx * 4 + 3] = 0
             return out
         }
-        // Assign every particle a type according to the matter/urge/neuron/clone-pool layout and
-        // reset its electrical state.
-        // Layout: [0, matterCount) matter (cycled colors), then urges, then neurons, then clone pool.
-        // Clone pool particles get DORMANT_TYPE = NUM_TYPES + numUrges + numNeurons (invisible, no forces).
+        // Assign every particle a type according to the matter/urge/neuron/sense/clone-pool layout
+        // and reset its electrical state.
+        // Layout: [0, matterCount) matter (cycled colors), then urges, then motor neurons,
+        // then sense neurons, then clone pool.
+        // Clone pool particles get DORMANT_TYPE = NUM_TYPES + numUrges + numNeurons + numSenseNeurons
+        // (invisible, no forces).
         function applyTypeLayout(arr: Float32Array): void {
-            const dormantType = NUM_TYPES + numUrges + numNeurons
-            // Layout is [matterCount matter][numUrges urges][numNeurons neurons][numClonePool pool]
+            const dormantType = NUM_TYPES + numUrges + numNeurons + numSenseNeurons
+            // Layout is [matterCount matter][numUrges urges][numNeurons neurons][numSenseNeurons sense][numClonePool pool]
             // and matterCount is the user's base count — the buffer was sized to hold all of it.
             const matterCount = Math.min(baseMatterCount, NUM_PARTICLES)
             for (let i = 0; i < NUM_PARTICLES; i++) {
@@ -3704,11 +3763,13 @@ export default defineComponent({
                 if (i < matterCount) t = i % NUM_TYPES
                 else if (i < matterCount + numUrges) t = NUM_TYPES + (i - matterCount)
                 else if (i < matterCount + numUrges + numNeurons) t = NUM_TYPES + numUrges + (i - matterCount - numUrges)
+                else if (i < matterCount + numUrges + numNeurons + numSenseNeurons) t = NUM_TYPES + numUrges + numNeurons + (i - matterCount - numUrges - numNeurons)
                 else t = dormantType // clone pool: dormant
                 arr[k + 4] = t
                 arr[k + 5] = 0 // control
                 // Urges start at signal=1.0 (the normalized mean) so nothing dies on frame 0
-                // and there's no spurious dM kick. Other particles start at 0.
+                // and there's no spurious dM kick. Sense neurons must NOT start at 1.0 — they
+                // start at 0 (nothing sensed yet) so they don't fake a strong reading.
                 arr[k + 6] = (t >= NUM_TYPES && t < NUM_TYPES + numUrges) ? 1.0 : 0
                 arr[k + 7] = -1 // goalB: no secondary goal
             }
@@ -3863,8 +3924,9 @@ export default defineComponent({
         }
         // The neighbor scan window is a SQUARE of (2*cellSubdivisions+1) cells. Any interaction
         // radius larger than that window gets clipped to the square -> axis-aligned "empty squares".
-        // So CELL_SIZE must be sized from the LARGEST radius in play: matter maxRadius OR urgeRadius.
-        const effectiveMaxRadius = () => Math.max(currentMaxRadius, particleLife.isElectricalEnabled ? particleLife.urgeRadius : 0)
+        // So CELL_SIZE must be sized from the LARGEST radius in play: matter maxRadius, urgeRadius,
+        // or senseRadius (the sense scan must see the full perception disk).
+        const effectiveMaxRadius = () => Math.max(currentMaxRadius, particleLife.isElectricalEnabled ? Math.max(particleLife.urgeRadius, particleLife.senseRadius) : 0)
         const recomputeCellSize = () => {
             const newSize = Math.max(1, Math.ceil(effectiveMaxRadius() / CELL_SUBDIVISIONS))
             if (newSize === CELL_SIZE) return // only rebuild the grid when it actually changes
@@ -3980,6 +4042,18 @@ export default defineComponent({
         // Changing the counts re-labels the population (matter/urge/neuron layout).
         watch(() => particleLife.numUrges, () => setNewElectricalCounts())
         watch(() => particleLife.numNeurons, () => setNewElectricalCounts())
+        // Sense count changes are different: sense neurons are part of the NON-POOL population,
+        // so the buffer must be resized to include them (like matter), and the following frame
+        // re-labels + recolors for the new sense band (colors/electrical/sim option buffers).
+        watch(() => particleLife.numSenseNeurons, () => {
+            numSenseNeurons = particleLife.numSenseNeurons
+            const target = baseMatterCount + numUrges + numNeurons + numSenseNeurons + numClonePool
+            if (target !== NUM_PARTICLES) {
+                NEW_NUM_PARTICLES = target
+                isUpdateNumParticlesPending = true
+            }
+            setNewElectricalCounts()
+        })
         // Changing a parameter just rewrites the electrical uniform.
         const watchElectrical = (effect: any) => watch(effect, () => updateElectricalOptionsBuffer())
         watchElectrical(() => particleLife.isElectricalEnabled)
@@ -3993,9 +4067,14 @@ export default defineComponent({
         watchElectrical(() => particleLife.neuronAuthority)
         watchElectrical(() => particleLife.maxAuthority)
         watchElectrical(() => particleLife.cohesion)
+        watchElectrical(() => particleLife.senseRadius)
+        watchElectrical(() => particleLife.senseConeHalfAngleDeg)
+        watchElectrical(() => particleLife.senseMode)
         watch(() => particleLife.isDebugConnections, (value: boolean) => { isDebugConnections = value; updateSimOptionsBuffer() })
         // A larger urge radius needs a coarser grid so its field isn't clipped to the square scan window.
         watch(() => particleLife.urgeRadius, () => { if (particleLife.isElectricalEnabled) recomputeCellSize() })
+        // Same for the sense perception disk: the bin scan must cover the full senseRadius.
+        watch(() => particleLife.senseRadius, () => { if (particleLife.isElectricalEnabled) recomputeCellSize() })
         watch(() => particleLife.isElectricalEnabled, () => recomputeCellSize())
 
         // ---- Urge Inspector: throttled, READ-ONLY GPU telemetry ---------------------------
@@ -4291,7 +4370,8 @@ export default defineComponent({
         // Helper: compute power for a live urge (single scalar)
         const urgePower = (signal: number, control: number): number => signal + 0.1 * Math.abs(control)
 
-        // Helper: kill an urge particle and all live neurons within neuronRadius of it.
+        // Helper: kill an urge particle and all live neurons AND sense neurons within neuronRadius
+        // of it (a dying urge takes its local effectors and sensors with it — for consistency).
         // Mutates the particles Float32Array in place. Returns nothing.
         const killUrgeAndNeurons = (
             particles: Float32Array,
@@ -4299,6 +4379,7 @@ export default defineComponent({
             x: number, y: number,
             dormantType: number,
             neurons: { idx: number, x: number, y: number }[],
+            senses: { idx: number, x: number, y: number }[],
             neuronRadius: number
         ) => {
             const u8 = urgeBufIdx * 8
@@ -4322,6 +4403,18 @@ export default defineComponent({
                     particles[n8 + 3] = 0
                 }
             }
+            for (const s of senses) {
+                const dx = s.x - x
+                const dy = s.y - y
+                if (dx * dx + dy * dy <= nr2) {
+                    const s8 = s.idx * 8
+                    particles[s8 + 4] = dormantType // local sensor dies with its urge
+                    particles[s8 + 5] = 0
+                    particles[s8 + 6] = 0
+                    particles[s8 + 2] = 0
+                    particles[s8 + 3] = 0
+                }
+            }
         }
 
         const checkUrgeLifecycle = async () => {
@@ -4340,16 +4433,21 @@ export default defineComponent({
                 if (isUpdatingParticles || isEraseCompleting) return
 
                 const particles = new Float32Array(arrayBuffer)
-                const dormantType = NUM_TYPES + numUrges + numNeurons
+                // Dormant sentinel must include the sense band, or clone-pool slots are misread.
+                const dormantType = NUM_TYPES + numUrges + numNeurons + numSenseNeurons
+                const motorBase = NUM_TYPES + numUrges
+                const senseBase = NUM_TYPES + numUrges + numNeurons
                 const neuronRadius = Math.max(particleLife.neuronRadius, 4)
                 const urgeRadius = Math.max(particleLife.urgeRadius, 10)
 
                 // --- Collect all particles by category (single pass over buffer) ---
                 interface UrgeEntry { bufIdx: number, k: number, isClone: boolean, x: number, y: number, vx: number, vy: number, control: number, signal: number }
                 interface NeuronEntry { idx: number, localM: number, x: number, y: number }
+                interface SenseEntry { idx: number, localS: number, x: number, y: number }
 
                 const urges: UrgeEntry[] = []
                 const neurons: NeuronEntry[] = []
+                const senses: SenseEntry[] = [] // live sense neurons (sensors) — die with their urge
                 const dormantSlots: number[] = [] // buffer indices of dormant particles (for cloning)
 
                 for (let i = 0; i < NUM_PARTICLES; i++) {
@@ -4358,13 +4456,16 @@ export default defineComponent({
                     const ptype = Math.floor(rawType) // floor (not round!) to handle clone fractional tags
                     if (ptype === dormantType) {
                         dormantSlots.push(i)
-                    } else if (ptype >= NUM_TYPES && ptype < NUM_TYPES + numUrges) {
+                    } else if (ptype >= NUM_TYPES && ptype < motorBase) {
                         const localK = ptype - NUM_TYPES
                         const isClone = rawType - ptype > 0.1 // fractional tag = clone
                         urges.push({ bufIdx: i, k: localK, isClone, x: particles[idx8], y: particles[idx8 + 1], vx: particles[idx8 + 2], vy: particles[idx8 + 3], control: particles[idx8 + 5], signal: particles[idx8 + 6] })
-                    } else if (ptype >= NUM_TYPES + numUrges && ptype < dormantType) {
-                        const localM = ptype - NUM_TYPES - numUrges
+                    } else if (ptype >= motorBase && ptype < senseBase) {
+                        const localM = ptype - motorBase
                         neurons.push({ idx: i, localM, x: particles[idx8], y: particles[idx8 + 1] })
+                    } else if (ptype >= senseBase && ptype < dormantType) {
+                        const localS = ptype - senseBase
+                        senses.push({ idx: i, localS, x: particles[idx8], y: particles[idx8 + 1] })
                     }
                 }
 
@@ -4389,7 +4490,7 @@ export default defineComponent({
                             newSustainedBelow.set(id, count)
                             if (count >= deathTicks) {
                                 // THIS URGE DIES NOW
-                                killUrgeAndNeurons(particles, u.bufIdx, u.x, u.y, dormantType, neurons, neuronRadius)
+                                killUrgeAndNeurons(particles, u.bufIdx, u.x, u.y, dormantType, neurons, senses, neuronRadius)
                                 deadBufIdx.add(u.bufIdx)
                                 bufferModified = true
                                 // Clear all tracking for this id
@@ -4432,7 +4533,7 @@ export default defineComponent({
 
                             // Weaker one dies immediately
                             const victim = pA < pB ? urges[a] : urges[b]
-                            killUrgeAndNeurons(particles, victim.bufIdx, victim.x, victim.y, dormantType, neurons, neuronRadius)
+                            killUrgeAndNeurons(particles, victim.bufIdx, victim.x, victim.y, dormantType, neurons, senses, neuronRadius)
                             deadBufIdx.add(victim.bufIdx)
                             bufferModified = true
 
@@ -4494,7 +4595,7 @@ export default defineComponent({
                                 particles[s8 + 7] = loser.k // goalB = loser's local urge index
 
                                 // Loser dies along with its neurons
-                                killUrgeAndNeurons(particles, loser.bufIdx, loser.x, loser.y, dormantType, neurons, neuronRadius)
+                                killUrgeAndNeurons(particles, loser.bufIdx, loser.x, loser.y, dormantType, neurons, senses, neuronRadius)
                                 deadBufIdx.add(loser.bufIdx)
                                 bufferModified = true
 
@@ -4660,7 +4761,7 @@ export default defineComponent({
 
         // Handle numClonePool changes: the pool ADDS dormant slots on top of the base matter
         // population, so resize the buffer accordingly (never steal slots from real matter).
-        const desiredTotalParticles = () => baseMatterCount + numUrges + numNeurons + numClonePool
+        const desiredTotalParticles = () => baseMatterCount + numUrges + numNeurons + numSenseNeurons + numClonePool
         watch(() => particleLife.numClonePool, (newPool) => {
             numClonePool = newPool
             const target = desiredTotalParticles()

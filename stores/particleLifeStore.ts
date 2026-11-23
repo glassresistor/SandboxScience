@@ -71,6 +71,14 @@ export const useParticleLifeStore = defineStore('particleLife', () => {
     const controlGain = ref<number>(0.2) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign (tuned for O(1) normalized metric)
     const controlMax = ref<number>(2.0) // Clamp on |control| (+ attract / - repel)
     const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
+    // ---- Sense neurons: sensors that perceive ONE target color (no actuation) --------------
+    // Each sense neuron senses exactly one color (= local index % numTypes) and stores its
+    // perception in the persistent particle scalars: signal = magnitude [0,1], control = bearing
+    // (radians, -PI..PI) for omnidirectional senses; 0 when there is no meaningful bearing.
+    const numSenseNeurons = ref<number>(40) // Number of sense neuron particles (sensors)
+    const senseRadius = ref<number>(60) // Perception radius (world units) shared by all three senses
+    const senseConeHalfAngleDeg = ref<number>(35) // Sight: half-angle (degrees) of the forward cone in direction of motion
+    const senseMode = ref<number>(0) // 0 = cycle all three per-sense (sight/smell/sound), 1 = all sight, 2 = all smell, 3 = all sound
 
     // Define properties for randomizing radius matrix
     const minRadiusRange = ref<number[]>([30, 60]) // Range for the random minRadius of each color
@@ -105,6 +113,7 @@ export const useParticleLifeStore = defineStore('particleLife', () => {
         minRadiusRange, maxRadiusRange, currentMaxRadius,
         repel, forceFactor, frictionFactor,
         isElectricalEnabled, numUrges, numNeurons, metricMode, urgeRadius, neuronRadius, urgeForce, controlGain, controlMax, cohesion,
+        numSenseNeurons, senseRadius, senseConeHalfAngleDeg, senseMode,
         cellGroupSize, cellSizeFactor,
         captureType, isCapturingGIF, isShareOptionsOpen, selectedRulesOption, selectedColorPaletteOption, savedPresets, isSaveModalOpen,
         $reset

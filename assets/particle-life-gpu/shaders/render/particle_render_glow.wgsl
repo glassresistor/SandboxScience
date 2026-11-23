@@ -23,6 +23,8 @@ struct SimOptions {
     numUrges: u32,          // number of urge types (for category detection)
     neuronRadius: f32,      // world-unit radius for the debug dotted circle
     isDebugConnections: u32,// flag: draw dotted circles around urges/neurons
+    numSenseNeurons: u32,   // number of sense-neuron types (splits motor vs sense in the render)
+    senseRadius: f32,       // world-unit perception radius for the sense debug dotted circle
 };
 struct Particle {
     x : f32,
@@ -82,19 +84,34 @@ fn compute_vertex(instanceIndex: u32, vertexIndex: u32, sizeMultiplier: f32) -> 
     let particle = particles[instanceIndex];
     let pType = u32(particle.particleType);
     var color = colors[min(pType, arrayLength(&colors) - 1u)];
-    let bright = 1.0 + 0.9 * abs(particle.control) + 0.35 * min(particle.signal, 6.0);
+    // Category split: [matter][urges][motor neurons][sense neurons][dormant]. The dormant entry
+    // is the LAST one in the color table, so the sense band ends at arrayLength(colors)-1.
+    let lastType = u32(arrayLength(&colors)) - 1u;          // dormant sentinel type code
+    let senseBase = lastType - options.numSenseNeurons;      // first sense-neuron type code
+    let isSenseType = pType >= senseBase && pType < lastType;
+    // Brightness: for SENSE neurons `control` holds a BEARING in radians (not a strength), so
+    // their glow is driven by the perception magnitude (signal) alone — tolerating the new meaning.
+    let bright = select(
+        1.0 + 0.9 * abs(particle.control) + 0.35 * min(particle.signal, 6.0),
+        1.0 + 0.9 * min(particle.signal, 1.0),
+        isSenseType
+    );
     color = vec4f(color.rgb * bright, color.a);
 
     let isUrge = pType >= options.numTypes && pType < options.numTypes + options.numUrges;
-    let isNeuron = pType >= options.numTypes + options.numUrges && pType < u32(arrayLength(&colors)) - 1u;
+    let isMotor = pType >= options.numTypes + options.numUrges && pType < senseBase;
     var size: f32 = options.particleSize * sizeMultiplier;
     var isDebugCircle: f32 = 0.0;
     if (options.isDebugConnections != 0u) {
         if (isUrge) {
             size = options.neuronRadius;
             isDebugCircle = 1.0;
-        } else if (isNeuron) {
+        } else if (isMotor) {
             size = options.particleSize * 2.5;
+            isDebugCircle = 1.0;
+        } else if (isSenseType) {
+            // Sense neurons: dotted circle at their perception radius (senseRadius)
+            size = options.senseRadius;
             isDebugCircle = 1.0;
         }
     }
@@ -177,15 +194,18 @@ fn fragmentCircle(in: VertexOutput) -> @location(0) vec4f {
     let edge_width = fwidth(dist_sq);
     var alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
 
-    // Border for electrical particles
+    // Border for electrical particles: urges & motor neurons get the solid white border (as today);
+    // sense neurons get a cyan accent so they read as sensors, distinct from the motor-white.
     let isElectrical = in.particleType >= f32(options.numTypes);
+    let senseBaseF = f32(u32(arrayLength(&colors)) - 1u) - f32(options.numSenseNeurons);
+    let isSenseBorder = in.particleType >= senseBaseF && in.particleType < f32(u32(arrayLength(&colors)) - 1u);
     if (isElectrical && alpha > 0.0) {
         let borderDist = 0.88;
         let borderWidth = 0.06;
         let inBorder = abs(dist - borderDist) < borderWidth;
         if (inBorder) {
             let borderFade = 1.0 - smoothstep(borderWidth * 0.5, borderWidth, abs(dist - borderDist));
-            let linear_border = vec3f(1.0);
+            let linear_border = select(vec3f(1.0), vec3f(0.08, 0.90, 1.0), isSenseBorder); // white vs cyan (linear)
             return vec4f(linear_border, max(in.color.a * options.particleOpacity * alpha, borderFade * options.particleOpacity * alpha));
         }
     }

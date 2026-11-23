@@ -187,6 +187,39 @@
                                         tooltip="How strongly urges and neurons cling to the body and avoid overlapping each other. 0 = they drift freely."
                                         :min="0" :max="3" :step="0.01" v-model="particleLife.cohesion">
                             </RangeInput>
+
+                            <!-- Sense Neurons: sensors that perceive one target color (no actuation) -->
+                            <template v-if="particleLife.isElectricalEnabled">
+                                <hr border-gray-500 my-2>
+                                <p underline text-gray-300 class="-mt-0.5" mb-1>Sense Neurons :</p>
+                                <RangeInput input label="Sense Count"
+                                            tooltip="Number of sense neuron particles (sensors). Each senses EXACTLY ONE color = index % species and stores its perception in the particle's signal (magnitude 0–1) and control (bearing, radians) fields. They never push or pull matter."
+                                            :min="0" :max="500" :step="1" v-model="particleLife.numSenseNeurons">
+                                </RangeInput>
+                                <RangeInput input label="Sense Radius" mt-2
+                                            tooltip="Perception radius (world units) shared by all three senses: sight cone range, smell/sound scan disk."
+                                            :min="4" :max="160" :step="1" v-model="particleLife.senseRadius">
+                                </RangeInput>
+                                <RangeInput input label="Sight Cone Half-Angle" mt-2
+                                            tooltip="Half-angle of the sight cone in the direction of motion. Sight only counts target-color matter inside this forward cone (magnitude only, no bearing)."
+                                            :min="1" :max="90" :step="1" v-model="particleLife.senseConeHalfAngleDeg">
+                                </RangeInput>
+                                <div flex items-center justify-between gap-2 mt-2>
+                                    <p class="w-1/3 text-2sm shrink-0">
+                                        Sense Mode
+                                        <TooltipInfo container="#mainContainer" tooltip="Which sense each sense neuron uses. <br> <b>Cycle All</b>: senses cycle sight / smell / sound by index — a diverse population. <br> <b>All Sight</b>: forward cone, magnitude only (nothing behind is seen). <br> <b>All Smell</b>: bearing toward the NEAREST high-density cluster of the target color (near-biased weighting). <br> <b>All Sound</b>: bearing + loudness with NO far/near discrimination (uniform weight)." />
+                                    </p>
+                                    <SelectInput name="sense-mode-cpu" class="max-w-full!"
+                                                 v-model="particleLife.senseMode"
+                                                 :options="[
+                                                     { id: 0, name: 'Cycle All', category: 'Sense' },
+                                                     { id: 1, name: 'All Sight', category: 'Sense' },
+                                                     { id: 2, name: 'All Smell', category: 'Sense' },
+                                                     { id: 3, name: 'All Sound', category: 'Sense' },
+                                                 ]">
+                                    </SelectInput>
+                                </div>
+                            </template>
                         </Collapse>
 
                         <Collapse label="Urge Inspector" icon="i-tabler-telescope text-sky-400" mt-2
@@ -457,10 +490,11 @@ export default defineComponent({
 
         // Define the arrays for storing the properties of each particle
         let cells: Map<string, number[]> // Map to store the particles in each cell
-        // Total particle count = matter + urges + neurons (when electrical is enabled)
-        const MATRIX_EXTRA_TYPES = 2
+        // Total particle count = matter + urges + neurons + sense neurons (when electrical is enabled)
+        const MATRIX_EXTRA_TYPES = 2 // urge row + neuron row (sense neurons ride the neuron row; no own row)
         let numUrges: number = particleLife.numUrges
         let numNeurons: number = particleLife.numNeurons
+        let numSenseNeurons: number = particleLife.numSenseNeurons // sense neurons (sensors; one target color each)
         let totalParticleCount: number = numParticles // will be set in initParticles
         let colors = new Int32Array(numParticles) // Type of each particle (0..numColors-1 matter, then urges, then neurons)
         let positionX = new Float32Array(numParticles) // X position of each particle
@@ -632,7 +666,7 @@ export default defineComponent({
         }
         function initParticles() {
             const matterCount = numParticles // store value = matter count
-            totalParticleCount = matterCount + (particleLife.isElectricalEnabled ? numUrges + numNeurons : 0)
+            totalParticleCount = matterCount + (particleLife.isElectricalEnabled ? numUrges + numNeurons + numSenseNeurons : 0)
 
             // Resize arrays if the total changed
             if (colors.length !== totalParticleCount) {
@@ -652,8 +686,10 @@ export default defineComponent({
                     colors[i] = Math.floor(Math.random() * numColors)
                 } else if (particleLife.isElectricalEnabled && i < matterCount + numUrges) {
                     colors[i] = numColors + (i - matterCount) // urge type
+                } else if (particleLife.isElectricalEnabled && i < matterCount + numUrges + numNeurons) {
+                    colors[i] = numColors + numUrges + (i - matterCount - numUrges) // motor neuron type
                 } else if (particleLife.isElectricalEnabled) {
-                    colors[i] = numColors + numUrges + (i - matterCount - numUrges) // neuron type
+                    colors[i] = numColors + numUrges + numNeurons + (i - matterCount - numUrges - numNeurons) // sense neuron type
                 }
                 const newPositions = getRandomPositions()
                 positionX[i] = newPositions.x
@@ -817,10 +853,16 @@ export default defineComponent({
                 const t = numUrges <= 1 ? 0 : k / (numUrges - 1)
                 return [190, 85, Math.round(60 + 35 * t)] // HSL: cyan hue, increasing lightness
             }
-            // Neuron: magenta -> orange ramp
-            const m = typeCode - numColors - numUrges
-            const t = numNeurons <= 1 ? 0 : m / (numNeurons - 1)
-            return [Math.round(300 - 240 * t), 90, Math.round(55 + 10 * t)] // HSL: magenta to orange
+            if (typeCode < numColors + numUrges + numNeurons) {
+                // Motor neuron: magenta -> orange ramp
+                const m = typeCode - numColors - numUrges
+                const t = numNeurons <= 1 ? 0 : m / (numNeurons - 1)
+                return [Math.round(300 - 240 * t), 90, Math.round(55 + 10 * t)] // HSL: magenta to orange
+            }
+            // Sense neuron: cool cyan -> magenta ramp (distinct from urges and motor neurons)
+            const s = typeCode - numColors - numUrges - numNeurons
+            const t = numSenseNeurons <= 1 ? 0 : s / (numSenseNeurons - 1)
+            return [Math.round(185 + 95 * t), 85, Math.round(55 + 5 * t)] // HSL: cyan (185) to magenta (280)
         }
 
         let drawParticle: (x: number, y: number, z: number, color: number[], size: number) => void
@@ -887,11 +929,15 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         let processRules: () => void
 
-        // Particle category: 0 matter, 1 urge, 2 neuron
+        // Particle category: 0 matter, 1 urge, 2 motor neuron, 4 sense neuron, 3 dormant sentinel.
+        // Mirrors the GPU shaders' cat(): layout [matter][urges][motor neurons][sense neurons][dormant].
         const particleCat = (typeCode: number): number => {
             if (typeCode < numColors) return 0
             if (typeCode < numColors + numUrges) return 1
-            return 2 // neuron
+            if (typeCode < numColors + numUrges + numNeurons) return 2 // motor neuron
+            if (typeCode < numColors + numUrges + numNeurons + numSenseNeurons) return 4 // sense neuron
+            if (typeCode === numColors + numUrges + numNeurons + numSenseNeurons) return 3 // dormant sentinel
+            return 2 // fallback: stale type -> motor neuron (same as GPU)
         }
 
         // Per-urge goal (mirrors the GPU shader's urgeGoal)
@@ -976,10 +1022,35 @@ export default defineComponent({
                     const isMatterA = catA === 0
                     const isUrgeA = catA === 1
                     const isNeuronA = catA === 2
+                    const isSenseA = catA === 4
                     const kIdx = isUrgeA ? typeA - numColors : 0
                     const mIdx = isNeuronA ? typeA - numColors - numUrges : 0
                     const urgeTarget = kIdx % numColors
                     const neuronTarget = mIdx % numColors
+
+                    // Sense-neuron setup: exactly ONE target color and a deterministic sense mode
+                    // (0 sight, 1 smell, 2 sound) from its local index s — mirrors the GPU shaders.
+                    const sIdx = isSenseA ? typeA - numColors - numUrges - numNeurons : 0
+                    const senseTarget = sIdx % numColors
+                    let senseModeLocal: number
+                    switch (particleLife.senseMode % 4) {
+                        case 1: senseModeLocal = 0; break // all sight
+                        case 2: senseModeLocal = 1; break // all smell
+                        case 3: senseModeLocal = 2; break // all sound
+                        default: senseModeLocal = sIdx % 3 // cycle all three senses
+                    }
+                    const sR = Math.max(particleLife.senseRadius, 1)
+                    const vlenA = Math.sqrt(velocityX[indexA] * velocityX[indexA] + velocityY[indexA] * velocityY[indexA])
+                    const hasHeading = vlenA > 0.001
+                    const headingX = velocityX[indexA] / Math.max(vlenA, 0.001)
+                    const headingY = velocityY[indexA] / Math.max(vlenA, 0.001)
+                    const cosHalfAngle = Math.cos(particleLife.senseConeHalfAngleDeg * Math.PI / 180)
+                    // Sense accumulators (sector buffer allocated only for sense particles —
+                    // matter/urges/motor neurons never touch it, keeping GC pressure at zero)
+                    let seenCount = 0
+                    const SENSE_SECTORS = 12
+                    const sectorScores: Float32Array | null = isSenseA ? new Float32Array(SENSE_SECTORS) : null // smell: nearness-weighted score per sector
+                    let soundVecX = 0, soundVecY = 0, soundCount = 0 // sound: uniform-weight vector sum + count
 
                     // Process each neighboring cell
                     for (let k = 0; k < neighbors.length; k++) {
@@ -1016,8 +1087,10 @@ export default defineComponent({
 
                             // ---- 2) Electrical <-> matter via the main interaction matrix ----
                             // The shared row gives the force ON the special particle from nearby matter.
-                            if ((isUrgeA || isNeuronA) && catB === 0) {
-                                const rowIdx = numColors + (isNeuronA ? 1 : 0)
+                            // Sense neurons do NOT actuate matter but get matrix-driven drift through
+                            // the shared NEURON row (same choice as the GPU shaders).
+                            if ((isUrgeA || isNeuronA || isSenseA) && catB === 0) {
+                                const rowIdx = numColors + ((isNeuronA || isSenseA) ? 1 : 0)
                                 const maxR = maxRadiusMatrix[rowIdx][typeB]
                                 if (distance < maxR) {
                                     const force = getForce(rulesMatrix[rowIdx][typeB], minRadiusMatrix[rowIdx][typeB], maxR, distance)
@@ -1045,13 +1118,35 @@ export default defineComponent({
                                 velocityYSum += dirY * actForce
                             }
 
+                            // ---- 5b) Sense neuron perceiving its ONE target color (no actuation) ----
+                            // Mirrors the GPU perception math exactly. The three senses differ ONLY in
+                            // how they aggregate the scan: sight = forward cone test; smell = nearness-
+                            // weighted sector score ((sR-d)/sR, near-biased); sound = uniform weight 1.0
+                            // (range-agnostic — many-far and few-near at equal count are indistinguishable).
+                            if (isSenseA && catB === 0 && typeB === senseTarget && distance < sR) {
+                                if (senseModeLocal === 0) {
+                                    // SIGHT: "seen" iff inside the forward cone of motion
+                                    if (hasHeading && (dirX * headingX + dirY * headingY) > cosHalfAngle) seenCount++
+                                } else if (senseModeLocal === 1) {
+                                    // SMELL: closer particles weigh more -> nearest dense region wins
+                                    let ang = Math.atan2(dirY, dirX) + Math.PI // [0, 2*PI)
+                                    const sec = Math.floor(ang / ((2 * Math.PI) / SENSE_SECTORS)) % SENSE_SECTORS
+                                    sectorScores![sec] += (sR - distance) / sR
+                                } else {
+                                    // SOUND: uniform weight 1.0 (range-agnostic)
+                                    soundVecX += dirX
+                                    soundVecY += dirY
+                                    soundCount++
+                                }
+                            }
+
                             // ---- 6) Cohesion: specials cling to matter & avoid overlapping ----
-                            if (isUrgeA || isNeuronA) {
+                            if (isUrgeA || isNeuronA || isSenseA) {
                                 if (catB === 0 && distance < eR) {
                                     const fall = Math.max(0, 1 - distance / eR)
                                     cohesionFX += dirX * (fall * cohesionVal)
                                     cohesionFY += dirY * (fall * cohesionVal)
-                                } else if (catB === 1 || catB === 2) {
+                                } else if (catB === 1 || catB === 2 || catB === 4) {
                                     if (distance < 8) {
                                         cohesionFX -= dirX * (cohesionVal * 2)
                                         cohesionFY -= dirY * (cohesionVal * 2)
@@ -1100,11 +1195,46 @@ export default defineComponent({
                             if (newControl < -cMax) newControl = -cMax
                             control[indexA] = newControl
                             signal[indexA] = signal[indexA] * 0.85 + M * 0.15 // smooth
-                        } else {
+                        } else if (isNeuronA) {
                             // Neuron: activity = magnitude of drive
                             const firing = Math.abs(drive)
                             signal[indexA] = signal[indexA] * 0.8 + firing * 0.2
                             control[indexA] = 0
+                        } else if (isSenseA) {
+                            // Sense neuron: store the perception in signal (magnitude [0,1]) and control
+                            // (bearing radians). Mirrors the GPU shaders' normalization exactly.
+                            const numTypesF = numColors
+                            const area = gridWidth * gridHeight
+                            const numMatterApprox = Math.max(numParticles - numUrges - numNeurons - numSenseNeurons, 1)
+                            // O(1) expected count of target-color matter in the full sense disk at baseline
+                            const expectedCount = numMatterApprox * Math.PI * sR * sR / area / numTypesF
+                            let newSignal = 0
+                            let newControl = 0
+                            if (senseModeLocal === 0) {
+                                // SIGHT: fraction of the expected cone coverage that is occupied. No bearing.
+                                const expectedInCone = expectedCount * (particleLife.senseConeHalfAngleDeg * Math.PI / 180) / Math.PI // (2*theta)/(2*PI)
+                                newSignal = Math.min(1, Math.max(0, seenCount / Math.max(expectedInCone, 0.001)))
+                                newControl = 0
+                            } else if (senseModeLocal === 1) {
+                                // SMELL: strongest sector wins -> bearing to the nearest high-density cluster.
+                                let bestScore = 0
+                                let bestSector = 0
+                                for (let sec = 0; sec < SENSE_SECTORS; sec++) {
+                                    if (sectorScores![sec] > bestScore) { bestScore = sectorScores![sec]; bestSector = sec }
+                                }
+                                if (bestScore > 0.0001) { // global max ~0 -> nothing to smell, output stays zero
+                                    newSignal = Math.min(1, Math.max(0, bestScore / Math.max(expectedCount / SENSE_SECTORS, 0.001)))
+                                    newControl = (bestSector + 0.5) * (2 * Math.PI) / SENSE_SECTORS - Math.PI // sector center in [-PI, PI]
+                                }
+                            } else {
+                                // SOUND: bearing toward the centroid of sources + total loudness.
+                                if (soundCount > 0) {
+                                    newSignal = Math.min(1, Math.max(0, soundCount / Math.max(expectedCount, 0.001)))
+                                    newControl = Math.atan2(soundVecY, soundVecX)
+                                }
+                            }
+                            signal[indexA] = signal[indexA] * 0.75 + newSignal * 0.25 // smooth like other specials
+                            control[indexA] = newControl
                         }
                     }
                 }
@@ -1184,10 +1314,35 @@ export default defineComponent({
                     const isMatterA = catA === 0
                     const isUrgeA = catA === 1
                     const isNeuronA = catA === 2
+                    const isSenseA = catA === 4
                     const kIdx = isUrgeA ? typeA - numColors : 0
                     const mIdx = isNeuronA ? typeA - numColors - numUrges : 0
                     const urgeTarget = kIdx % numColors
                     const neuronTarget = mIdx % numColors
+
+                    // Sense-neuron setup: exactly ONE target color and a deterministic sense mode
+                    // (0 sight, 1 smell, 2 sound) from its local index s — mirrors the GPU shaders.
+                    const sIdx = isSenseA ? typeA - numColors - numUrges - numNeurons : 0
+                    const senseTarget = sIdx % numColors
+                    let senseModeLocal: number
+                    switch (particleLife.senseMode % 4) {
+                        case 1: senseModeLocal = 0; break // all sight
+                        case 2: senseModeLocal = 1; break // all smell
+                        case 3: senseModeLocal = 2; break // all sound
+                        default: senseModeLocal = sIdx % 3 // cycle all three senses
+                    }
+                    const sR = Math.max(particleLife.senseRadius, 1)
+                    const vlenA = Math.sqrt(velocityX[indexA] * velocityX[indexA] + velocityY[indexA] * velocityY[indexA])
+                    const hasHeading = vlenA > 0.001
+                    const headingX = velocityX[indexA] / Math.max(vlenA, 0.001)
+                    const headingY = velocityY[indexA] / Math.max(vlenA, 0.001)
+                    const cosHalfAngle = Math.cos(particleLife.senseConeHalfAngleDeg * Math.PI / 180)
+                    // Sense accumulators (sector buffer allocated only for sense particles —
+                    // matter/urges/motor neurons never touch it, keeping GC pressure at zero)
+                    let seenCount = 0
+                    const SENSE_SECTORS = 12
+                    const sectorScores: Float32Array | null = isSenseA ? new Float32Array(SENSE_SECTORS) : null // smell: nearness-weighted score per sector
+                    let soundVecX = 0, soundVecY = 0, soundCount = 0 // sound: uniform-weight vector sum + count
 
                     // Process each neighboring cell
                     for (let k = 0; k < neighbors.length; k++) {
@@ -1230,8 +1385,10 @@ export default defineComponent({
                             if (!eOn) continue
 
                             // ---- 2) Electrical <-> matter via the main interaction matrix ----
-                            if ((isUrgeA || isNeuronA) && catB === 0) {
-                                const rowIdx = numColors + (isNeuronA ? 1 : 0)
+                            // Sense neurons do NOT actuate matter but get matrix-driven drift through
+                            // the shared NEURON row (same choice as the GPU shaders).
+                            if ((isUrgeA || isNeuronA || isSenseA) && catB === 0) {
+                                const rowIdx = numColors + ((isNeuronA || isSenseA) ? 1 : 0)
                                 const maxR = maxRadiusMatrix[rowIdx][typeB]
                                 if (distance < maxR) {
                                     const force = getForce(rulesMatrix[rowIdx][typeB], minRadiusMatrix[rowIdx][typeB], maxR, distance)
@@ -1259,13 +1416,35 @@ export default defineComponent({
                                 velocityYSum += dirY * actForce
                             }
 
+                            // ---- 5b) Sense neuron perceiving its ONE target color (no actuation) ----
+                            // Mirrors the GPU perception math exactly. The three senses differ ONLY in
+                            // how they aggregate the scan: sight = forward cone test; smell = nearness-
+                            // weighted sector score ((sR-d)/sR, near-biased); sound = uniform weight 1.0
+                            // (range-agnostic — many-far and few-near at equal count are indistinguishable).
+                            if (isSenseA && catB === 0 && typeB === senseTarget && distance < sR) {
+                                if (senseModeLocal === 0) {
+                                    // SIGHT: "seen" iff inside the forward cone of motion
+                                    if (hasHeading && (dirX * headingX + dirY * headingY) > cosHalfAngle) seenCount++
+                                } else if (senseModeLocal === 1) {
+                                    // SMELL: closer particles weigh more -> nearest dense region wins
+                                    let ang = Math.atan2(dirY, dirX) + Math.PI // [0, 2*PI)
+                                    const sec = Math.floor(ang / ((2 * Math.PI) / SENSE_SECTORS)) % SENSE_SECTORS
+                                    sectorScores![sec] += (sR - distance) / sR
+                                } else {
+                                    // SOUND: uniform weight 1.0 (range-agnostic)
+                                    soundVecX += dirX
+                                    soundVecY += dirY
+                                    soundCount++
+                                }
+                            }
+
                             // ---- 6) Cohesion ----
-                            if (isUrgeA || isNeuronA) {
+                            if (isUrgeA || isNeuronA || isSenseA) {
                                 if (catB === 0 && distance < eR) {
                                     const fall = Math.max(0, 1 - distance / eR)
                                     cohesionFX += dirX * (fall * cohesionVal)
                                     cohesionFY += dirY * (fall * cohesionVal)
-                                } else if (catB === 1 || catB === 2) {
+                                } else if (catB === 1 || catB === 2 || catB === 4) {
                                     if (distance < 8) {
                                         cohesionFX -= dirX * (cohesionVal * 2)
                                         cohesionFY -= dirY * (cohesionVal * 2)
@@ -1313,10 +1492,45 @@ export default defineComponent({
                             if (newControl < -cMax) newControl = -cMax
                             control[indexA] = newControl
                             signal[indexA] = signal[indexA] * 0.85 + M * 0.15
-                        } else {
+                        } else if (isNeuronA) {
                             const firing = Math.abs(drive)
                             signal[indexA] = signal[indexA] * 0.8 + firing * 0.2
                             control[indexA] = 0
+                        } else if (isSenseA) {
+                            // Sense neuron: store the perception in signal (magnitude [0,1]) and control
+                            // (bearing radians). Mirrors the GPU shaders' normalization exactly.
+                            const numTypesF = numColors
+                            const area = gridWidth * gridHeight
+                            const numMatterApprox = Math.max(numParticles - numUrges - numNeurons - numSenseNeurons, 1)
+                            // O(1) expected count of target-color matter in the full sense disk at baseline
+                            const expectedCount = numMatterApprox * Math.PI * sR * sR / area / numTypesF
+                            let newSignal = 0
+                            let newControl = 0
+                            if (senseModeLocal === 0) {
+                                // SIGHT: fraction of the expected cone coverage that is occupied. No bearing.
+                                const expectedInCone = expectedCount * (particleLife.senseConeHalfAngleDeg * Math.PI / 180) / Math.PI // (2*theta)/(2*PI)
+                                newSignal = Math.min(1, Math.max(0, seenCount / Math.max(expectedInCone, 0.001)))
+                                newControl = 0
+                            } else if (senseModeLocal === 1) {
+                                // SMELL: strongest sector wins -> bearing to the nearest high-density cluster.
+                                let bestScore = 0
+                                let bestSector = 0
+                                for (let sec = 0; sec < SENSE_SECTORS; sec++) {
+                                    if (sectorScores![sec] > bestScore) { bestScore = sectorScores![sec]; bestSector = sec }
+                                }
+                                if (bestScore > 0.0001) { // global max ~0 -> nothing to smell, output stays zero
+                                    newSignal = Math.min(1, Math.max(0, bestScore / Math.max(expectedCount / SENSE_SECTORS, 0.001)))
+                                    newControl = (bestSector + 0.5) * (2 * Math.PI) / SENSE_SECTORS - Math.PI // sector center in [-PI, PI]
+                                }
+                            } else {
+                                // SOUND: bearing toward the centroid of sources + total loudness.
+                                if (soundCount > 0) {
+                                    newSignal = Math.min(1, Math.max(0, soundCount / Math.max(expectedCount, 0.001)))
+                                    newControl = Math.atan2(soundVecY, soundVecX)
+                                }
+                            }
+                            signal[indexA] = signal[indexA] * 0.75 + newSignal * 0.25 // smooth like other specials
+                            control[indexA] = newControl
                         }
                     }
                 }
@@ -2169,7 +2383,9 @@ export default defineComponent({
             currentMaxRadius = value
             particleLife.currentMaxRadius = value
             // Cell size must cover the largest interaction radius (matter OR electrical)
-            const effectiveMax = Math.max(currentMaxRadius, particleLife.isElectricalEnabled ? Math.max(particleLife.urgeRadius, particleLife.neuronRadius) : 0)
+            // The cell grid must cover the LARGEST interaction radius in play (incl. the sense disk),
+            // or the neighbor scan clips to the square window and senses miss distant matter.
+            const effectiveMax = Math.max(currentMaxRadius, particleLife.isElectricalEnabled ? Math.max(particleLife.urgeRadius, particleLife.neuronRadius, particleLife.senseRadius) : 0)
             cellSize = effectiveMax * cellSizeFactor
             if (isWallWrap) {
                 setGridSizeWhenWrapped()
@@ -2264,6 +2480,11 @@ export default defineComponent({
             initParticles()
             if (!isRunning) simpleDrawParticles()
         })
+        watch(() => particleLife.numSenseNeurons, () => {
+            numSenseNeurons = particleLife.numSenseNeurons
+            initParticles()
+            if (!isRunning) simpleDrawParticles()
+        })
         watch(() => particleLife.isElectricalEnabled, () => {
             initParticles()
             setCurrentMaxRadius(currentMaxRadius) // recompute cell size
@@ -2273,6 +2494,9 @@ export default defineComponent({
             if (particleLife.isElectricalEnabled) setCurrentMaxRadius(currentMaxRadius)
         })
         watch(() => particleLife.neuronRadius, () => {
+            if (particleLife.isElectricalEnabled) setCurrentMaxRadius(currentMaxRadius)
+        })
+        watch(() => particleLife.senseRadius, () => {
             if (particleLife.isElectricalEnabled) setCurrentMaxRadius(currentMaxRadius)
         })
 

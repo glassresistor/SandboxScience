@@ -23,6 +23,8 @@ struct SimOptions {
     numUrges: u32,          // number of urge types (for category detection)
     neuronRadius: f32,      // world-unit radius for the debug dotted circle
     isDebugConnections: u32,// flag: draw dotted circles around urges/neurons
+    numSenseNeurons: u32,   // number of sense-neuron types (splits motor vs sense in the render)
+    senseRadius: f32,       // world-unit perception radius for the sense debug dotted circle
 };
 struct Particle {
     x : f32,
@@ -72,13 +74,24 @@ fn vertexMain(
     let particle = particles[instanceIndex];
     let pType = u32(particle.particleType);
     var color = colors[min(pType, arrayLength(&colors) - 1u)];
-    // Brightness driven by live state (urges glow with |control|, neurons pulse with signal)
-    let bright = 1.0 + 0.9 * abs(particle.control) + 0.35 * min(particle.signal, 6.0);
+    // Category split: [matter][urges][motor neurons][sense neurons][dormant]. The dormant entry
+    // is the LAST one in the color table, so the sense band ends at arrayLength(colors)-1.
+    let lastType = u32(arrayLength(&colors)) - 1u;          // dormant sentinel type code
+    let senseBase = lastType - options.numSenseNeurons;      // first sense-neuron type code
+    let isSenseType = pType >= senseBase && pType < lastType;
+    // Brightness driven by live state (urges glow with |control|, motor neurons pulse with signal).
+    // For SENSE neurons `control` holds a BEARING in radians (not a strength), so their glow is
+    // driven by the perception magnitude (signal) alone — tolerating the field's new meaning.
+    let bright = select(
+        1.0 + 0.9 * abs(particle.control) + 0.35 * min(particle.signal, 6.0),
+        1.0 + 0.9 * min(particle.signal, 1.0),
+        isSenseType
+    );
     color = vec4f(color.rgb * bright, color.a);
 
     // Determine render size: urges in debug mode get a larger quad for the dotted circle
     let isUrge = pType >= options.numTypes && pType < options.numTypes + options.numUrges;
-    let isNeuron = pType >= options.numTypes + options.numUrges && pType < u32(arrayLength(&colors)) - 1u;
+    let isMotor = pType >= options.numTypes + options.numUrges && pType < senseBase;
     var size: f32 = options.particleSize;
     var isDebugCircle: f32 = 0.0;
     if (options.isDebugConnections != 0u) {
@@ -86,9 +99,13 @@ fn vertexMain(
             // Scale up to neuronRadius (world units) for the dotted circle
             size = options.neuronRadius;
             isDebugCircle = 1.0;
-        } else if (isNeuron) {
-            // Slightly larger for neurons: small dotted ring
+        } else if (isMotor) {
+            // Slightly larger for motor neurons: small dotted ring
             size = options.particleSize * 2.5;
+            isDebugCircle = 1.0;
+        } else if (isSenseType) {
+            // Sense neurons: dotted circle at their perception radius (senseRadius)
+            size = options.senseRadius;
             isDebugCircle = 1.0;
         }
     }
@@ -157,20 +174,25 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
     // ---- Normal particle rendering with border for electrical particles ----
     let isElectrical = in.particleType >= f32(options.numTypes);
+    // Sense-neuron band (for the accent border): ends at the dormant entry, starts numSenseNeurons before.
+    let senseBaseF = f32(u32(arrayLength(&colors)) - 1u) - f32(options.numSenseNeurons);
+    let isSenseBorder = in.particleType >= senseBaseF && in.particleType < f32(u32(arrayLength(&colors)) - 1u);
     let edge_width = fwidth(dist_sq);
     var alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
 
-    // Draw a thin border ring for electrical particles (urges & neurons)
+    // Draw a thin border ring for electrical particles (urges & motor neurons: solid white,
+    // sense neurons: cyan accent so they read as sensors, distinct from the motor-white).
     if (isElectrical && alpha > 0.0) {
         // Border: thin ring at the very edge (dist close to 1.0)
         let borderDist = 0.88;
         let borderWidth = 0.06;
         let inBorder = abs(dist - borderDist) < borderWidth;
         if (inBorder) {
-            // White border with soft falloff
+            // Soft falloff
             let borderFade = 1.0 - smoothstep(borderWidth * 0.5, borderWidth, abs(dist - borderDist));
             let borderAlpha = borderFade * options.particleOpacity * alpha;
-            return vec4f(1.0, 1.0, 1.0, max(in.color.a * options.particleOpacity * alpha, borderAlpha));
+            let borderColor = select(vec3f(1.0, 1.0, 1.0), vec3f(0.30, 0.95, 1.0), isSenseBorder); // white vs cyan
+            return vec4f(borderColor, max(in.color.a * options.particleOpacity * alpha, borderAlpha));
         }
     }
 
