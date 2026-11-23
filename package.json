@@ -46,13 +46,17 @@
         "@iconify-json/streamline-flex": "^1.2.3",
         "@iconify-json/tabler": "^1.1.120",
         "@nuxt/eslint": "^1.12.1",
+        "@nuxt/test-utils": "^4.4.0",
         "@unocss/eslint-config": "^66.5.10",
         "@unocss/nuxt": "^66.5.10",
+        "@vue/test-utils": "^2.6.0",
         "@webgpu/types": "^0.1.68",
         "eslint": "^9.39.2",
         "eslint-plugin-format": "^1.1.0",
+        "happy-dom": "^21.0.4",
         "sass": "^1.97.0",
         "unocss": "^66.5.10",
+        "vitest": "^4.1.12",
         "vue-tsc": "^3.1.8"
     }
 }
