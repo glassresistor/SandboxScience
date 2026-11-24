@@ -64,6 +64,8 @@ struct VertexOutput {
     @location(1) color: vec4<f32>,
     @location(2) particleType: f32,
     @location(3) isDebugCircle: f32, // 1 = this quad is a debug dotted circle (urge in debug mode)
+    @location(4) shapeType: f32,     // 0=circle (matter), 1=star (urge), 2=teardrop (neuron)
+    @location(5) orientation: f32,   // angle in radians for teardrop pointing direction
 }
 
 @vertex
@@ -97,6 +99,12 @@ fn vertexMain(
     let isMotor = pType >= options.numTypes + options.numUrges && pType < senseBase;
     var size: f32 = options.particleSize;
     var isDebugCircle: f32 = 0.0;
+    // Shape type: matter=circle(0), urge=star(1), motor/sense neuron=teardrop(2)
+    var shapeType: f32 = 0.0;
+    if (isUrge) { shapeType = 1.0; }
+    else if (isMotor || isSenseType) { shapeType = 2.0; }
+    // Orientation for teardrops: use velocity direction (neurons tend to move toward/from urges)
+    let orientation = atan2(particle.vy, particle.vx);
     if (options.isDebugConnections != 0u) {
         if (isUrge) {
             // Scale up to neuronRadius (world units) for the dotted circle
@@ -133,8 +141,29 @@ fn vertexMain(
         QUAD_VERTICES[vertexIndex],
         color,
         f32(pType),
-        isDebugCircle
+        isDebugCircle,
+        shapeType,
+        orientation
     );
+}
+
+// 5-pointed star boundary radius at a given angle (in [-1,1] quad space)
+fn starRadius(angle: f32) -> f32 {
+    let sectorAngle = 6.2831853 / 10.0; // π/5 — each half-sector
+    var a = mod(angle + 3.14159265, 2.0 * sectorAngle); // shift so point is at angle=0 (right)
+    if (a > sectorAngle) { a = 2.0 * sectorAngle - a; }
+    // Linear interpolation: outer point (a=0) → inner valley (a=sectorAngle)
+    let t = a / sectorAngle;
+    return mix(1.0, 0.382, t); // outer radius 1.0, inner radius 0.382 (golden ratio star)
+}
+
+// Teardrop boundary radius at local angle (teardrop points in +X direction in local frame)
+fn teardropRadius(localAngle: f32) -> f32 {
+    // cardioid-like: r = 1 + elongation * cos(θ), point at θ=π, fat at θ=0
+    // We want the point in the +X direction (localAngle=0), so flip:
+    // r = 1 - elongation * cos(localAngle) → small at localAngle=0 (point), large at π (fat)
+    let elongation = 0.55;
+    return max(0.15, 1.0 - elongation * cos(localAngle));
 }
 
 @fragment
@@ -177,22 +206,54 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
         }
     }
 
-    // ---- Normal particle rendering with border for electrical particles ----
+    // ---- Shape-aware particle rendering ----
     let isElectrical = in.particleType >= f32(options.numTypes);
     // Sense-neuron band (for the accent border): ends at the dormant entry, starts numSenseNeurons before.
     let senseBaseF = f32(u32(arrayLength(&colors)) - 1u) - f32(options.numSenseNeurons);
     let isSenseBorder = in.particleType >= senseBaseF && in.particleType < f32(u32(arrayLength(&colors)) - 1u);
-    var alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
 
-    // Draw a thin border ring for electrical particles (urges & motor neurons: solid white,
-    // sense neurons: cyan accent so they read as sensors, distinct from the motor-white).
+    // Compute alpha based on shape type
+    var alpha: f32;
+    if (in.shapeType == 1.0) {
+        // ---- Star shape (urges) ----
+        let angle = atan2(in.offset.y, in.offset.x);
+        let rStar = starRadius(angle);
+        alpha = 1.0 - smoothstep(max(0.0, rStar - edge_width), rStar, dist);
+    } else if (in.shapeType == 2.0) {
+        // ---- Teardrop shape (neurons) — small/pointy end points toward the urge ----
+        // Rotate offset into local frame where teardrop points in +X direction
+        let cosA = cos(in.orientation);
+        let sinA = sin(in.orientation);
+        let localX =  in.offset.x * cosA + in.offset.y * sinA;
+        let localY = -in.offset.x * sinA + in.offset.y * cosA;
+        let localAngle = atan2(localY, localX);
+        let rDrop = teardropRadius(localAngle);
+        alpha = 1.0 - smoothstep(max(0.0, rDrop - edge_width), rDrop, dist);
+    } else {
+        // ---- Circle (matter particles) — original behavior ----
+        alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
+    }
+
+    // Draw a thin border ring for electrical particles (follows the shape boundary).
     if (isElectrical && alpha > 0.0) {
-        // Border: thin ring at the very edge (dist close to 1.0)
-        let borderDist = 0.88;
+        // Compute the shape boundary radius at this fragment's angle
+        var boundaryR: f32 = 1.0; // default: circle
+        if (in.shapeType == 1.0) {
+            let angle = atan2(in.offset.y, in.offset.x);
+            boundaryR = starRadius(angle);
+        } else if (in.shapeType == 2.0) {
+            let cosA = cos(in.orientation);
+            let sinA = sin(in.orientation);
+            let localX =  in.offset.x * cosA + in.offset.y * sinA;
+            let localY = -in.offset.x * sinA + in.offset.y * cosA;
+            let localAngle = atan2(localY, localX);
+            boundaryR = teardropRadius(localAngle);
+        }
+        // Border sits just inside the shape boundary
+        let borderDist = boundaryR * 0.85;
         let borderWidth = 0.06;
         let inBorder = abs(dist - borderDist) < borderWidth;
         if (inBorder) {
-            // Soft falloff
             let borderFade = 1.0 - smoothstep(borderWidth * 0.5, borderWidth, abs(dist - borderDist));
             let borderAlpha = borderFade * options.particleOpacity * alpha;
             let borderColor = select(vec3f(1.0, 1.0, 1.0), vec3f(0.30, 0.95, 1.0), isSenseBorder); // white vs cyan

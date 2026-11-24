@@ -51,6 +51,8 @@ struct BrainOpts {
 var<workgroup> wg_errors : array<f32, MAX_URGES>;
 var<workgroup> wg_hNew   : array<f32, 8>;
 var<workgroup> wg_hPrev  : array<f32, 8>;
+// Buffer index of each urge (found by type scan — particles are sorted by spatial hash)
+var<workgroup> wg_urgeIdx : array<u32, MAX_URGES>;
 
 @group(0) @binding(0) var<storage, read> particles : array<Particle>;       // previous frame (temp buffer)
 @group(0) @binding(1) var<storage, read_write> brainState : array<f32, 8>;  // persistent hidden state [H]
@@ -65,19 +67,37 @@ fn main(@builtin(local_invocation_id) lid : vec3<u32>) {
     let nU = min(brainOpts.numUrges, MAX_URGES);
     let nN = min(brainOpts.numNeurons, MAX_NEURONS);
 
+    // --- Phase 0: Find urge positions by type (spatial hash sorts particles each frame) ---
+    if (tid < MAX_URGES) { wg_urgeIdx[tid] = 0xFFFFFFFFu; }
+    workgroupBarrier();
+
+    let totalParticles = arrayLength(&particles);
+    for (var i = tid; i < totalParticles; i += 64u) {
+        let rawType = particles[i].particleType;
+        let intType = u32(rawType);
+        // Only originals (integer type, no fractional clone tag)
+        if (rawType == f32(intType) && intType >= brainOpts.numTypes && intType < brainOpts.numTypes + nU) {
+            wg_urgeIdx[intType - brainOpts.numTypes] = i;
+        }
+    }
+    workgroupBarrier();
+
     // --- Phase 1: Compute urge errors (threads 0..nU-1) ---
     // Drive params are read FROM THE PARTICLE — they are per-particle and evolvable.
     if (tid < nU) {
-        let pIdx = brainOpts.numTypes + tid;
-        let p = particles[pIdx];
+        let pIdx = wg_urgeIdx[tid];
+        if (pIdx == 0xFFFFFFFFu) { wg_errors[tid] = 0.0; }
+        else {
+            let p = particles[pIdx];
 
-        let tgtVal = p.driveTarget;
-        let scl    = max(p.driveScale, 0.1);
-        let gain   = p.driveGain;
+            let tgtVal = p.driveTarget;
+            let scl    = max(p.driveScale, 0.1);
+            let gain   = p.driveGain;
 
-        // Error: how far is current metric from target? Positive = "too little" (want more)
-        let error = clamp((tgtVal - p.signal) / scl, -1.0, 1.0);
-        wg_errors[tid] = error * gain;
+            // Error: how far is current metric from target? Positive = "too little" (want more)
+            let error = clamp((tgtVal - p.signal) / scl, -1.0, 1.0);
+            wg_errors[tid] = error * gain;
+        }
     } else {
         wg_errors[tid] = 0.0;
     }

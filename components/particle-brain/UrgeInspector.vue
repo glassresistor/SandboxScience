@@ -97,7 +97,7 @@
                                     <span class="i-tabler-ear" />{{ s.wiredEars }}
                                 </span>
                                 <span v-if="(s.wiredNose ?? 0) > 0" class="flex items-center gap-0.5 text-emerald-300" title="Smell neurons (nose) within senseRadius">
-                                    <span class="i-tabler-nose" />{{ s.wiredNose }}
+                                    <span class="i-carbon-smell" />{{ s.wiredNose }}
                                 </span>
                                 <span v-if="!(s.wiredMuscles ?? 0) && !(s.wiredEyes ?? 0) && !(s.wiredEars ?? 0) && !(s.wiredNose ?? 0)" class="text-fuchsia-300/50">—</span>
                             </span>
@@ -164,14 +164,20 @@
                         <div
                             v-if="s.driveTarget !== undefined"
                             class="mt-1.5 flex items-center gap-1.5 rounded bg-indigo-500/5 px-1.5 py-1 ring-1 ring-indigo-500/20"
-                            title="Brain drive model (live): error = (target - metric) / scale × gain. These values drift slowly via mutation."
+                            title="Brain drive model (live): error = (target - metric) / scale × gain. These values drift continuously via GPU mutation — watch them tick."
                         >
                             <span class="i-tabler-brain shrink-0 text-indigo-300" />
                             <span class="text-[0.62rem] uppercase tracking-wide font-mono text-indigo-300/80">drive</span>
                             <span class="ml-auto flex items-center gap-2 font-mono tabular-nums text-[0.7rem]">
-                                <span class="text-indigo-200" title="Target: the metric value this urge wants to reach (homeostasis setpoint)">t&nbsp;{{ fmt(s.driveTarget) }}</span>
-                                <span class="text-sky-300" title="Scale: error normalisation — smaller = more sensitive to deviation">s&nbsp;{{ fmt(s.driveScale) }}</span>
-                                <span class="text-emerald-300" title="Gain: how strongly this urge's error feeds the brain (its importance)">g&nbsp;{{ fmt(s.driveGain) }}</span>
+                                <span class="flex items-center gap-0.5 text-indigo-200" title="Target: the metric value this urge wants to reach (homeostasis setpoint)">
+                                    t&nbsp;{{ fmt(s.driveTarget, 3) }}<span :class="trendIcon(s.trendDriveTarget)" />
+                                </span>
+                                <span class="flex items-center gap-0.5 text-sky-300" title="Scale: error normalisation — smaller = more sensitive to deviation">
+                                    s&nbsp;{{ fmt(s.driveScale, 3) }}<span :class="trendIcon(s.trendDriveScale)" />
+                                </span>
+                                <span class="flex items-center gap-0.5 text-emerald-300" title="Gain: how strongly this urge's error feeds the brain (its importance)">
+                                    g&nbsp;{{ fmt(s.driveGain, 3) }}<span :class="trendIcon(s.trendDriveGain)" />
+                                </span>
                             </span>
                         </div>
                     </li>
@@ -205,6 +211,9 @@ export interface UrgeStat {
     driveTarget?: number // brain: desired metric value (homeostasis setpoint), mutates over time
     driveScale?: number // brain: error normalisation (sensitivity), mutates over time
     driveGain?: number // brain: weight of this urge's error into the network, mutates over time
+    trendDriveTarget?: number // ΔdriveTarget vs previous readback (0/undefined if no prior)
+    trendDriveScale?: number // ΔdriveScale vs previous readback
+    trendDriveGain?: number // ΔdriveGain vs previous readback
 }
 
 // One urge's brain drive model parameters (the per-urge "constitution" the recurrent
@@ -339,7 +348,14 @@ export default defineComponent({
             return props.brainDrives[idx]
         }
 
-        return { paramMeta, displayValue, fmt, barFill, signalFill, colorFor, objectiveLabelFor, brainDriveFor, select, TREND_EPS: TREND_EPS_LOCAL }
+        // Arrow class for a live trend value (drives tick every readback). Flat below TREND_EPS.
+        const trendIcon = (delta?: number): string => {
+            if (delta === undefined || Math.abs(delta) <= TREND_EPS_LOCAL)
+                return 'i-tabler-minus text-zinc-500'
+            return delta > 0 ? 'i-tabler-arrow-up text-emerald-400' : 'i-tabler-arrow-down text-rose-400'
+        }
+
+        return { paramMeta, displayValue, fmt, barFill, signalFill, colorFor, objectiveLabelFor, brainDriveFor, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
     },
 })
 </script>

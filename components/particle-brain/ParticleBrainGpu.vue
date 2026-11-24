@@ -4586,7 +4586,7 @@ export default defineComponent({
         let isReadingBackUrges = false // concurrency guard: one readback in flight at a time
         let urgeReadbackTimer: number | null = null
         // Previous per-urge values (keyed by urge id) so we can show a trend between readbacks.
-        let prevUrgeValues = new Map<number, { control: number, signal: number }>()
+        let prevUrgeValues = new Map<number, { control: number, signal: number, driveTarget: number, driveScale: number, driveGain: number }>()
 
         // ---- On-canvas tracking of a single selected urge -------------------------------
         const selectedUrgeId = ref<number>(-1) // which urge (local index) to highlight on the canvas (-1 = none)
@@ -4786,14 +4786,21 @@ export default defineComponent({
 
                 // Keep rows stable (by urge id) and compute the trend vs the previous readback.
                 deduped.sort((a, b) => a.id - b.id)
-                const newPrev = new Map<number, { control: number, signal: number }>()
+                const newPrev = new Map<number, { control: number, signal: number, driveTarget: number, driveScale: number, driveGain: number }>()
                 for (const s of deduped) {
                     const prev = prevUrgeValues.get(s.id)
                     if (prev) {
                         s.trendControl = s.control - prev.control
                         s.trendSignal = s.signal - prev.signal
+                        // Drive params drift via GPU mutation each frame — surface the per-readback Δ.
+                        if (s.driveTarget !== undefined && !Number.isNaN(s.driveTarget))
+                            s.trendDriveTarget = s.driveTarget - prev.driveTarget
+                        if (s.driveScale !== undefined && !Number.isNaN(s.driveScale))
+                            s.trendDriveScale = s.driveScale - prev.driveScale
+                        if (s.driveGain !== undefined && !Number.isNaN(s.driveGain))
+                            s.trendDriveGain = s.driveGain - prev.driveGain
                     }
-                    newPrev.set(s.id, { control: s.control, signal: s.signal })
+                    newPrev.set(s.id, { control: s.control, signal: s.signal, driveTarget: s.driveTarget ?? 0, driveScale: s.driveScale ?? 0, driveGain: s.driveGain ?? 0 })
                 }
                 prevUrgeValues = newPrev // prunes ids that no longer exist
                 urgeStats.value = deduped

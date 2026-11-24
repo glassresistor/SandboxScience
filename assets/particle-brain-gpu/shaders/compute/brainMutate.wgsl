@@ -59,14 +59,37 @@ fn gauss3(salt: u32, seed: u32) -> f32 {
 @group(0) @binding(0) var<storage, read_write> particles : array<Particle>;
 @group(1) @binding(0) var<uniform> opts : MutateOpts;
 
+// Workgroup memory: stores the buffer index of each urge (found by type scan)
+var<workgroup> urgeBufferIdx : array<u32, MAX_URGES>;
+
 @compute @workgroup_size(64)
 fn main(@builtin(local_invocation_id) lid : vec3<u32>) {
     let tid = lid.x;
     let nU = min(opts.numUrges, MAX_URGES);
-    if (tid >= nU) { return; }
+    let totalParticles = arrayLength(&particles);
 
-    // Urge particle index in the buffer
-    let pIdx = opts.numTypes + tid;
+    // Initialize: all urges "not found"
+    if (tid < MAX_URGES) { urgeBufferIdx[tid] = 0xFFFFFFFFu; }
+    workgroupBarrier();
+
+    // Phase 1: cooperatively scan all particles to find urges by type.
+    // Each thread strides through the array; when it finds an original urge
+    // (integer type in [numTypes, numTypes+nU)), it records the buffer index.
+    for (var i = tid; i < totalParticles; i += 64u) {
+        let rawType = particles[i].particleType;
+        let intType = u32(rawType);
+        // Only originals (integer type, no fractional clone tag)
+        if (rawType == f32(intType) && intType >= opts.numTypes && intType < opts.numTypes + nU) {
+            urgeBufferIdx[intType - opts.numTypes] = i;
+        }
+    }
+    workgroupBarrier();
+
+    // Phase 2: each thread mutates its assigned urge (if found)
+    if (tid >= nU) { return; }
+    let pIdx = urgeBufferIdx[tid];
+    if (pIdx == 0xFFFFFFFFu) { return; } // urge not found (dead/dormant)
+
     var p = particles[pIdx];
 
     // Per-urge changeability: deterministic from local index (hardcoded "species" trait)
