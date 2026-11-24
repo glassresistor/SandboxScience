@@ -18,6 +18,7 @@ struct SimOptions {
     gridOffsetX: u32,
     gridOffsetY: u32,
     mirrorWrapCount: u32,
+    magneticStrength: f32, // Lorentz force field strength (0 = off)
 };
 struct Particle {
     x : f32,
@@ -52,6 +53,24 @@ fn particleAdvance(@builtin(global_invocation_id) id : vec3u) {
 
     particle.vx *= dt.friction;
     particle.vy *= dt.friction;
+
+    // ---- Magnetic (Lorentz) force: F = q * v x B, with B along z-axis ----
+    // In 2D: Fx = q * vy * B, Fy = -q * vx * B
+    // Charge is derived from particle type using a golden-angle hash for diversity:
+    // different species curve in different directions and with different magnitudes.
+    if (options.magneticStrength != 0.0) {
+        let pType = particle.particleType;
+        // Only matter particles get a charge; urges/neurons/dormant have q=0
+        if (pType < f32(options.numTypes)) {
+            // Golden-angle hash: maps type index to [-1, 1] with good distribution
+            let angle = pType * 2.3999632; // golden angle in radians
+            let q = sin(angle); // charge in [-1, 1]
+            let bField = options.magneticStrength;
+            // Use pre-friction velocity for stability (semi-implicit Euler)
+            particle.vx += q * particle.vy * bField * dt.deltaTime;
+            particle.vy -= q * particle.vx * bField * dt.deltaTime;
+        }
+    }
 
     particle.x += particle.vx * dt.deltaTime;
     particle.y += particle.vy * dt.deltaTime;

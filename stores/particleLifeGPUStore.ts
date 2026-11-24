@@ -61,6 +61,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     const repel = ref<number>(1) // repel force for particles that are too close to each other
     const forceFactor = ref<number>(1.0) // Adjust the overall force applied between particles (can't be 0)
     const frictionFactor = ref<number>(0.3) // Slow down the particles (0 to 1, where 0 is no friction)
+    const magneticStrength = ref<number>(0) // Lorentz force strength (0 = off). Each species has a derived charge; non-zero creates spiral/circular motion
 
     // ---- Quantum / Electrical layer: Urge & Neuron particles -------------------------
     const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
@@ -193,6 +194,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
         repel,
         forceFactor,
         frictionFactor,
+        magneticStrength,
         useSpatialHash,
         isElectricalEnabled,
         numUrges,

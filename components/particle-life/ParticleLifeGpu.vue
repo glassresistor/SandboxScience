@@ -156,6 +156,11 @@
                                 label="Friction"
                                 tooltip="Controls how much friction slows particles down. <br> Higher values reduce speed and help stabilize the system." :min="0" :max="1" :step="0.01" mt-2
                             />
+                            <RangeInput
+                                v-model="particleLife.magneticStrength" input
+                                label="Magnetic Field"
+                                tooltip="Lorentz force strength. Each matter species has a derived charge (golden-angle hash), so non-zero values create spiral/circular motion. <br> 0 = off. Positive/negative curves in opposite directions per species." :min="-2" :max="2" :step="0.01" mt-2
+                            />
 
                             <hr my-2 border-gray-500>
                             <div flex items-center justify-between gap-2>
@@ -2456,10 +2461,11 @@ export default defineComponent({
             }
         }
         const updateSimOptionsBuffer = () => {
-            // 104 bytes: core (84) + render fields numUrges/neuronRadius/isDebugConnections (84/88/92)
+            // 108 bytes: core (84) + render fields numUrges/neuronRadius/isDebugConnections (84/88/92)
             // + numSenseNeurons (96, splits motor vs sense in the render shaders)
             // + senseRadius (100, world-unit radius for the sense debug dotted circle)
-            const simOptionsData = new ArrayBuffer(104)
+            // + magneticStrength (104, Lorentz force field strength — 0 = off)
+            const simOptionsData = new ArrayBuffer(108)
             const simOptionsView = new DataView(simOptionsData)
             simOptionsView.setFloat32(0, SIM_WIDTH, true)
             simOptionsView.setFloat32(4, SIM_HEIGHT, true)
@@ -2489,6 +2495,7 @@ export default defineComponent({
             simOptionsView.setUint32(92, isDebugConnections ? 1 : 0, true)
             simOptionsView.setUint32(96, numSenseNeurons, true)
             simOptionsView.setFloat32(100, particleLife.senseRadius, true)
+            simOptionsView.setFloat32(104, particleLife.magneticStrength, true)
 
             if (!simOptionsBuffer) {
                 simOptionsBuffer = device.createBuffer({
@@ -2502,7 +2509,7 @@ export default defineComponent({
             else if (isEraseCompletionPending) {
                 // Skip writing numParticles during erase to avoid conflicts with GPU-side copyBufferToBuffer
                 device.queue.writeBuffer(simOptionsBuffer, 0, simOptionsData, 0, 20)
-                device.queue.writeBuffer(simOptionsBuffer, 24, simOptionsData, 24, 80)
+                device.queue.writeBuffer(simOptionsBuffer, 24, simOptionsData, 24, 84)
             }
             else {
                 device.queue.writeBuffer(simOptionsBuffer, 0, simOptionsData)
@@ -4519,6 +4526,7 @@ export default defineComponent({
             frictionFactor = value
             updateDeltaTimeBuffer(manualDeltaTimeEnabled ? manualDeltaTime : smoothedDeltaTime)
         })
+        watchAndUpdateSimOptions(() => particleLife.magneticStrength, () => {})
 
         // ---- Quantum / Electrical layer watchers -----------------------------------------
         // Changing the counts re-labels the population (matter/urge/neuron layout).
