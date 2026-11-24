@@ -790,6 +790,7 @@ import WrapModeSelection from "~/components/particle-life/WrapModeSelection.vue"
 import { hexToRgb } from '~/helpers/utils/colorConversion'
 import { generateColors, PALETTE_OPTIONS } from "~/helpers/utils/colorsGenerator"
 import { generatePositions, POSITION_OPTIONS } from "~/helpers/utils/positionsGenerator"
+import { PARTICLE_STRIDE, PARTICLE_BYTES } from '~/constants/particleStride'
 import { generateRules, RULES_OPTIONS } from '~/helpers/utils/rulesGenerator'
 
 export default defineComponent({
@@ -1503,7 +1504,7 @@ export default defineComponent({
         // Initialize tracker state based on a user-selected zone, calculating the center of mass
         const initializeTrackerFromZone = async (zone: { x: number, y: number, width: number, height: number }): Promise<boolean> => {
             // Read the current particle positions and velocities from the GPU to calculate the center of mass and average
-            const arrayBuffer = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 11 * 4)
+            const arrayBuffer = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * PARTICLE_BYTES)
             const particles = new Float32Array(arrayBuffer)
 
             const zoneHalfW = zone.width * 0.5
@@ -1512,7 +1513,7 @@ export default defineComponent({
 
             // Get the center of mass and average velocity of particles within the selected zone
             for (let i = 0; i < NUM_PARTICLES; i++) {
-                const idx = i * 11
+                const idx = i * PARTICLE_STRIDE
                 const px = particles[idx]
                 const py = particles[idx + 1]
 
@@ -2241,7 +2242,7 @@ export default defineComponent({
                 particleTempBuffer?.destroy(); particleTempBuffer = undefined
 
             particleBuffer = device.createBuffer({
-                size: NUM_PARTICLES * 44, // 11 floats: x,y,vx,vy,type,control,signal,goalB,driveTarget,driveScale,driveGain
+                size: NUM_PARTICLES * PARTICLE_BYTES, // 11 floats: x,y,vx,vy,type,control,signal,goalB,driveTarget,driveScale,driveGain
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.STORAGE,
                 mappedAtCreation: hasInitialParticles,
             })
@@ -2326,7 +2327,7 @@ export default defineComponent({
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             })
             particleCompactBuffer = device.createBuffer({
-                size: NUM_PARTICLES * 11 * 4,
+                size: NUM_PARTICLES * PARTICLE_BYTES,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             })
         }
@@ -3629,12 +3630,12 @@ export default defineComponent({
                 const newNumParticles = oldNumParticles + numParticlesToAdd
 
                 const newParticleBuffer = device.createBuffer({
-                    size: newNumParticles * 44,
+                    size: newNumParticles * PARTICLE_BYTES,
                     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
                 })
 
                 const encoder = device.createCommandEncoder({ label: 'Draw Brush Encoder' })
-                encoder.copyBufferToBuffer(particleBuffer!, 0, newParticleBuffer, 0, oldNumParticles * 44)
+                encoder.copyBufferToBuffer(particleBuffer!, 0, newParticleBuffer, 0, oldNumParticles * PARTICLE_BYTES)
 
                 const oldParticleBuffer = particleBuffer
                 particleBuffer = newParticleBuffer
@@ -3705,7 +3706,7 @@ export default defineComponent({
                 compactPass.end()
 
                 // Copy compacted particles back to particleBuffer (full old size)
-                encoder.copyBufferToBuffer(particleCompactBuffer!, 0, particleBuffer!, 0, NUM_PARTICLES * 44)
+                encoder.copyBufferToBuffer(particleCompactBuffer!, 0, particleBuffer!, 0, NUM_PARTICLES * PARTICLE_BYTES)
                 // Update GPU-side numParticles from the atomic counter (no CPU readback needed)
                 encoder.copyBufferToBuffer(newParticleCountBuffer!, 0, simOptionsBuffer!, 20, 4)
 
@@ -3741,12 +3742,12 @@ export default defineComponent({
                     particleLife.numParticles = newCount
 
                     particleBuffer = device.createBuffer({
-                        size: newCount * 44,
+                        size: newCount * PARTICLE_BYTES,
                         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.STORAGE,
                     })
 
                     const copyEncoder = device.createCommandEncoder({ label: 'Copy to Resized Buffer' })
-                    copyEncoder.copyBufferToBuffer(oldParticleBuffer!, 0, particleBuffer!, 0, newCount * 44)
+                    copyEncoder.copyBufferToBuffer(oldParticleBuffer!, 0, particleBuffer!, 0, newCount * PARTICLE_BYTES)
                     device.queue.submit([copyEncoder.finish()])
                     oldParticleBuffer?.destroy()
 
@@ -3787,9 +3788,9 @@ export default defineComponent({
 
             try {
                 const oldCount = NUM_PARTICLES
-                const oldParticlesData = await readBufferFromGPU(particleBuffer!, oldCount * 11 * 4)
+                const oldParticlesData = await readBufferFromGPU(particleBuffer!, oldCount * PARTICLE_BYTES)
                 const oldParticles = new Float32Array(oldParticlesData)
-                initialParticles = new Float32Array(newCount * 11)
+                initialParticles = new Float32Array(newCount * PARTICLE_STRIDE)
 
                 // Detect pool-only resize: the non-pool count (matter+urges+neurons+sense) is unchanged.
                 // This is robust against watcher ordering — if matter/urges/neurons/sense also changed,
@@ -3810,7 +3811,7 @@ export default defineComponent({
                         // Grow: copy everything, append new dormant particles at the end.
                         initialParticles.set(oldParticles)
                         for (let i = oldCount; i < newCount; i++) {
-                            const baseIndex = i * 11
+                            const baseIndex = i * PARTICLE_STRIDE
                             initialParticles[baseIndex] = Math.random() * SIM_WIDTH
                             initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
                             initialParticles[baseIndex + 2] = 0
@@ -3825,7 +3826,7 @@ export default defineComponent({
                         const nonDormant: number[] = []
                         const dormant: number[] = []
                         for (let i = 0; i < oldCount; i++) {
-                            const t = Math.floor(oldParticles[i * 11 + 4])
+                            const t = Math.floor(oldParticles[i * PARTICLE_STRIDE + 4])
                             if (t === dormantType)
                                 dormant.push(i)
                             else nonDormant.push(i)
@@ -3835,8 +3836,8 @@ export default defineComponent({
                         for (const src of nonDormant) {
                             if (writeIdx >= newCount)
                                 break // safety: shouldn't happen
-                            const dst = writeIdx * 11
-                            const src8 = src * 11
+                            const dst = writeIdx * PARTICLE_STRIDE
+                            const src8 = src * PARTICLE_STRIDE
                             for (let c = 0; c < 11; c++) initialParticles[dst + c] = oldParticles[src8 + c]
                             writeIdx++
                         }
@@ -3844,14 +3845,14 @@ export default defineComponent({
                         for (const src of dormant) {
                             if (writeIdx >= newCount)
                                 break
-                            const dst = writeIdx * 11
-                            const src8 = src * 11
+                            const dst = writeIdx * PARTICLE_STRIDE
+                            const src8 = src * PARTICLE_STRIDE
                             for (let c = 0; c < 11; c++) initialParticles[dst + c] = oldParticles[src8 + c]
                             writeIdx++
                         }
                         // If somehow still short (shouldn't happen), pad with fresh dormants.
                         while (writeIdx < newCount) {
-                            const baseIndex = writeIdx * 11
+                            const baseIndex = writeIdx * PARTICLE_STRIDE
                             initialParticles[baseIndex] = Math.random() * SIM_WIDTH
                             initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
                             initialParticles[baseIndex + 2] = 0
@@ -3868,18 +3869,18 @@ export default defineComponent({
                     if (newCount > oldCount) {
                         initialParticles.set(oldParticles)
                         for (let i = oldCount; i < newCount; i++) {
-                            const baseIndex = i * 11
+                            const baseIndex = i * PARTICLE_STRIDE
                             initialParticles[baseIndex] = Math.random() * SIM_WIDTH
                             initialParticles[baseIndex + 1] = Math.random() * SIM_HEIGHT
                         }
                     }
                     else {
-                        initialParticles.set(oldParticles.subarray(0, newCount * 11))
+                        initialParticles.set(oldParticles.subarray(0, newCount * PARTICLE_STRIDE))
                         for (let i = newCount; i < oldCount; i++) {
                             const j = Math.floor(Math.random() * (i + 1))
                             if (j < newCount) {
-                                const oldStartIndex = i * 11
-                                const newIndex = j * 11
+                                const oldStartIndex = i * PARTICLE_STRIDE
+                                const newIndex = j * PARTICLE_STRIDE
                                 for (let c = 0; c < 11; c++) initialParticles[newIndex + c] = oldParticles[oldStartIndex + c]
                             }
                         }
@@ -4100,12 +4101,12 @@ export default defineComponent({
             particleLife.currentColors = colors // Ensure the store is updated with the new colors
         }
         const adjustParticleTypes = async (oldNumTypes: number, newNumTypes: number) => {
-            const particleDataBuffer = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 11 * 4)
+            const particleDataBuffer = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * PARTICLE_BYTES)
             const particles = new Float32Array(particleDataBuffer)
 
             if (newNumTypes < oldNumTypes) {
                 for (let i = 0; i < NUM_PARTICLES; i++) {
-                    const typeIndex = i * 11 + 4
+                    const typeIndex = i * PARTICLE_STRIDE + 4
                     if (particles[typeIndex] >= newNumTypes && particles[typeIndex] < oldNumTypes) {
                         particles[typeIndex] = Math.floor(Math.random() * newNumTypes)
                     }
@@ -4113,7 +4114,7 @@ export default defineComponent({
             }
             else if (newNumTypes > oldNumTypes) {
                 for (let i = 0; i < NUM_PARTICLES; i++) {
-                    const typeIndex = i * 11 + 4
+                    const typeIndex = i * PARTICLE_STRIDE + 4
                     const t = particles[typeIndex]
                     if (t < oldNumTypes && Math.random() < (newNumTypes - oldNumTypes) / newNumTypes) {
                         particles[typeIndex] = oldNumTypes + Math.floor(Math.random() * (newNumTypes - oldNumTypes))
@@ -4205,7 +4206,7 @@ export default defineComponent({
             // and matterCount is the user's base count — the buffer was sized to hold all of it.
             const matterCount = Math.min(baseMatterCount, NUM_PARTICLES)
             for (let i = 0; i < NUM_PARTICLES; i++) {
-                const k = i * 11
+                const k = i * PARTICLE_STRIDE
                 let t: number
                 if (i < matterCount)
                     t = i % NUM_TYPES
@@ -4243,7 +4244,7 @@ export default defineComponent({
         }
         // Re-label the live population to the current layout, preserving positions/velocities.
         async function relabelPopulation(): Promise<void> {
-            const data = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * 11 * 4)
+            const data = await readBufferFromGPU(particleBuffer!, NUM_PARTICLES * PARTICLE_BYTES)
             const arr = new Float32Array(data)
             applyTypeLayout(arr)
             device.queue.writeBuffer(particleBuffer!, 0, arr)
@@ -4678,7 +4679,7 @@ export default defineComponent({
 
             isReadingBackUrges = true
             try {
-                const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * 11 * 4)
+                const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * PARTICLE_BYTES)
                 // Re-check guards after the await — a resize/erase may have started meanwhile.
                 if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting)
                     return
@@ -4692,7 +4693,7 @@ export default defineComponent({
                 const senseNeuronPos: { x: number, y: number, mode: number }[] = [] // mode: 0=sight, 1=smell, 2=sound
 
                 for (let i = 0; i < NUM_PARTICLES; i++) {
-                    const idx = i * 11
+                    const idx = i * PARTICLE_STRIDE
                     const rawType = particles[idx + 4]
                     const intType = Math.floor(rawType)
                     if (intType < NUM_TYPES)
@@ -4935,7 +4936,7 @@ export default defineComponent({
             urgeBufIdx: number,
             dormantType: number,
         ) => {
-            const u8 = urgeBufIdx * 11
+            const u8 = urgeBufIdx * PARTICLE_STRIDE
             particles[u8 + 4] = dormantType // type → dormant sentinel (invisible, inert)
             particles[u8 + 5] = 0 // zero control
             particles[u8 + 6] = 0 // zero signal
@@ -4959,7 +4960,7 @@ export default defineComponent({
 
             isLifecycleInFlight = true
             try {
-                const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * 11 * 4)
+                const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * PARTICLE_BYTES)
                 // Re-check guards after the await — a resize/erase may have started meanwhile.
                 if (isUpdatingParticles || isEraseCompleting)
                     return
@@ -4983,7 +4984,7 @@ export default defineComponent({
                 const dormantSlots: number[] = [] // buffer indices of dormant particles (for cloning)
 
                 for (let i = 0; i < NUM_PARTICLES; i++) {
-                    const idx8 = i * 11
+                    const idx8 = i * PARTICLE_STRIDE
                     const rawType = particles[idx8 + 4]
                     const ptype = Math.floor(rawType) // floor (not round!) to handle clone fractional tags
                     if (ptype === dormantType) {
@@ -5133,13 +5134,13 @@ export default defineComponent({
                                 else { survivor = idA < idB ? urges[a] : urges[b]; loser = survivor === urges[a] ? urges[b] : urges[a] }
 
                                 // Survivor absorbs: max signal, avg control, combined goal
-                                const s8 = survivor.bufIdx * 11
+                                const s8 = survivor.bufIdx * PARTICLE_STRIDE
                                 particles[s8 + 6] = Math.max(survivor.signal, loser.signal) // signal = best metric
                                 particles[s8 + 5] = (survivor.control + loser.control) * 0.5 // control = blended
                                 // Combine goals: survivor now pursues both its own goal and the loser's.
                                 // If same k → double metric strength. If different → dual objective.
                                 particles[s8 + 7] = loser.k // goalB = loser's local urge index
-                                const l8 = loser.bufIdx * 11
+                                const l8 = loser.bufIdx * PARTICLE_STRIDE
                                 particles[s8 + 8] = (particles[s8 + 8] + particles[l8 + 8]) * 0.5 // driveTarget: blended
                                 particles[s8 + 9] = (particles[s8 + 9] + particles[l8 + 9]) * 0.5 // driveScale: blended
                                 particles[s8 + 10] = (particles[s8 + 10] + particles[l8 + 10]) * 0.5 // driveGain: blended
@@ -5233,13 +5234,13 @@ export default defineComponent({
 
                         // --- Clone the urge itself ---
                         const slotIdx = dormantSlots[slotPtr++]
-                        const s8 = slotIdx * 11
+                        const s8 = slotIdx * PARTICLE_STRIDE
                         particles[s8 + 4] = NUM_TYPES + urge.k + 0.5 // fractional tag marks clone
                         particles[s8 + 5] = 0
                         particles[s8 + 6] = halfMetric // child inherits the other half of the parent's metric
                         particles[s8 + 7] = -1 // goalB: clones start with no secondary goal
                         // Clone inherits parent's drive params with small mutation (evolutionary drift)
-                        const pDriveBase = urge.bufIdx * 11
+                        const pDriveBase = urge.bufIdx * PARTICLE_STRIDE
                         particles[s8 + 8] = Math.min(3.0, Math.max(0.1, particles[pDriveBase + 8] + (Math.random() - 0.5) * 0.1))
                         particles[s8 + 9] = Math.min(2.0, Math.max(0.05, particles[pDriveBase + 9] + (Math.random() - 0.5) * 0.06))
                         particles[s8 + 10] = Math.min(3.0, Math.max(0.0, particles[pDriveBase + 10] + (Math.random() - 0.5) * 0.06))
@@ -5254,7 +5255,7 @@ export default defineComponent({
                         particles[s8 + 3] = Math.sin(shootAngle) * impulse
 
                         // --- Split the parent's metric in half & reset its birth cooldown ---
-                        const p8 = urge.bufIdx * 11
+                        const p8 = urge.bufIdx * PARTICLE_STRIDE
                         particles[p8 + 6] = halfMetric // parent keeps the other half → must re-accumulate to reproduce again
                         sustainedAboveThreshold.delete(urge.k) // reset so it re-sustains above threshold before the next birth
 
@@ -5265,7 +5266,7 @@ export default defineComponent({
                             if (slotPtr >= dormantSlots.length)
                                 break
                             const nSlotIdx = dormantSlots[slotPtr++]
-                            const n8 = nSlotIdx * 11
+                            const n8 = nSlotIdx * PARTICLE_STRIDE
                             particles[n8 + 4] = NUM_TYPES + numUrges + srcNeuron.localM
                             particles[n8 + 5] = 0
                             particles[n8 + 6] = 0
@@ -5281,7 +5282,7 @@ export default defineComponent({
                             if (slotPtr >= dormantSlots.length)
                                 break
                             const ssSlotIdx = dormantSlots[slotPtr++]
-                            const ss8 = ssSlotIdx * 11
+                            const ss8 = ssSlotIdx * PARTICLE_STRIDE
                             particles[ss8 + 4] = NUM_TYPES + numUrges + numNeurons + srcSense.localS
                             particles[ss8 + 5] = 0
                             particles[ss8 + 6] = 0
