@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { P, PARTICLE_STRIDE } from '~/constants/particleStride'
-import { driftInteractionMatrix, measureControlGap, measureMatterEntropy, noveltyRate } from '~/helpers/utils/experimentMetrics'
+import { driftInteractionMatrix, hebbianUpdateWeight, measureControlGap, measureMatterEntropy, noveltyRate, scheduleNeuronDamage } from '~/helpers/utils/experimentMetrics'
 
 /** Deterministic PRNG so tests are reproducible. */
 function mulberry32(seed: number): () => number {
@@ -207,6 +207,77 @@ describe('driftInteractionMatrix', () => {
                 expect(v).toBeLessThanOrEqual(1)
             }
         }
+    })
+})
+
+describe('scheduleNeuronDamage', () => {
+    it('is a no-op when probability is 0 and nothing is damaged', () => {
+        const r = scheduleNeuronDamage(new Map(), 0, 60, 10, mulberry32(1))
+        expect(r.next.size).toBe(0)
+        expect(r.newlyDamaged).toEqual([])
+        expect(r.healed).toEqual([])
+    })
+
+    it('damages a neuron for `duration` frames and decrements each frame', () => {
+        // rng() < 0.999... always true → damage attempt every frame.
+        let r = scheduleNeuronDamage(new Map(), 1, 3, 10, mulberry32(5))
+        expect(r.newlyDamaged).toHaveLength(1)
+        const idx = r.newlyDamaged[0]
+        expect(r.next.get(idx)).toBe(3)
+
+        // Subsequent frames: no new damage (probability 0), duration counts down.
+        r = scheduleNeuronDamage(r.next, 0, 3, 10, mulberry32(5))
+        expect(r.next.get(idx)).toBe(2)
+        expect(r.healed).toEqual([])
+        r = scheduleNeuronDamage(r.next, 0, 3, 10, mulberry32(5))
+        expect(r.next.get(idx)).toBe(1)
+        r = scheduleNeuronDamage(r.next, 0, 3, 10, mulberry32(5))
+        expect(r.next.has(idx)).toBe(false)
+        expect(r.healed).toContain(idx) // healed exactly when the duration expires
+    })
+
+    it('never re-damages a neuron that is still damaged', () => {
+        const existing = new Map([[0, 5], [1, 5]])
+        // numNeurons=2 with probability 1: every candidate is already damaged → no-op.
+        const r = scheduleNeuronDamage(existing, 1, 5, 2, mulberry32(9))
+        expect(r.newlyDamaged).toEqual([])
+        expect(r.next.get(0)).toBe(4)
+        expect(r.next.get(1)).toBe(4)
+    })
+
+    it('drops out-of-range entries when numNeurons shrinks (healed)', () => {
+        const existing = new Map([[3, 5]]) // was valid for 10 neurons, invalid for 3
+        const r = scheduleNeuronDamage(existing, 0, 5, 3, mulberry32(2))
+        expect(r.next.has(3)).toBe(false)
+        expect(r.healed).toContain(3)
+    })
+
+    it('is deterministic for a seeded RNG and does not mutate the input', () => {
+        const a = new Map([[0, 10]])
+        const b = new Map([[0, 10]])
+        const r1 = scheduleNeuronDamage(a, 0.5, 60, 20, mulberry32(7))
+        const r2 = scheduleNeuronDamage(b, 0.5, 60, 20, mulberry32(7))
+        expect(r1.newlyDamaged).toEqual(r2.newlyDamaged)
+        expect([...r1.next.entries()]).toEqual([...r2.next.entries()])
+        // input untouched
+        expect(a.get(0)).toBe(10)
+    })
+})
+
+describe('hebbianUpdateWeight', () => {
+    it('is a no-op when lr is 0', () => {
+        expect(hebbianUpdateWeight(0.7, 0.3, -0.9, 0)).toBe(0.7)
+    })
+
+    it('applies w + lr * h * e', () => {
+        expect(hebbianUpdateWeight(0.5, 0.25, 1.0, 0.01)).toBeCloseTo(0.5025)
+        expect(hebbianUpdateWeight(-0.5, -0.4, 0.5, 0.01)).toBeCloseTo(-0.498)
+    })
+
+    it('clamps the result to [-clamp, +clamp]', () => {
+        expect(hebbianUpdateWeight(1.9, 1, 1, 0.5)).toBe(2) // would be 2.4
+        expect(hebbianUpdateWeight(-1.9, -1, 1, 0.5)).toBe(-2)
+        expect(hebbianUpdateWeight(1.9, 1, 1, 0.5, 3)).toBeCloseTo(2.4) // custom clamp
     })
 })
 

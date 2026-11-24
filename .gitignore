@@ -25,3 +25,6 @@ logs
 
 # UnoCSS local webfonts artifacts
 public/assets/fonts/
+
+# nuxt dev backup artifact
+.nuxtrc.untracked-backup

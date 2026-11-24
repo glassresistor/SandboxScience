@@ -58,6 +58,7 @@ var<workgroup> wg_urgeIdx : array<u32, MAX_URGES>;
 @group(0) @binding(1) var<storage, read_write> brainState : array<f32, 8>;  // persistent hidden state [H]
 @group(0) @binding(2) var<storage, read> weights : BrainWeights;            // network weights (global, frozen)
 @group(0) @binding(3) var<storage, read_write> neuronMods : array<f32, MAX_NEURONS>; // output: per-neuron modulation
+@group(0) @binding(4) var<storage, read_write> storedErrors : array<f32, MAX_URGES>; // experiment: persist this frame's urge errors for the learn pass
 
 @group(1) @binding(0) var<uniform> brainOpts : BrainOpts;
 
@@ -132,6 +133,12 @@ fn main(@builtin(local_invocation_id) lid : vec3<u32>) {
     // --- Phase 4: Write new hidden state back to persistent buffer ---
     if (tid < H) {
         brainState[tid] = wg_hNew[tid];
+    }
+
+    // --- Phase 4b: Persist this frame's urge errors for the optional learn pass ---
+    // (wg_errors is still valid in workgroup memory; the learn pass reads h_new + these.)
+    if (tid < nU) {
+        storedErrors[tid] = wg_errors[tid];
     }
 
     // --- Phase 5: Compute neuron modulations (threads 0..nN-1) ---

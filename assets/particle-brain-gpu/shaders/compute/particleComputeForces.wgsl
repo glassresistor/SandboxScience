@@ -203,6 +203,7 @@ fn urgeGoal(k: u32) -> UrgeGoal {
 @group(0) @binding(2) var<storage, read> binOffset : array<u32>;
 @group(0) @binding(3) var<storage, read> interactions: InteractionMatrix;
 @group(0) @binding(4) var<storage, read> neuronMods : array<f32>; // brain output: per-neuron modulation [-1,1]
+@group(0) @binding(5) var<storage, read> neuronHealth : array<f32>; // experiment: per-neuron health [0..1]; < 0.5 = damaged (cannot actuate)
 
 @group(1) @binding(0) var<uniform> options : SimOptions;
 @group(2) @binding(0) var<uniform> deltaTime : f32;
@@ -374,9 +375,13 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
                     drive += other.control * fall;   // other is the urge; .control is last frame's value
                 }
                 // ---- 4) a neuron actuating ONLY its own color ------------------------------
+                // Damaged neurons (neuronHealth[mIdx] < 0.5, set by the CPU damage experiment)
+                // cannot actuate: they keep firing locally but exert no force on matter.
                 if (isNeuron && oCat == 0u && oType == neuronTarget && dist < eR) {
                     let fall = max(0.0, 1.0 - dist / eR);
-                    totalForce += dir * (drive * electrical.urgeForce * fall); // drive>0 attracts, <0 repels
+                    if (neuronHealth[mIdx] >= 0.5) {
+                        totalForce += dir * (drive * electrical.urgeForce * fall); // drive>0 attracts, <0 repels
+                    }
                 }
 
                 // ---- 4b) matter feels local B from nearby motor neurons --------------------

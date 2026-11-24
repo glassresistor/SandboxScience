@@ -260,6 +260,11 @@
                                 mt-2
                                 tooltip="Global brain network output gain added to neuron drive. 0 = no global modulation, high = over-control." :min="0" :max="3" :step="0.01"
                             />
+                            <RangeInput
+                                v-model="particleLife.brainLearningRate" input label="Brain Learning Rate"
+                                mt-2
+                                tooltip="Hebbian learning rate for the brain's W_down weights (experiment). 0 = frozen brain; >0 lets the network adapt its input weights from urge errors." :min="0" :max="0.01" :step="0.0005"
+                            />
 
                             <hr my-2 border-gray-500>
                             <p class="-mt-0.5" mb-1 text-gray-300 underline>
@@ -486,6 +491,24 @@
                                 v-model="particleLife.driftInterval" input label="Drift Interval (frames)"
                                 mt-2
                                 tooltip="Simulated frames between drift steps (~3.3 s at 60 fps)." :min="10" :max="2000" :step="10"
+                            />
+                            <hr my-2 border-gray-500>
+                            <div flex items-center justify-between gap-2>
+                                <p class="w-2/3 text-2sm">
+                                    Neuron damage
+                                    <TooltipInfo container="#mainContainer" tooltip="Opt-in: randomly knocks one healthy motor neuron offline per frame with the probability below. Damaged neurons keep firing but cannot actuate matter, for the duration (frames). Toggling off heals all." />
+                                </p>
+                                <ToggleSwitch v-model="particleLife.isDamageEnabled" label="On" colorful-label />
+                            </div>
+                            <RangeInput
+                                v-model="particleLife.neuronDamageProbability" input label="Damage Probability"
+                                mt-2
+                                tooltip="Per-frame probability of damaging ONE random healthy neuron." :min="0" :max="0.1" :step="0.001"
+                            />
+                            <RangeInput
+                                v-model="particleLife.neuronDamageDuration" input label="Damage Duration (frames)"
+                                mt-2
+                                tooltip="Frames a damaged neuron stays offline (~1 s at 60 fps)." :min="5" :max="600" :step="5"
                             />
                         </Collapse>
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500">
@@ -809,6 +832,7 @@ import particleAdvanceBrushShaderCode from 'assets/particle-brain-gpu/shaders/co
 import particleCompactShaderCode from 'assets/particle-brain-gpu/shaders/compute/particleCompact.wgsl?raw'
 
 import brainMutateShaderCode from 'assets/particle-brain-gpu/shaders/compute/brainMutate.wgsl?raw'
+import brainLearnShaderCode from 'assets/particle-brain-gpu/shaders/compute/brainLearn.wgsl?raw'
 import brainStepShaderCode from 'assets/particle-brain-gpu/shaders/compute/brainStep.wgsl?raw'
 import particleComputeForcesShaderCode from 'assets/particle-brain-gpu/shaders/compute/particleComputeForces.wgsl?raw'
 import particleDrawShaderCode from 'assets/particle-brain-gpu/shaders/compute/particleDraw.wgsl?raw'
@@ -845,7 +869,7 @@ import { hexToRgb } from '~/helpers/utils/colorConversion'
 import { generateColors, PALETTE_OPTIONS } from "~/helpers/utils/colorsGenerator"
 import { generatePositions, POSITION_OPTIONS } from "~/helpers/utils/positionsGeneratorBrain"
 import { PARTICLE_STRIDE, PARTICLE_BYTES } from '~/constants/particleStride'
-import { driftInteractionMatrix, measureControlGap, measureMatterEntropy, noveltyRate } from '~/helpers/utils/experimentMetrics'
+import { driftInteractionMatrix, measureControlGap, measureMatterEntropy, noveltyRate, scheduleNeuronDamage } from '~/helpers/utils/experimentMetrics'
 import { generateRules, RULES_OPTIONS } from '~/helpers/utils/rulesGenerator'
 
 export default defineComponent({
@@ -1086,6 +1110,13 @@ export default defineComponent({
         let brainMutateOptsBindGroup: GPUBindGroup
         let brainMutateOptsBuffer: GPUBuffer | undefined
         let brainFrameCount = 0
+        // ---- Experiment buffers (Phase 4 damage + Phase 5 learning) -------------------------
+        let neuronHealthBuffer: GPUBuffer | undefined // per-neuron health [0..1]; < 0.5 = damaged (cannot actuate)
+        let storedErrorsBuffer: GPUBuffer | undefined // persistent copy of this frame's urge errors (brainStep → brainLearn)
+        let brainLearnPipeline: GPUComputePipeline | undefined
+        let brainLearnBindGroup: GPUBindGroup
+        let brainLearnOptsBindGroup: GPUBindGroup
+        let brainLearnOptsBuffer: GPUBuffer | undefined // f32 learningRate, u32 numUrges (+12 pad) = 16 bytes
         let particleAdvancePipeline: GPUComputePipeline
         // eslint-disable-next-line unused-imports/no-unused-vars
         let debugConnectionsPipeline: GPUComputePipeline // emits debug connection dots
@@ -1787,6 +1818,7 @@ export default defineComponent({
                     await updateElectricalCounts()
             }
 
+            applyNeuronDamage() // Opt-in neuron damage scheduling + health upload (no-op when off).
             const startExecutionTime = performance.now()
             if (isRunning && !isLifecycleInFlight) {
                 // Pause simulation while the lifecycle check holds a buffer snapshot in memory.
@@ -1860,6 +1892,23 @@ export default defineComponent({
                 brainPass.setBindGroup(1, brainOptsBindGroup)
                 brainPass.dispatchWorkgroups(1) // single workgroup of 64 threads
                 brainPass.end()
+            }
+
+            // ---- BRAIN LEARN (EXPERIMENT, Phase 5): Hebbian update of W_down ----------------
+            // Runs right after brainStep so it sees THIS frame's h_new + stored errors. Gated
+            // on learningRate > 0 — a frozen brain (rate 0) never dispatches this pass.
+            if (brainValid && brainLearnPipeline && particleLife.isElectricalEnabled && numUrges > 0 && particleLife.brainLearningRate > 0) {
+                const learnOpts = new ArrayBuffer(16)
+                const lv = new DataView(learnOpts)
+                lv.setFloat32(0, particleLife.brainLearningRate, true)
+                lv.setUint32(4, numUrges, true)
+                device.queue.writeBuffer(brainLearnOptsBuffer!, 0, learnOpts)
+                const learnPass = encoder.beginComputePass()
+                learnPass.setPipeline(brainLearnPipeline)
+                learnPass.setBindGroup(0, brainLearnBindGroup)
+                learnPass.setBindGroup(1, brainLearnOptsBindGroup)
+                learnPass.dispatchWorkgroups(1) // single workgroup of 64 threads
+                learnPass.end()
             }
 
             if (!useSpatialHash) {
@@ -2325,6 +2374,7 @@ export default defineComponent({
         const BRAIN_G = 16
         const BRAIN_MAX_URGES = 64
         const BRAIN_MAX_NEURONS = 128
+        const NEURON_HEALTH_CAPACITY = 2000 // UI max for numNeurons; sizes the damage health buffer so every mIdx is in-bounds
         // Total floats in BrainWeights struct: 512+8+64+128+128 = 840 (drive params now per-particle)
         const BRAIN_WEIGHTS_SIZE = 840 * 4
 
@@ -2333,6 +2383,8 @@ export default defineComponent({
             if (brainWeightsBuffer) brainWeightsBuffer.destroy()
             if (neuronModsBuffer) neuronModsBuffer.destroy()
             if (brainOptsBuffer) brainOptsBuffer.destroy()
+            if (neuronHealthBuffer) neuronHealthBuffer.destroy()
+            if (storedErrorsBuffer) storedErrorsBuffer.destroy()
 
             // Hidden state: H floats, initialized to zero
             brainStateBuffer = device.createBuffer({
@@ -2361,6 +2413,22 @@ export default defineComponent({
             // Neuron modulations output: MAX_NEURONS floats
             neuronModsBuffer = device.createBuffer({
                 size: BRAIN_MAX_NEURONS * 4,
+                usage: GPUBufferUsage.STORAGE,
+            })
+
+            // Experiment: per-neuron health, sized to the UI max (2000) so ANY mIdx the force
+            // pass can compute is in-bounds. Initialized healthy (1.0); the CPU re-uploads only
+            // when damage events change it. Separate buffer on purpose — a Particle field would
+            // break the 11-float stride contract.
+            neuronHealthBuffer = device.createBuffer({
+                size: NEURON_HEALTH_CAPACITY * 4,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            })
+            device.queue.writeBuffer(neuronHealthBuffer, 0, new Float32Array(NEURON_HEALTH_CAPACITY).fill(1))
+
+            // Experiment: persistent urge errors (brainStep → brainLearn), MAX_URGES floats.
+            storedErrorsBuffer = device.createBuffer({
+                size: BRAIN_MAX_URGES * 4,
                 usage: GPUBufferUsage.STORAGE,
             })
 
@@ -2823,6 +2891,7 @@ export default defineComponent({
                     { binding: 2, resource: { buffer: binOffsetBuffer! } },
                     { binding: 3, resource: { buffer: interactionMatrixBuffer! } },
                     { binding: 4, resource: { buffer: neuronModsBuffer! } }, // brain output
+                    { binding: 5, resource: { buffer: neuronHealthBuffer! } }, // experiment: per-neuron health
                 ],
             })
             // ---- Brain bind groups (only if pipeline was created successfully) ----
@@ -2834,6 +2903,7 @@ export default defineComponent({
                         { binding: 1, resource: { buffer: brainStateBuffer! } },      // persistent hidden state
                         { binding: 2, resource: { buffer: brainWeightsBuffer! } },    // network weights
                         { binding: 3, resource: { buffer: neuronModsBuffer! } },      // output modulations
+                        { binding: 4, resource: { buffer: storedErrorsBuffer! } },    // experiment: persist urge errors for learn pass
                     ],
                 })
                 brainOptsBindGroup = device.createBindGroup({
@@ -2842,6 +2912,24 @@ export default defineComponent({
                         { binding: 0, resource: { buffer: brainOptsBuffer! } },       // numUrges, numNeurons, numTypes
                     ],
                 })
+
+                // Brain learn bind groups (EXPERIMENT, Phase 5)
+                if (brainLearnPipeline) {
+                    brainLearnBindGroup = device.createBindGroup({
+                        layout: brainLearnPipeline.getBindGroupLayout(0),
+                        entries: [
+                            { binding: 0, resource: { buffer: brainStateBuffer! } },    // h_new from this frame's brainStep
+                            { binding: 1, resource: { buffer: storedErrorsBuffer! } },  // errors persisted by brainStep
+                            { binding: 2, resource: { buffer: brainWeightsBuffer! } },  // weights (only W_down is written)
+                        ],
+                    })
+                    brainLearnOptsBindGroup = device.createBindGroup({
+                        layout: brainLearnPipeline.getBindGroupLayout(1),
+                        entries: [
+                            { binding: 0, resource: { buffer: brainLearnOptsBuffer! } },
+                        ],
+                    })
+                }
 
                 // Brain mutate bind groups
                 if (brainMutatePipeline) {
@@ -2968,6 +3056,7 @@ export default defineComponent({
                     { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // binOffsetBuffer
                     { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // interactionMatrixBuffer (includes urge + neuron rows)
                     { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // neuronModsBuffer (brain output)
+                    { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // neuronHealthBuffer (experiment damage)
                 ],
             })
             electricalBindGroupLayout = device.createBindGroupLayout({
@@ -3177,6 +3266,7 @@ export default defineComponent({
                                 { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // brainState (read_write)
                                 { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // weights
                                 { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // neuronMods (read_write)
+                                { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // storedErrors (experiment: read_write)
                             ],
                         }),
                         device.createBindGroupLayout({
@@ -3208,6 +3298,35 @@ export default defineComponent({
                     ],
                 }),
                 compute: { module: brainMutateShader, entryPoint: 'main' },
+            })
+
+            // Brain learn pipeline (EXPERIMENT, Phase 5): Hebbian update of W_down.
+            // Mirrors brainStepPipeline; dispatched only when brainLearningRate > 0.
+            const brainLearnShader = device.createShaderModule({ code: brainLearnShaderCode })
+            brainLearnPipeline = device.createComputePipeline({
+                layout: device.createPipelineLayout({
+                    bindGroupLayouts: [
+                        device.createBindGroupLayout({
+                            entries: [
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // brainState (h_new)
+                                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // storedErrors
+                                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // weights (read_write; only W_down touched)
+                            ],
+                        }),
+                        device.createBindGroupLayout({
+                            entries: [
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} }, // learnOpts (uniform: rate + numUrges)
+                            ],
+                        }),
+                    ],
+                }),
+                compute: { module: brainLearnShader, entryPoint: 'main' },
+            })
+
+            // Learn opts uniform: f32 learningRate @0, u32 numUrges @4 (16 bytes with pad).
+            brainLearnOptsBuffer = device.createBuffer({
+                size: 16,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             })
             } catch (e) {
                 console.warn('[brain] pipeline creation failed, brain disabled:', e)
@@ -5014,6 +5133,59 @@ export default defineComponent({
             updateAllInteractionBuffers()
         }
 
+        // ---- Neuron damage: opt-in random offline events for motor neurons -----------------
+        // Off by default and zero-cost when off (one boolean check per frame). Damaged state
+        // lives in a SEPARATE per-neuron health buffer (NOT a Particle field — the stride is a
+        // hard 11-float contract) which the force pass reads at binding 5: neurons with
+        // health < 0.5 keep firing locally but cannot actuate matter. The pure, unit-tested
+        // `scheduleNeuronDamage` owns all state transitions; this block only uploads changes.
+        let damagedNeurons = new Map<number, number>() // localIdx -> framesRemaining
+        const neuronHealthData = new Float32Array(NEURON_HEALTH_CAPACITY).fill(1)
+        let damageFrameCounter = 0 // monotonic sim-frame index for event timestamps (advances only while running)
+
+        const damageEventLog = ref<{ frame: number, neuron: number }[]>([])
+        const DAMAGE_EVENT_LOG_CAP = 1000
+
+        const uploadNeuronHealth = () => {
+            if (!neuronHealthBuffer || !device)
+                return
+            neuronHealthData.fill(1)
+            for (const idx of damagedNeurons.keys())
+                if (idx < NEURON_HEALTH_CAPACITY) neuronHealthData[idx] = 0
+            device.queue.writeBuffer(neuronHealthBuffer, 0, neuronHealthData)
+        }
+
+        const applyNeuronDamage = () => {
+            if (!isRunning)
+                return
+            damageFrameCounter++
+            if (!particleLife.isDamageEnabled) {
+                // Toggling off heals everyone still damaged.
+                if (damagedNeurons.size > 0) {
+                    damagedNeurons = new Map()
+                    uploadNeuronHealth()
+                }
+                return
+            }
+            const { next, newlyDamaged, healed } = scheduleNeuronDamage(
+                damagedNeurons,
+                particleLife.neuronDamageProbability,
+                particleLife.neuronDamageDuration,
+                numNeurons,
+            )
+            if (newlyDamaged.length === 0 && healed.length === 0) {
+                damagedNeurons = next // durations unchanged this frame; keep the new map
+                return
+            }
+            damagedNeurons = next
+            uploadNeuronHealth()
+            for (const idx of newlyDamaged) {
+                damageEventLog.value.push({ frame: damageFrameCounter, neuron: idx })
+            }
+            if (damageEventLog.value.length > DAMAGE_EVENT_LOG_CAP)
+                damageEventLog.value.splice(0, damageEventLog.value.length - DAMAGE_EVENT_LOG_CAP)
+        }
+
         // Project the selected urge onto the canvas and move its marker. Runs every frame (cheap:
         // pure math + one style write, no GPU work). Position is extrapolated with velocity so the
         // marker glides smoothly between throttled readbacks.
@@ -5678,6 +5850,9 @@ export default defineComponent({
             brainStateBuffer?.destroy(); brainStateBuffer = undefined
             brainWeightsBuffer?.destroy(); brainWeightsBuffer = undefined
             neuronModsBuffer?.destroy(); neuronModsBuffer = undefined
+            neuronHealthBuffer?.destroy(); neuronHealthBuffer = undefined
+            storedErrorsBuffer?.destroy(); storedErrorsBuffer = undefined
+            brainLearnOptsBuffer?.destroy(); brainLearnOptsBuffer = undefined
             brainOptsBuffer?.destroy(); brainOptsBuffer = undefined
             brainMutateOptsBuffer?.destroy(); brainMutateOptsBuffer = undefined
             binOffsetBuffer?.destroy(); binOffsetBuffer = undefined
@@ -5824,6 +5999,7 @@ export default defineComponent({
             isExperimentTelemetry,
             experimentLog,
             clearExperimentLog,
+            damageEventLog,
             brainDrives,
             electricalParams,
             selectedUrgeId,

@@ -74,6 +74,7 @@ export const useParticleBrainGPUStore = defineStore('particleBrainGPU', () => {
     const controlGain = ref<number>(0.2) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign (tuned for O(1) normalized metric)
     const controlMax = ref<number>(2.0) // Clamp on |control| (+ attract / - repel)
     const brainGain = ref<number>(1.5) // Brain network output gain (0 = no global modulation, 3+ = over-control)
+    const brainLearningRate = ref(0.0) // Hebbian learning rate for the brain's W_down weights (0 = frozen brain; >0 runs the learn pass)
     const neuronInfluence = ref<number>(0.6) // (legacy, unused) strength of a single neuron's vote on an urge's control
     const neuronAuthority = ref<number>(0.4) // (legacy, unused) extra authority gained per nearby neuron
     const maxAuthority = ref<number>(3.0) // (legacy, unused) cap on the accumulated neuron authority
@@ -82,6 +83,10 @@ export const useParticleBrainGPUStore = defineStore('particleBrainGPU', () => {
     const isDriftEnabled = ref(false) // When on, adds centered Gaussian noise to the matter×matter submatrix every driftInterval frames
     const driftStrength = ref(0.05) // σ of per-cell Gaussian noise applied at each drift step (0 = no-op)
     const driftInterval = ref(200) // Simulated frames between drift steps (~3.3 s at 60 fps)
+    // ---- Experiment: neuron damage (random neurons stop actuating for a while) --------------
+    const isDamageEnabled = ref(false) // When on, randomly damages one motor neuron per frame with the probability below
+    const neuronDamageProbability = ref(0.01) // Per-frame probability of damaging ONE random healthy neuron
+    const neuronDamageDuration = ref(60) // Frames a damaged neuron stays offline (~1 s at 60 fps)
     // ---- Sense neurons: sensors that perceive ONE target color (no actuation) --------------
     // Each sense neuron senses exactly one color (= local index % numTypes) and stores its
     // perception in the persistent particle scalars: signal = magnitude [0,1], control = bearing
@@ -211,6 +216,7 @@ export const useParticleBrainGPUStore = defineStore('particleBrainGPU', () => {
         controlGain,
         controlMax,
         brainGain,
+        brainLearningRate,
         neuronInfluence,
         neuronAuthority,
         maxAuthority,
@@ -218,6 +224,9 @@ export const useParticleBrainGPUStore = defineStore('particleBrainGPU', () => {
         isDriftEnabled,
         driftStrength,
         driftInterval,
+        isDamageEnabled,
+        neuronDamageProbability,
+        neuronDamageDuration,
         numSenseNeurons,
         senseRadius,
         senseConeHalfAngleDeg,

@@ -132,7 +132,7 @@ In `ParticleBrainGpu.vue`, add an **opt-in** telemetry block (off by default, ze
 
 ---
 
-## 6. PHASE 4 — Neuron damage events (design Change 4)
+## 6. PHASE 4 — Neuron damage events (design Change 4) ✅ DONE (verified: 102/102 tests, typecheck clean)
 
 **Pitfall:** the neuron branch unconditionally sets `particle.control = 0.0` every frame, so you CANNOT use `control` as a persistent "damaged" sentinel — it gets overwritten. Use a **separate per-neuron health buffer** instead.
 
@@ -145,7 +145,7 @@ In `ParticleBrainGpu.vue`, add an **opt-in** telemetry block (off by default, ze
 
 ---
 
-## 7. PHASE 5 — Brain weight learning (design Change 6)
+## 7. PHASE 5 — Brain weight learning (design Change 6) ✅ DONE (verified: 102/102 tests, typecheck clean)
 
 The most involved; do last. Tests "a learning brain sustains novelty longer than a frozen one."
 
@@ -173,10 +173,10 @@ Definition of done for the whole task:
 - [x] `measureMatterEntropy`, `noveltyRate`, `measureControlGap` exist as pure functions with passing unit tests.
 - [x] Opt-in telemetry logs `{frame, params…, entropy, noveltyRate, controlGap}` and is zero-cost when off.
 - [x] Environmental drift (pure helper + loop hook) with tests; default off.
-- [ ] Neuron damage via separate health buffer (NOT a Particle field) — stride test still green.
-- [ ] Brain learning pass (storedErrors + brainLearn.wgsl) gated on `brainLearningRate>0`; frozen by default.
-- [ ] No `struct Particle` field count changed; no undeclared `options.*`; no `mod()`; Lorentz block untouched.
-- [ ] All 76 baseline tests + new tests pass; typecheck clean.
+- [x] Neuron damage via separate health buffer (NOT a Particle field) — stride test still green.
+- [x] Brain learning pass (storedErrors + brainLearn.wgsl) gated on `brainLearningRate>0`; frozen by default.
+- [x] No `struct Particle` field count changed; no undeclared `options.*`; no `mod()`; Lorentz block untouched.
+- [x] All 76 baseline tests + new tests pass (102 total); typecheck clean.
 
 ## 9. Priority if you must stop early
 1 → Phase 1 (MVE: brainGain + entropy/novelty + control gap + urgeForce sweep). 2 → Phase 3 (drift). 3 → Phase 4 (damage). 4 → Phase 5 (learning). Phase 2 needs no code.

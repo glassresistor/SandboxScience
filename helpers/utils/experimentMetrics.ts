@@ -122,6 +122,81 @@ export function driftInteractionMatrix(matrix: number[][], numTypes: number, str
     }
 }
 
+/**
+ * One frame of the neuron-damage experiment, as a PURE function so it is
+ * deterministically unit-testable with a seeded RNG.
+ *
+ * Semantics (applied in order):
+ *   1. Drop entries whose index is out of range (numNeurons shrank) — healed.
+ *   2. Decrement every remaining `framesRemaining`; entries reaching 0 are
+ *      removed (healed this frame).
+ *   3. With probability `probability`, pick ONE uniformly random neuron that is
+ *      not currently damaged and set it damaged for `duration` frames.
+ *
+ * Returns a NEW map (input is not mutated) plus the indices newly damaged and
+ * healed this frame, so the caller knows whether to re-upload the GPU health
+ * buffer and can log damage events.
+ */
+export interface NeuronDamageResult {
+    next: Map<number, number>
+    newlyDamaged: number[]
+    healed: number[]
+}
+
+export function scheduleNeuronDamage(
+    existing: Map<number, number>,
+    probability: number,
+    duration: number,
+    numNeurons: number,
+    rng: () => number = Math.random,
+): NeuronDamageResult {
+    const next = new Map<number, number>()
+    const healed: number[] = []
+
+    // 1+2. Decrement durations; drop expired and out-of-range entries.
+    for (const [idx, framesLeft] of existing) {
+        if (idx < 0 || idx >= numNeurons) {
+            healed.push(idx)
+            continue
+        }
+        const remaining = framesLeft - 1
+        if (remaining > 0)
+            next.set(idx, remaining)
+        else
+            healed.push(idx)
+    }
+
+    // 3. Maybe damage one new (currently healthy) neuron.
+    const newlyDamaged: number[] = []
+    if (numNeurons > 0 && probability > 0 && rng() < probability) {
+        let pick = -1
+        for (let guard = 0; guard < numNeurons * 4 + 32; guard++) {
+            const candidate = Math.floor(rng() * numNeurons)
+            if (!next.has(candidate)) {
+                pick = candidate
+                break
+            }
+        }
+        // If every neuron is already damaged, the scan finds no free one → no-op.
+        if (pick !== -1) {
+            next.set(pick, Math.max(1, Math.floor(duration)))
+            newlyDamaged.push(pick)
+        }
+    }
+
+    return { next, newlyDamaged, healed }
+}
+
+/**
+ * CPU mirror of the Hebbian update in `brainLearn.wgsl` (Phase 5):
+ * `w += lr * h * e`, clamped to [-clamp, +clamp]. Pure so it is unit-testable;
+ * the WGSL pass must produce identical results for the same inputs.
+ */
+export function hebbianUpdateWeight(w: number, h: number, e: number, lr: number, clamp = 2): number {
+    const updated = w + lr * h * e
+    return Math.max(-clamp, Math.min(clamp, updated))
+}
+
 export interface ControlGapOpts {
     numTypes: number
     numUrges: number
