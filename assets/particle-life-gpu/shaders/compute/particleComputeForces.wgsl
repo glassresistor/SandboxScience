@@ -261,6 +261,10 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     var totalForce = vec2f(0.0, 0.0);
     let particlePosition = vec2f(particle.x, particle.y);
 
+    // Accumulator for neuron-local magnetic field (matter only).
+    // Each nearby motor neuron contributes its firing activity (signal) scaled by falloff.
+    var localMagneticB: f32 = 0.0;
+
     // accumulators used by the electrical layer
     var metricCount: f32 = 0.0;   // this urge's target-color matter within urgeRadius (density metric)
     var metricCountB: f32 = 0.0;  // secondary goal target-color count (for merged urges)
@@ -368,6 +372,14 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
                     totalForce += dir * (drive * electrical.urgeForce * fall); // drive>0 attracts, <0 repels
                 }
 
+                // ---- 4b) matter feels local B from nearby motor neurons --------------------
+                // Neurons act as "muscles" that amplify the magnetic field locally.
+                // Their firing activity (signal, smoothed over frames) determines strength.
+                if (isMatter && oCat == 2u && dist < nR) {
+                    let fall = max(0.0, 1.0 - dist / nR);
+                    localMagneticB += other.signal * fall;
+                }
+
                 // ---- 5) a sense neuron perceiving its ONE target color ----------------------
                 // It NEVER touches matter: this branch only accumulates perception from the
                 // previous-frame positions of target-color matter within sR. The three senses
@@ -425,6 +437,23 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     if (isMatter) {
         particle.vx = fma(totalForce.x, forceFactor, particle.vx);
         particle.vy = fma(totalForce.y, forceFactor, particle.vy);
+
+        // ---- Neuron-local magnetic (Lorentz) force ------------------------------------
+        // In addition to the global B field (applied in the advance shader), nearby motor
+        // neurons add a LOCAL field proportional to their firing activity. This lets the
+        // brain "steer" matter into spirals/circular motion around active neuron clusters.
+        // F = q * v x B_local, with B along z: Fx = q*vy*B, Fy = -q*vx*B
+        if (options.magneticStrength != 0.0 && localMagneticB > 0.001) {
+            let pTypeF = particle.particleType;
+            let angle = pTypeF * 2.3999632; // golden angle for per-species charge
+            let q = sin(angle); // charge in [-1, 1]
+            // Scale local B by the global magneticStrength to keep it user-controllable.
+            // localMagneticB is O(1..N) depending on how many active neurons are nearby.
+            let bLocal = options.magneticStrength * localMagneticB;
+            particle.vx += q * particle.vy * bLocal * deltaTime;
+            particle.vy -= q * particle.vx * bLocal * deltaTime;
+        }
+
         // matter keeps control/signal = 0
     } else {
         // Special particles move under the extended interaction-matrix forces (branch 1b/1c,

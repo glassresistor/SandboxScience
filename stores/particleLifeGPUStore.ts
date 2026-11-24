@@ -81,7 +81,7 @@ export const useParticleLifeGPUStore = defineStore('particleLifeGPU', () => {
     // Each sense neuron senses exactly one color (= local index % numTypes) and stores its
     // perception in the persistent particle scalars: signal = magnitude [0,1], control = bearing
     // (radians, -PI..PI) for omnidirectional senses; 0 when there is no meaningful bearing.
-    const numSenseNeurons = ref<number>(40) // Number of sense neuron particles (sensors)
+    const numSenseNeurons = ref<number>(200) // Number of sense neuron particles (sensors)
     const senseRadius = ref<number>(60) // Perception radius (world units) shared by all three senses
     const senseConeHalfAngleDeg = ref<number>(35) // Sight: half-angle (degrees) of the forward cone in direction of motion
     const senseMode = ref<number>(0) // 0 = cycle all three per-sense (sight/smell/sound), 1 = all sight, 2 = all smell, 3 = all sound
