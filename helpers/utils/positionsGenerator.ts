@@ -1,3 +1,5 @@
+import { PARTICLE_STRIDE } from '~/constants/particleStride'
+
 export interface PositionOption { id: number, name: string, category?: string }
 type ParticlesArray = Float32Array
 type PosGen = (NUM_PARTICLES: number, NUM_TYPES: number, SIM_WIDTH: number, SIM_HEIGHT: number) => ParticlesArray
@@ -6,7 +8,7 @@ type PosGen = (NUM_PARTICLES: number, NUM_TYPES: number, SIM_WIDTH: number, SIM_
 // ==== HELPERS ========================================================================================================
 // ---------------------------------------------------------------------------------------------------------------------
 function writeParticle(arr: Float32Array, i: number, x: number, y: number, type: number) {
-    const k = i * 8
+    const k = i * PARTICLE_STRIDE
     arr[k] = x
     arr[k + 1] = y
     arr[k + 2] = 0 // vx
@@ -20,9 +22,9 @@ function writeParticle(arr: Float32Array, i: number, x: number, y: number, type:
 // ==== GENERATORS =====================================================================================================
 // ---------------------------------------------------------------------------------------------------------------------
 export function randomGenerator(NUM_PARTICLES: number, NUM_TYPES: number, SIM_WIDTH: number, SIM_HEIGHT: number): ParticlesArray {
-    const positions = new Float32Array(NUM_PARTICLES * 8)
+    const positions = new Float32Array(NUM_PARTICLES * PARTICLE_STRIDE)
     for (let i = 0; i < NUM_PARTICLES; ++i) {
-        const baseIndex = i * 8
+        const baseIndex = i * PARTICLE_STRIDE
         positions[baseIndex] = Math.random() * SIM_WIDTH
         positions[baseIndex + 1] = Math.random() * SIM_HEIGHT
         positions[baseIndex + 4] = Math.floor(Math.random() * NUM_TYPES)
@@ -33,7 +35,7 @@ export function randomGenerator(NUM_PARTICLES: number, NUM_TYPES: number, SIM_WI
     return positions
 }
 export const random: PosGen = (NUM_PARTICLES, NUM_TYPES, SIM_WIDTH, SIM_HEIGHT) => {
-    const A = new Float32Array(NUM_PARTICLES * 8)
+    const A = new Float32Array(NUM_PARTICLES * PARTICLE_STRIDE)
     let t = 0
     for (let i = 0; i < NUM_PARTICLES; i++) {
         const x = Math.random() * SIM_WIDTH
@@ -46,7 +48,7 @@ export const random: PosGen = (NUM_PARTICLES, NUM_TYPES, SIM_WIDTH, SIM_HEIGHT) 
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const disk: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     const cx = W * 0.5; const cy = H * 0.5
     const R = 0.46 * Math.min(W, H) // disk radius
     let t = 0
@@ -62,7 +64,7 @@ export const disk: PosGen = (N, T, W, H) => {
     return A
 }
 export const rainbowDisk: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -98,7 +100,7 @@ export const rainbowDisk: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const ring: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -130,7 +132,7 @@ export const ring: PosGen = (N, T, W, H) => {
 }
 
 export const rainbowRing: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -170,7 +172,7 @@ export const rainbowRing: PosGen = (N, T, W, H) => {
 
 // ---------------------------------------------------------------------------------------------------------------------
 export const rings: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -209,7 +211,7 @@ export const rings: PosGen = (N, T, W, H) => {
     return A
 }
 export const rainbowRings: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -244,7 +246,7 @@ export const rainbowRings: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const spiral: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -280,7 +282,7 @@ export const spiral: PosGen = (N, T, W, H) => {
     return A
 }
 export const rainbowSpiral: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -318,7 +320,7 @@ export const rainbowSpiral: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const line: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -342,7 +344,7 @@ export const line: PosGen = (N, T, W, H) => {
     return A
 }
 export const rainbowLine: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -376,7 +378,7 @@ export const rainbowLine: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const stripes: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -424,7 +426,7 @@ export const stripes: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const border: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -454,7 +456,7 @@ export const border: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const grid: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -484,7 +486,7 @@ export const grid: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const softClusters: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -560,7 +562,7 @@ export const softClusters: PosGen = (N, T, W, H) => {
     return A
 }
 export const linkedClusters: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -715,7 +717,7 @@ export const linkedClusters: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const twinSpirals: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -772,7 +774,7 @@ export const twinSpirals: PosGen = (N, T, W, H) => {
     return A
 }
 export const spiralArms: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -821,7 +823,7 @@ export const spiralArms: PosGen = (N, T, W, H) => {
 }
 
 export const yinYang: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -873,7 +875,7 @@ export const yinYang: PosGen = (N, T, W, H) => {
     return A
 }
 export const chromaticFlower: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -988,7 +990,7 @@ export const chromaticFlower: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const wavyBands: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -1038,7 +1040,7 @@ export const wavyBands: PosGen = (N, T, W, H) => {
 }
 // ---------------------------------------------------------------------------------------------------------------------
 export const polarMaze: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -1128,7 +1130,7 @@ export const polarMaze: PosGen = (N, T, W, H) => {
 }
 
 export const chaoticBands: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -1227,7 +1229,7 @@ export const chaoticBands: PosGen = (N, T, W, H) => {
     return A
 }
 export const orbitalBelts: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (T === 0)
         return A
 
@@ -1284,7 +1286,7 @@ export const orbitalBelts: PosGen = (N, T, W, H) => {
     return A
 }
 export const braidedBelts: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     const R = 0.46 * Math.min(W, H) // outer radius
     const ecc = 0.36 // eccentricity
     const belts = Math.floor(2 + Math.random() * 4) // number of belts [2..5]
@@ -1365,7 +1367,7 @@ export const braidedBelts: PosGen = (N, T, W, H) => {
     return A
 }
 export const twinCrescents: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -1455,7 +1457,7 @@ export const twinCrescents: PosGen = (N, T, W, H) => {
     return A
 }
 export const simpleFlower: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 
@@ -1484,7 +1486,7 @@ export const simpleFlower: PosGen = (N, T, W, H) => {
     return A
 }
 export const radiantFans: PosGen = (N, T, W, H) => {
-    const A = new Float32Array(N * 8)
+    const A = new Float32Array(N * PARTICLE_STRIDE)
     if (N <= 0 || T <= 0)
         return A
 

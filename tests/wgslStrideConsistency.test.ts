@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { PARTICLE_STRIDE, PARTICLE_BYTES } from '~/constants/particleStride'
 
 // ---------------------------------------------------------------------------
 // Regression test: every 2D GPU shader that declares a `struct Particle` must
@@ -189,5 +190,38 @@ describe('WGSL Particle Constructor Calls', () => {
         }
 
         expect(errors, `Wrong arg count in Particle constructors:\n${errors.join('\n')}`).toHaveLength(0)
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Cross-check: the JS PARTICLE_STRIDE constant MUST equal the WGSL struct
+// field count. This is the "type failure" guard — if you add a field to any
+// shader's `struct Particle` but forget to update the JS constant (or vice
+// versa), this test fails and blocks the merge.
+// ---------------------------------------------------------------------------
+describe('JS ↔ WGSL Stride Cross-Check', () => {
+    it('PARTICLE_STRIDE matches the WGSL Particle struct field count', () => {
+        const files = collectWgslFiles(SHADER_DIR)
+        let maxFields = 0
+        let checkedCount = 0
+
+        for (const file of files) {
+            const source = readFileSync(file, 'utf-8')
+            const fields = extractParticleFields(source)
+            if (!fields) continue
+            checkedCount++
+            maxFields = Math.max(maxFields, fields.length)
+        }
+
+        expect(checkedCount).toBeGreaterThan(0)
+        expect(
+            PARTICLE_STRIDE,
+            `PARTICLE_STRIDE (${PARTICLE_STRIDE}) must equal the WGSL Particle struct field count (${maxFields}). ` +
+            `Update constants/particleStride.ts to match.`
+        ).toBe(maxFields)
+    })
+
+    it('PARTICLE_BYTES is consistent with PARTICLE_STRIDE', () => {
+        expect(PARTICLE_BYTES).toBe(PARTICLE_STRIDE * 4)
     })
 })
