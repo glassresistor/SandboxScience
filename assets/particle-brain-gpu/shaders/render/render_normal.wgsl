@@ -74,7 +74,7 @@ fn vertexMain(
     @builtin(vertex_index) vertexIndex: u32
 ) -> VertexOutput {
     if (instanceIndex >= options.numParticles) {
-        return VertexOutput(vec4f(0.0), vec2f(0.0), vec4f(0.0), 0.0, 0.0);
+        return VertexOutput(vec4f(0.0), vec2f(0.0), vec4f(0.0), 0.0, 0.0, 0.0, 0.0);
     }
     let particle = particles[instanceIndex];
     let pType = u32(particle.particleType);
@@ -150,7 +150,7 @@ fn vertexMain(
 // 5-pointed star boundary radius at a given angle (in [-1,1] quad space)
 fn starRadius(angle: f32) -> f32 {
     let sectorAngle = 6.2831853 / 10.0; // π/5 — each half-sector
-    var a = mod(angle + 3.14159265, 2.0 * sectorAngle); // shift so point is at angle=0 (right)
+    var a = (angle + 3.14159265) - (2.0 * sectorAngle) * floor((angle + 3.14159265) / (2.0 * sectorAngle)); // mod without built-in
     if (a > sectorAngle) { a = 2.0 * sectorAngle - a; }
     // Linear interpolation: outer point (a=0) → inner valley (a=sectorAngle)
     let t = a / sectorAngle;

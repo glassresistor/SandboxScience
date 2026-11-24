@@ -66,9 +66,11 @@ fn particleAdvance(@builtin(global_invocation_id) id : vec3u) {
             let angle = pType * 2.3999632; // golden angle in radians
             let q = sin(angle); // charge in [-1, 1]
             let bField = options.magneticStrength;
-            // Use pre-friction velocity for stability (semi-implicit Euler)
-            particle.vx += q * particle.vy * bField * dt.deltaTime;
-            particle.vy -= q * particle.vx * bField * dt.deltaTime;
+            // Save pre-update velocities so both force components use the same state (symmetric)
+            let oldVx = particle.vx;
+            let oldVy = particle.vy;
+            particle.vx += q * oldVy * bField * dt.deltaTime;
+            particle.vy -= q * oldVx * bField * dt.deltaTime;
         }
     }
 

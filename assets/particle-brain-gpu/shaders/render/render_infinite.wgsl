@@ -79,7 +79,7 @@ struct VertexOutput {
 // 5-pointed star boundary radius
 fn starRadius(angle: f32) -> f32 {
     let sectorAngle = 6.2831853 / 10.0;
-    var a = mod(angle + 3.14159265, 2.0 * sectorAngle);
+    var a = (angle + 3.14159265) - (2.0 * sectorAngle) * floor((angle + 3.14159265) / (2.0 * sectorAngle));
     if (a > sectorAngle) { a = 2.0 * sectorAngle - a; }
     return mix(1.0, 0.382, a / sectorAngle);
 }

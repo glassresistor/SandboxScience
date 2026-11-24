@@ -1207,6 +1207,8 @@ export default defineComponent({
             updateCameraScaleFactors()
         }
         function setSimSize() {
+            const oldWidth = SIM_WIDTH
+            const oldHeight = SIM_HEIGHT
             if (useSpatialHash && isWallWrap) {
                 particleLife.simWidth = SIM_WIDTH = CELL_SIZE * Math.round(baseSimWidth / CELL_SIZE)
                 particleLife.simHeight = SIM_HEIGHT = CELL_SIZE * Math.round(baseSimHeight / CELL_SIZE)
@@ -1214,6 +1216,10 @@ export default defineComponent({
             SIM_WIDTH_HALF = SIM_WIDTH * 0.5
             SIM_HEIGHT_HALF = SIM_HEIGHT * 0.5
             updateCameraScaleFactors()
+            // If the sim dimensions changed, flag camera as dirty so the GPU camera buffer
+            // is synced on the next frame (prevents mismatch between infinite tile layout and camera transform).
+            if (SIM_WIDTH !== oldWidth || SIM_HEIGHT !== oldHeight)
+                cameraChanged = true
             updateBinningParameters()
             updateOffscreenMirrorResources()
             updateInfiniteRenderOptions()

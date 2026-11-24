@@ -456,8 +456,11 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
             // Scale local B by the global magneticStrength to keep it user-controllable.
             // localMagneticB is O(1..N) depending on how many active neurons are nearby.
             let bLocal = options.magneticStrength * localMagneticB;
-            particle.vx += q * particle.vy * bLocal * deltaTime;
-            particle.vy -= q * particle.vx * bLocal * deltaTime;
+            // Save pre-update velocities for symmetric Lorentz force
+            let oldVx = particle.vx;
+            let oldVy = particle.vy;
+            particle.vx += q * oldVy * bLocal * deltaTime;
+            particle.vy -= q * oldVx * bLocal * deltaTime;
         }
 
         // matter keeps control/signal = 0
