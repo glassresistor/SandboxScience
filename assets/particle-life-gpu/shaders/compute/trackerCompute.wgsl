@@ -6,6 +6,10 @@ struct Particle {
     particleType: f32,
     control: f32,
     signal: f32,
+    goalB: f32,
+    driveTarget: f32,
+    driveScale: f32,
+    driveGain: f32,
 }
 
 struct SimOptions {
