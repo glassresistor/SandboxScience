@@ -64,6 +64,28 @@
                                 @randomize-rules-and-radius="randomizeRulesAndRadius"
                                 @randomize-all="regenerateLife"
                             />
+
+                            <hr my-2 border-gray-500>
+                            <div flex items-center justify-between gap-2>
+                                <p class="w-2/3 text-2sm">
+                                    Electrical Layer
+                                    <TooltipInfo container="#mainContainer" tooltip="Master switch for the urge/neuron (brain) layer. <br> Changing counts regenerates the map." />
+                                </p>
+                                <ToggleSwitch v-model="particleLife.isElectricalEnabled" label="On" colorful-label />
+                            </div>
+
+                            <RangeInput
+                                v-model="particleLife.numUrges" input
+                                label="Urge Count"
+                                tooltip="Number of urge particles. Changing this regenerates the map." :min="0" :max="2000" :step="1"
+                                :disabled="!particleLife.isElectricalEnabled"
+                            />
+                            <RangeInput
+                                v-model="particleLife.numNeurons" input label="Neuron Count"
+                                mt-2
+                                tooltip="Number of neuron particles. Changing this regenerates the map." :min="0" :max="2000" :step="1"
+                                :disabled="!particleLife.isElectricalEnabled"
+                            />
                         </Collapse>
                         <Collapse label="World Settings" icon="i-tabler-world-cog text-cyan-500" opened>
                             <RangeInput
@@ -171,24 +193,9 @@
                             label="Quantum / Electrical" icon="i-tabler-bolt text-lime-400"
                             tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each have their own goal (derived from their index) and learn an attract/repel intent. They do NOT push matter directly — they recruit nearby neurons. <br> <b>Neurons</b> are actuators for a single color: within range of an urge they are driven by it and then pull or push only that one color. <br> State persists across frames (the next step reads the previous one), so there is no second pass."
                         >
-                            <div mb-1 flex items-center justify-between gap-2>
-                                <p class="w-2/3 text-2sm">
-                                    Enable layer
-                                    <TooltipInfo container="#mainContainer" tooltip="Master switch. When off, urges and neurons freeze in place and exert no field." />
-                                </p>
-                                <ToggleSwitch v-model="particleLife.isElectricalEnabled" label="On" colorful-label />
-                            </div>
-
-                            <RangeInput
-                                v-model="particleLife.numUrges" input
-                                label="Urge Count"
-                                tooltip="Number of urge particles. Each urge is a distinct type with its OWN goal: it acts on color = index % species, and the objective (attract vs repel, density vs fraction) is derived from its index so the population is diverse." :min="0" :max="2000" :step="1"
-                            />
-                            <RangeInput
-                                v-model="particleLife.numNeurons" input label="Neuron Count"
-                                mt-2
-                                tooltip="Number of neuron particles. Each neuron is an actuator for a single color = index % species. It is driven by the urges near it and then pulls or pushes only that one color." :min="0" :max="2000" :step="1"
-                            />
+                            <p mb-2 text-2sm text-gray-400>
+                                Counts & toggle are in <b>Randomizer Settings</b>. Changing counts regenerates the map.
+                            </p>
 
                             <div mt-2 flex items-center justify-between gap-2>
                                 <p class="w-1/3 shrink-0 text-2sm">
@@ -3956,6 +3963,11 @@ export default defineComponent({
                 numSenseNeurons = particleLife.numSenseNeurons
                 updateAllInteractionBuffers() // rebuild the GPU buffer before relabeling
                 await relabelPopulation()
+                // Regenerate positions to avoid black-screen artifacts from stale spatial-hash state.
+                // The in-place relabel can leave particles at positions that are inconsistent with
+                // the new type layout (especially when the urge/neuron band boundaries shift), causing
+                // the force pass to read garbage for one frame and produce a black flash.
+                void updateParticlePositions()
                 colors = generateExtendedColors(particleLife.selectedColorPaletteOption)
                 particleLife.currentColors = new Float32Array(colors)
                 updateColorBuffer()
@@ -5447,6 +5459,10 @@ export default defineComponent({
             setSimSize()
             if (changedProp === 'isWallWrap' || changedProp === 'isWallRepel' || (changedProp === 'isMirrorWrap' && newMirror && !oldWrap) || (changedProp === 'isInfiniteMirrorWrap' && newInfinite && !oldWrap)) {
                 updateSimOptionsBuffer()
+                // Regenerate positions to match the new sim bounds (snapped to cell grid when wrapping).
+                // Without this, particles outside the new bounds cause a one-frame stride-mismatch artifact
+                // because the spatial hash clamps them all into edge cells simultaneously.
+                void updateParticlePositions()
                 if (!isRunning && isDebugBinsActive)
                     step() // Force step for debug bins update
             }
