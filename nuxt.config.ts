@@ -119,6 +119,8 @@ export default defineNuxtConfig({
     },
 
     nitro: {
+        // @ts-expect-error Nitro honours `esbuild.options.target` at build time, but the current
+        // Nuxt/Nitro TS types don't declare it — keep the option (changing it alters the bundle).
         esbuild: {
             options: {
                 target: 'esnext',

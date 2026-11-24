@@ -21,7 +21,9 @@
         "postinstall": "nuxt prepare",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
-        "typecheck": "vue-tsc --noEmit"
+        "typecheck": "vue-tsc --noEmit",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "dependencies": {
         "@nuxtjs/seo": "^3.3.0",

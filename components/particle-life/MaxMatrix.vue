@@ -92,8 +92,8 @@ export default defineComponent({
         let toDeselect = false
         // -------------------------------------------------------------------------------------------------------------
         const cellRowCount = computed(() => particleLife.maxRadiusMatrix.length + 1)
-        const minValue = computed(() => particleLife.maxRadiusMatrix.reduce((min, row) => Math.min(min, ...row), Infinity))
-        const maxValue = computed(() => particleLife.maxRadiusMatrix.reduce((max, row) => Math.max(max, ...row), -Infinity))
+        const minValue = computed(() => particleLife.maxRadiusMatrix.reduce((min: number, row: number[]) => Math.min(min, ...row), Infinity))
+        const maxValue = computed(() => particleLife.maxRadiusMatrix.reduce((max: number, row: number[]) => Math.max(max, ...row), -Infinity))
         const hasSameValues = computed(() => {
             for (let i = 0; i < particleLife.numColors; i++) {
                 for (let j = 0; j < particleLife.numColors; j++) {
