@@ -105,3 +105,89 @@ describe('WGSL Particle Stride Consistency', () => {
         expect(suspicious, `Stale *8 stride references:\n${suspicious.join('\n')}`).toHaveLength(0)
     })
 })
+
+// ---------------------------------------------------------------------------
+// Regression: SimOptions field references must match struct declarations.
+// Catches the "black screen" bug where particleComputeForces.wgsl referenced
+// options.magneticStrength without declaring it in its local SimOptions struct.
+// ---------------------------------------------------------------------------
+describe('WGSL SimOptions Field References', () => {
+    /** Extract all `options.<fieldName>` references from a shader source. */
+    function extractOptionRefs(source: string): Set<string> {
+        const refs = new Set<string>()
+        const re = /options\.(\w+)/g
+        let m: RegExpExecArray | null
+        while ((m = re.exec(source)) !== null) {
+            refs.add(m[1])
+        }
+        return refs
+    }
+
+    /** Extract field names from a `struct SimOptions { ... }` block. */
+    function extractSimOptionFields(source: string): Set<string> | null {
+        const match = source.match(/struct\s+SimOptions\s*\{([^}]+)\}/)
+        if (!match) return null
+        const body = match[1].replace(/\/\/[^\n]*/g, '')
+        const fields = new Set<string>()
+        for (const raw of body.split(/[;,]/)) {
+            const line = raw.trim()
+            if (!line) continue
+            const m = line.match(/^(\w+)\s*:\s*\w+/)
+            if (m) fields.add(m[1])
+        }
+        return fields.size > 0 ? fields : null
+    }
+
+    it('every options.<field> reference exists in the shader\'s SimOptions struct', () => {
+        const files = collectWgslFiles(SHADER_DIR)
+        const errors: string[] = []
+
+        for (const file of files) {
+            const source = readFileSync(file, 'utf-8')
+            const declared = extractSimOptionFields(source)
+            if (!declared) continue // shader doesn't have SimOptions — OK
+
+            const refs = extractOptionRefs(source)
+            for (const ref of refs) {
+                if (!declared.has(ref)) {
+                    const rel = file.replace(process.cwd() + '/', '')
+                    errors.push(`${rel}: references options.${ref} but it's not in SimOptions struct`)
+                }
+            }
+        }
+
+        expect(errors, `Undeclared SimOptions fields:\n${errors.join('\n')}`).toHaveLength(0)
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Regression: Particle constructor calls must have exactly 11 args.
+// Catches the "structure constructor has too few inputs" compile error.
+// ---------------------------------------------------------------------------
+describe('WGSL Particle Constructor Calls', () => {
+    it('all Particle(...) constructor calls pass exactly 11 arguments', () => {
+        const files = collectWgslFiles(SHADER_DIR)
+        const errors: string[] = []
+
+        for (const file of files) {
+            const source = readFileSync(file, 'utf-8')
+            // Find all `Particle(` constructor calls (not struct declarations or type refs)
+            const re = /Particle\s*\(([^)]*)\)/g
+            let m: RegExpExecArray | null
+            while ((m = re.exec(source)) !== null) {
+                const argsStr = m[1].trim()
+                if (!argsStr) continue // empty parens — not a constructor call
+
+                // Count top-level commas (no nesting in WGSL constructor calls)
+                const argCount = argsStr.split(',').length
+                if (argCount !== EXPECTED_PARTICLE_FIELDS) {
+                    const rel = file.replace(process.cwd() + '/', '')
+                    const lineNum = source.slice(0, m.index).split('\n').length
+                    errors.push(`${rel}:${lineNum}: Particle(...) has ${argCount} args, expected ${EXPECTED_PARTICLE_FIELDS}`)
+                }
+            }
+        }
+
+        expect(errors, `Wrong arg count in Particle constructors:\n${errors.join('\n')}`).toHaveLength(0)
+    })
+})

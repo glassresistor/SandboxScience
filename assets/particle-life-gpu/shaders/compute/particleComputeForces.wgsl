@@ -55,6 +55,12 @@ struct SimOptions {
     mirrorWrapCount: u32,
     cellSubdivisions: u32,
     matrixStride: u32,  // stride of the interaction matrix (= numTypes + 2: matter + urge + neuron rows)
+    numUrges: u32,
+    neuronRadius: f32,
+    isDebugConnections: u32,
+    numSenseNeurons: u32,
+    senseRadius: f32,
+    magneticStrength: f32, // Lorentz force field strength (0 = off)
 };
 struct Particle {
     x : f32,
