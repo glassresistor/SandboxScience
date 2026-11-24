@@ -73,10 +73,15 @@ export const useParticleBrainGPUStore = defineStore('particleBrainGPU', () => {
     const urgeForce = ref<number>(0.2) // Strength of a neuron's field on its color, scaled by the drive from nearby urges (tuned: controlMax*urgeForce ≈ 1.15× F_pair)
     const controlGain = ref<number>(0.2) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign (tuned for O(1) normalized metric)
     const controlMax = ref<number>(2.0) // Clamp on |control| (+ attract / - repel)
+    const brainGain = ref<number>(1.5) // Brain network output gain (0 = no global modulation, 3+ = over-control)
     const neuronInfluence = ref<number>(0.6) // (legacy, unused) strength of a single neuron's vote on an urge's control
     const neuronAuthority = ref<number>(0.4) // (legacy, unused) extra authority gained per nearby neuron
     const maxAuthority = ref<number>(3.0) // (legacy, unused) cap on the accumulated neuron authority
     const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
+    // ---- Experiment: environmental drift (slowly perturbs MATTER×MATTER interaction rules) --
+    const isDriftEnabled = ref(false) // When on, adds centered Gaussian noise to the matter×matter submatrix every driftInterval frames
+    const driftStrength = ref(0.05) // σ of per-cell Gaussian noise applied at each drift step (0 = no-op)
+    const driftInterval = ref(200) // Simulated frames between drift steps (~3.3 s at 60 fps)
     // ---- Sense neurons: sensors that perceive ONE target color (no actuation) --------------
     // Each sense neuron senses exactly one color (= local index % numTypes) and stores its
     // perception in the persistent particle scalars: signal = magnitude [0,1], control = bearing
@@ -205,10 +210,14 @@ export const useParticleBrainGPUStore = defineStore('particleBrainGPU', () => {
         urgeForce,
         controlGain,
         controlMax,
+        brainGain,
         neuronInfluence,
         neuronAuthority,
         maxAuthority,
         cohesion,
+        isDriftEnabled,
+        driftStrength,
+        driftInterval,
         numSenseNeurons,
         senseRadius,
         senseConeHalfAngleDeg,

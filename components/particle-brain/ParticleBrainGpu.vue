@@ -253,6 +253,16 @@
 
                             <hr my-2 border-gray-500>
                             <p class="-mt-0.5" mb-1 text-gray-300 underline>
+                                Brain Network :
+                            </p>
+                            <RangeInput
+                                v-model="particleLife.brainGain" input label="Brain Gain"
+                                mt-2
+                                tooltip="Global brain network output gain added to neuron drive. 0 = no global modulation, high = over-control." :min="0" :max="3" :step="0.01"
+                            />
+
+                            <hr my-2 border-gray-500>
+                            <p class="-mt-0.5" mb-1 text-gray-300 underline>
                                 Neuron Control :
                             </p>
                             <RangeInput
@@ -437,6 +447,45 @@
                                 :num-types="particleLife.numColors"
                                 :objective-label-for="objectiveLabelFor"
                                 :brain-drives="brainDrives"
+                            />
+
+                            <hr my-2 border-gray-500>
+                            <div flex items-center justify-between gap-2>
+                                <p class="w-2/3 text-2sm">
+                                    Experiment telemetry
+                                    <TooltipInfo container="#mainContainer" tooltip="Opt-in, throttled read-only sampling of matter entropy, novelty rate and control gap (for parameter sweeps). Off = zero overhead. Samples land in the component's experimentLog for export as JSON." />
+                                </p>
+                                <ToggleSwitch v-model="isExperimentTelemetry" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled" />
+                            </div>
+                            <div mt-2 flex items-center justify-between gap-2>
+                                <p class="w-2/3 text-2sm">
+                                    Samples captured
+                                    <TooltipInfo container="#mainContainer" tooltip="Number of telemetry samples in the ring buffer (capped at 1000; oldest dropped)." />
+                                </p>
+                                <div flex items-center gap-2>
+                                    <span class="text-2sm text-gray-300">{{ experimentLog.length }}</span>
+                                    <button type="button" class="bg-gray-700 px-2 py-1 text-xs hover:bg-gray-600" @click="clearExperimentLog">
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                            <hr my-2 border-gray-500>
+                            <div flex items-center justify-between gap-2>
+                                <p class="w-2/3 text-2sm">
+                                    Environmental drift
+                                    <TooltipInfo container="#mainContainer" tooltip="Opt-in: periodically perturbs the MATTER×MATTER interaction rules with small centered Gaussian noise (urges/neurons untouched) to simulate a slowly changing environment. Off = no perturbation." />
+                                </p>
+                                <ToggleSwitch v-model="particleLife.isDriftEnabled" label="On" colorful-label />
+                            </div>
+                            <RangeInput
+                                v-model="particleLife.driftStrength" input label="Drift Strength"
+                                mt-2
+                                tooltip="σ of the per-cell Gaussian noise applied at each drift step. 0 = no-op." :min="0" :max="0.5" :step="0.01"
+                            />
+                            <RangeInput
+                                v-model="particleLife.driftInterval" input label="Drift Interval (frames)"
+                                mt-2
+                                tooltip="Simulated frames between drift steps (~3.3 s at 60 fps)." :min="10" :max="2000" :step="10"
                             />
                         </Collapse>
                         <Collapse label="Graphics Settings" icon="i-tabler-photo-cog text-emerald-500">
@@ -796,6 +845,7 @@ import { hexToRgb } from '~/helpers/utils/colorConversion'
 import { generateColors, PALETTE_OPTIONS } from "~/helpers/utils/colorsGenerator"
 import { generatePositions, POSITION_OPTIONS } from "~/helpers/utils/positionsGeneratorBrain"
 import { PARTICLE_STRIDE, PARTICLE_BYTES } from '~/constants/particleStride'
+import { driftInteractionMatrix, measureControlGap, measureMatterEntropy, noveltyRate } from '~/helpers/utils/experimentMetrics'
 import { generateRules, RULES_OPTIONS } from '~/helpers/utils/rulesGenerator'
 
 export default defineComponent({
@@ -1768,6 +1818,8 @@ export default defineComponent({
             // device.queue.onSubmittedWorkDone().then(() => { --pendingFrames })
 
             updateUrgeMarker() // Move the on-canvas marker for the tracked urge (no GPU work).
+            sampleExperimentTelemetry() // Opt-in throttled experiment metrics (no-op when off).
+            applyEnvironmentDrift() // Opt-in periodic drift of matter×matter rules (no-op when off).
             animationFrameId = requestAnimationFrame(frame)
         }
         // -------------------------------------------------------------------------------------------------------------
@@ -2124,8 +2176,8 @@ export default defineComponent({
         // -------------------------------------------------------------------------------------------------------------
         // -------------------------------------------------------------------------------------------------------------
         const updateElectricalOptionsBuffer = () => {
-            // 68 bytes: the original 56 + sense-neuron fields at 52/56/60/64 (see ElectricalOptions in the shaders)
-            const data = new ArrayBuffer(68)
+            // 72 bytes: the original 56 + sense-neuron fields at 52/56/60/64 + brainGain at 68 (see ElectricalOptions in particleComputeForces.wgsl)
+            const data = new ArrayBuffer(72)
             const v = new DataView(data)
             v.setUint32(0, particleLife.isElectricalEnabled ? 1 : 0, true)
             v.setUint32(4, particleLife.metricMode, true)
@@ -2145,6 +2197,8 @@ export default defineComponent({
             v.setFloat32(56, particleLife.senseRadius, true)
             v.setFloat32(60, particleLife.senseConeHalfAngleDeg * Math.PI / 180, true) // radians
             v.setUint32(64, particleLife.senseMode, true)
+            // brainGain is appended at the END (offset 68) so no existing offset shifts. Must match the WGSL struct field order.
+            v.setFloat32(68, particleLife.brainGain, true)
 
             if (!electricalOptionsBuffer) {
                 electricalOptionsBuffer = device.createBuffer({
@@ -4560,6 +4614,7 @@ export default defineComponent({
         watchElectrical(() => particleLife.urgeForce)
         watchElectrical(() => particleLife.controlGain)
         watchElectrical(() => particleLife.controlMax)
+        watchElectrical(() => particleLife.brainGain)
         watchElectrical(() => particleLife.neuronInfluence)
         watchElectrical(() => particleLife.neuronAuthority)
         watchElectrical(() => particleLife.maxAuthority)
@@ -4852,6 +4907,111 @@ export default defineComponent({
             prevUrgeValues.clear()
             void readUrgeStats() // immediate first sample so the panel isn't blank
             urgeReadbackTimer = window.setInterval(() => { void readUrgeStats() }, URGE_READBACK_INTERVAL_MS)
+        }
+
+        // ---- Experiment telemetry: opt-in, throttled, READ-ONLY -------------------------
+        // Off by default and zero-cost when off (no readback, no allocation). Mirrors the
+        // Urge Inspector pattern: a single guarded GPU readback of `particleBuffer`, parsed
+        // into a Float32Array and fed to the pure helpers in helpers/utils/experimentMetrics.ts.
+        //
+        // MVE sweep protocol (control-gap inverted-U): fix numParticles=64000, numColors=7,
+        // frictionFactor=0.3, magneticStrength=0; enable telemetry; vary `urgeForce` 0.0→1.5
+        // in 0.1 steps (and/or sweep `brainGain`); export `experimentLog` as JSON and plot
+        // noveltyRate (or entropy) vs the control gap.
+        // Body-autonomy grid (no extra code): set frictionFactor ∈ {0.05,0.1,0.2,0.3,0.5,0.7}
+        // × magneticStrength ∈ {0,0.3,0.8,1.5} via the sliders — both are already captured
+        // in every sample above; run each cell with telemetry on and compare novelty/entropy.
+        const EXPERIMENT_SAMPLE_INTERVAL_FRAMES = 50 // sample every N rendered frames
+        const EXPERIMENT_LOG_CAP = 1000 // ring-buffer cap (drop oldest beyond this)
+        interface ExperimentSample {
+            frame: number
+            urgeForce: number
+            brainGain: number
+            frictionFactor: number
+            magneticStrength: number
+            entropy: number
+            noveltyRate: number
+            controlGap: number
+        }
+        const isExperimentTelemetry = ref(false)
+        const experimentLog = ref<ExperimentSample[]>([])
+        let experimentFrameCounter = 0
+        let prevExperimentEntropy: number | null = null
+        let isSamplingExperiment = false // concurrency guard: one readback in flight at a time
+
+        const clearExperimentLog = () => {
+            experimentLog.value = []
+            prevExperimentEntropy = null
+        }
+
+        // One guarded, throttled sample. Runs at most once every EXPERIMENT_SAMPLE_INTERVAL_FRAMES
+        // rendered frames and never while a resize/erase is mutating buffers.
+        const sampleExperimentTelemetry = () => {
+            if (!isExperimentTelemetry.value)
+                return
+            experimentFrameCounter++
+            if (experimentFrameCounter % EXPERIMENT_SAMPLE_INTERVAL_FRAMES !== 0)
+                return
+            if (isSamplingExperiment)
+                return
+            if (isUpdatingParticles || isEraseCompleting)
+                return
+            if (!particleBuffer || !device)
+                return
+
+            isSamplingExperiment = true
+            void (async () => {
+                try {
+                    const arrayBuffer = await readBufferFromGPU(particleBuffer, NUM_PARTICLES * PARTICLE_BYTES)
+                    // Re-check guards after the await — a resize/erase may have started meanwhile.
+                    if (!isExperimentTelemetry.value || isUpdatingParticles || isEraseCompleting)
+                        return
+                    const particles = new Float32Array(arrayBuffer)
+                    const entropy = measureMatterEntropy(particles, { numTypes: NUM_TYPES, simWidth: SIM_WIDTH, simHeight: SIM_HEIGHT })
+                    const novelty = prevExperimentEntropy === null ? 0 : noveltyRate(prevExperimentEntropy, entropy)
+                    prevExperimentEntropy = entropy
+                    const controlGap = measureControlGap(particles, { numTypes: NUM_TYPES, numUrges, numNeurons, urgeRadius: particleLife.urgeRadius })
+                    experimentLog.value.push({
+                        frame: experimentFrameCounter,
+                        urgeForce: particleLife.urgeForce,
+                        brainGain: particleLife.brainGain,
+                        frictionFactor: particleLife.frictionFactor,
+                        magneticStrength: particleLife.magneticStrength,
+                        entropy,
+                        noveltyRate: novelty,
+                        controlGap,
+                    })
+                    if (experimentLog.value.length > EXPERIMENT_LOG_CAP)
+                        experimentLog.value.splice(0, experimentLog.value.length - EXPERIMENT_LOG_CAP)
+                }
+                catch {
+                    // Ignore transient readback failures; the next sample retries.
+                }
+                finally {
+                    isSamplingExperiment = false
+                }
+            })()
+        }
+
+        // ---- Environmental drift: opt-in, slow perturbation of MATTER×MATTER rules -------------
+        // Off by default and zero-cost when off (one boolean check per frame). When on, every
+        // `particleLife.driftInterval` simulated frames it adds centered Gaussian noise to the
+        // matter×matter submatrix of `rulesMatrix` (source of truth for the GPU upload; the store
+        // copy shares the same array) and re-uploads the interaction matrix. Urge/neuron rows are
+        // never touched. Skipped while a resize/erase is mutating buffers.
+        let driftFrameCounter = 0
+
+        const applyEnvironmentDrift = () => {
+            if (!isRunning || !particleLife.isDriftEnabled || particleLife.driftStrength <= 0)
+                return
+            if (isUpdatingParticles || isEraseCompleting)
+                return
+            driftFrameCounter++
+            const interval = Math.max(1, Math.floor(particleLife.driftInterval))
+            if (driftFrameCounter % interval !== 0)
+                return
+            driftInteractionMatrix(rulesMatrix, NUM_TYPES, particleLife.driftStrength)
+            updateAllInteractionBuffers()
         }
 
         // Project the selected urge onto the canvas and move its marker. Runs every frame (cheap:
@@ -5661,6 +5821,9 @@ export default defineComponent({
             colorRgbStrings,
             urgeInspectorOpen,
             urgeStats,
+            isExperimentTelemetry,
+            experimentLog,
+            clearExperimentLog,
             brainDrives,
             electricalParams,
             selectedUrgeId,

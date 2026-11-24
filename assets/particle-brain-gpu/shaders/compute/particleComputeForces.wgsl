@@ -93,6 +93,7 @@ struct ElectricalOptions {
     senseRadius: f32,    // perception radius shared by all three senses (sight/smell/sound)
     senseConeHalfAngle: f32, // sight: half-angle of the forward cone, in RADIANS
     senseMode: u32,      // 0 = cycle all three per-sense, 1 = all sight, 2 = all smell, 3 = all sound
+    brainGain: f32,      // global brain network output gain added to neuron drive (0 = no modulation). MUST stay LAST — CPU writes it at offset 68.
 };
 
 struct BinInfo {
@@ -435,7 +436,7 @@ fn computeForces(@builtin(global_invocation_id) id : vec3u) {
     // all urge errors. We add it here as an additional input on top of the local
     // spatial urge scanning, so both mechanisms coexist.
     if (isNeuron && eOn) {
-        drive += neuronMods[mIdx] * 1.5; // brainGain = 1.5 (tunable)
+        drive += neuronMods[mIdx] * electrical.brainGain; // global brain output gain (tunable, default 1.5)
     }
 
     let forceFactor = options.forceFactor * deltaTime * 60.0;
