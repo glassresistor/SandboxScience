@@ -63,22 +63,19 @@ export const useParticleBrainGPUStore = defineStore('particleBrainGPU', () => {
     const frictionFactor = ref<number>(0.3) // Slow down the particles (0 to 1, where 0 is no friction)
     const magneticStrength = ref<number>(0) // Lorentz force strength (0 = off). Each species has a derived charge; non-zero creates spiral/circular motion
 
-    // ---- Quantum / Electrical layer: Urge & Neuron particles -------------------------
-    const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole urge/neuron layer
-    const numUrges = ref<number>(30) // Number of urge particles (each has its own objective)
-    const numNeurons = ref<number>(80) // Number of neuron particles (each is an actuator for one color, driven by nearby urges)
-    const metricMode = ref<number>(0) // goal family: 0 = cycle all three per-urge (maximize/minimize/homeostasis), 1 = all maximize, 2 = all minimize, 3 = all homeostasis
-    const urgeRadius = ref<number>(45) // Radius over which an urge measures its goal metric & a neuron pushes/pulls its color
-    const neuronRadius = ref<number>(30) // Radius (from the neuron) within which an urge drives it
-    const urgeForce = ref<number>(0.2) // Strength of a neuron's field on its color, scaled by the drive from nearby urges (tuned: controlMax*urgeForce ≈ 1.15× F_pair)
-    const controlGain = ref<number>(0.2) // Learning rate: how strongly dM/dt pushes an urge's control toward its goal sign (tuned for O(1) normalized metric)
-    const controlMax = ref<number>(2.0) // Clamp on |control| (+ attract / - repel)
-    const brainGain = ref<number>(1.5) // Brain network output gain (0 = no global modulation, 3+ = over-control)
-    const brainLearningRate = ref(0.0) // Hebbian learning rate for the brain's W_down weights (0 = frozen brain; >0 runs the learn pass)
-    const neuronInfluence = ref<number>(0.6) // (legacy, unused) strength of a single neuron's vote on an urge's control
-    const neuronAuthority = ref<number>(0.4) // (legacy, unused) extra authority gained per nearby neuron
-    const maxAuthority = ref<number>(3.0) // (legacy, unused) cap on the accumulated neuron authority
-    const cohesion = ref<number>(0.6) // How strongly urges/neurons cling to the body & avoid overlapping
+    // ---- Brains layer: per-brain networks with owned neurons -------------------------
+    const isElectricalEnabled = ref<boolean>(true) // Master switch for the whole brain/neuron layer
+    const numBrains = ref<number>(12) // Number of brain particles (each owns a private net + captured neurons)
+    const numNeurons = ref<number>(80) // Number of motor neuron particles (actuators for one color each)
+    const urgeRadius = ref<number>(45) // Radius over which a brain measures its need metric & a neuron pushes/pulls its color
+    const neuronRadius = ref<number>(30) // Capture radius: within this distance a brain can capture free neurons
+    const urgeForce = ref<number>(0.2) // Strength of a motor neuron's actuation on its target color
+    const brainGain = ref<number>(1.5) // Brain network output gain (sole drive source for neurons)
+    const brainLearnRate = ref(0.01) // Delta-rule learning rate for brain weights (0 = frozen; >0 lets the net adapt from need errors)
+    const captureIntervalFrames = ref<number>(600) // Frames between neuron capture attempts (~10s at 60fps)
+    const cohesion = ref<number>(0.6) // How strongly brains/neurons cling to the body & avoid overlapping
+    // Capture/release params
+    const maxNeuronsPerBrain = ref<number>(16) // Cap on sense + motor neurons per brain
     // ---- Experiment: environmental drift (slowly perturbs MATTER×MATTER interaction rules) --
     const isDriftEnabled = ref(false) // When on, adds centered Gaussian noise to the matter×matter submatrix every driftInterval frames
     const driftStrength = ref(0.05) // σ of per-cell Gaussian noise applied at each drift step (0 = no-op)
@@ -207,20 +204,16 @@ export const useParticleBrainGPUStore = defineStore('particleBrainGPU', () => {
         magneticStrength,
         useSpatialHash,
         isElectricalEnabled,
-        numUrges,
+        numBrains,
         numNeurons,
-        metricMode,
         urgeRadius,
         neuronRadius,
         urgeForce,
-        controlGain,
-        controlMax,
         brainGain,
-        brainLearningRate,
-        neuronInfluence,
-        neuronAuthority,
-        maxAuthority,
+        brainLearnRate,
+        captureIntervalFrames,
         cohesion,
+        maxNeuronsPerBrain,
         isDriftEnabled,
         driftStrength,
         driftInterval,

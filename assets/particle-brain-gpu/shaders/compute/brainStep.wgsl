@@ -1,31 +1,30 @@
 // =============================================================================
-// Brain Step — Recurrent Network Mapping Urge Errors → Neuron Modulations
+// Brain Step — Per-Brain Forward Pass + Delta-Rule Learning
 //
-// Single workgroup (64 threads). Runs BEFORE the force pass each frame.
-// Reads previous-frame urge signals + drive params from the particle buffer,
-// computes errors, runs a small recurrent network, and writes per-neuron modulations.
+// One workgroup per brain. Runs BEFORE the force pass each frame.
+// For each brain:
+//   1. Gather inputs: read signal of owned sense neurons (net inputs)
+//   2. Forward: run the net (sense→motor) → write drives to neuronMods
+//   3. Teaching signal: compute K need errors from genome + prev-frame metrics
+//   4. Learning: delta-rule weight update (replaces old brainLearn pass)
 //
-// Architecture:
-//   error[u]  = clamp((driveTarget_u - signal_u) / driveScale_u, -1, 1) * driveGain_u
-//   h_new[i]  = tanh( sum_u W_down[i,u]*error[u] + sum_j W_recur[i,j]*h[j] + b[i] )
-//   mod[n]    = clamp( tanh(groupW[group(n)] dot h_new) + bias[n], -1, 1 )
+// Genome layout per brain (flat f32 array, stride = GENOME_STRIDE):
+//   [0 .. K*4)      needs: for need i → { targetColor(u32-as-f32), setpoint, scale, gain }
+//   [K*4 .. K*4+W)  weights: the brain's private net (≤ W = 1024 floats)
 //
-// Drive params (target/scale/gain) are PER-PARTICLE — they live in the particle buffer
-// and can be mutated/cloned/merged by other passes. The network weights are global.
+// Weight layout within the W region (offset from genome base + K*4):
+//   Single layer:  [W1: S*H][b1: H][Wout: H*M][bout: M]
+//   Two layers:    [W1: S*H][b1: H][W2: H*H][b2: H][Wout: H*M][bout: M]
 // =============================================================================
 
-const H : u32 = 8u;        // hidden units
-const G : u32 = 16u;       // neuron groups
-const MAX_URGES : u32 = 64u;
-const MAX_NEURONS : u32 = 128u;
+const K : u32 = 8u;            // needs per brain
+const W_BUDGET : u32 = 1024u;  // weight budget per brain
+const NEEDS_SIZE : u32 = K * 4u; // 32 floats for needs
+const GENOME_STRIDE : u32 = NEEDS_SIZE + W_BUDGET; // 1056 floats/brain
 
-struct BrainWeights {
-    W_down : array<f32, 512>,      // [H * MAX_URGES] (padded)
-    b_down : array<f32, 8>,        // [H]
-    W_recur : array<f32, 64>,      // [H * H]
-    groupW : array<f32, 128>,      // [G * H]
-    biases : array<f32, 128>,      // [MAX_NEURONS] (padded)
-};
+const MAX_S : u32 = 32u;  // max sense neurons per brain (capture cap)
+const MAX_M : u32 = 32u;  // max motor neurons per brain (capture cap)
+const MAX_H : u32 = 32u;  // max hidden units
 
 struct Particle {
     x : f32,
@@ -36,126 +35,327 @@ struct Particle {
     control : f32,
     signal  : f32,
     goalB   : f32,
-    driveTarget : f32, // brain: desired metric value (homeostasis setpoint)
-    driveScale  : f32, // brain: error normalisation (sensitivity)
-    driveGain   : f32, // brain: weight of this urge's error into the network
+    driveTarget : f32,
+    driveScale  : f32,
+    driveGain   : f32,
 };
 
-struct BrainOpts {
-    numUrges : u32,
-    numNeurons : u32,
+struct BrainStepOpts {
+    numBrains : u32,
+    numNeurons : u32,      // motor neurons total
+    numSenseNeurons : u32, // sense neurons total
     numTypes : u32,
+    learnRate : f32,
+    simWidth : f32,
+    simHeight : f32,
+    urgeRadius : f32,      // for O(1) metric normalization
 };
 
-// Workgroup memory for sharing within the single workgroup
-var<workgroup> wg_errors : array<f32, MAX_URGES>;
-var<workgroup> wg_hNew   : array<f32, 8>;
-var<workgroup> wg_hPrev  : array<f32, 8>;
-// Buffer index of each urge (found by type scan — particles are sorted by spatial hash)
-var<workgroup> wg_urgeIdx : array<u32, MAX_URGES>;
+@group(0) @binding(0) var<storage, read> particles : array<Particle>;
+@group(0) @binding(1) var<storage, read_write> genome : array<f32>;
+@group(0) @binding(2) var<storage, read> neuronOwners : array<u32>; // [numSense + numMotor]
+@group(0) @binding(3) var<storage, read_write> neuronMods : array<f32>; // per-motor-neuron drive output
 
-@group(0) @binding(0) var<storage, read> particles : array<Particle>;       // previous frame (temp buffer)
-@group(0) @binding(1) var<storage, read_write> brainState : array<f32, 8>;  // persistent hidden state [H]
-@group(0) @binding(2) var<storage, read> weights : BrainWeights;            // network weights (global, frozen)
-@group(0) @binding(3) var<storage, read_write> neuronMods : array<f32, MAX_NEURONS>; // output: per-neuron modulation
-@group(0) @binding(4) var<storage, read_write> storedErrors : array<f32, MAX_URGES>; // experiment: persist this frame's urge errors for the learn pass
+@group(1) @binding(0) var<uniform> opts : BrainStepOpts;
 
-@group(1) @binding(0) var<uniform> brainOpts : BrainOpts;
+// Workgroup memory (one workgroup per brain, 64 threads)
+var<workgroup> wg_senseList : array<u32, MAX_S>;   // buffer indices of owned sense neurons
+var<workgroup> wg_motorList : array<u32, MAX_M>;   // local indices of owned motor neurons
+var<workgroup> wg_inputs : array<f32, MAX_S>;      // gathered sense signals (net inputs)
+var<workgroup> wg_hidden1 : array<f32, MAX_H>;     // hidden layer 1 activations
+var<workgroup> wg_hidden2 : array<f32, MAX_H>;     // hidden layer 2 activations
+var<workgroup> wg_outputs : array<f32, MAX_M>;     // output drives
+var<workgroup> wg_S : u32;                         // count of owned sense neurons
+var<workgroup> wg_M : u32;                         // count of owned motor neurons
+var<workgroup> wg_H : u32;                         // hidden width
+var<workgroup> wg_depth : u32;                     // 1 or 2
+var<workgroup> wg_errors : array<f32, K>;          // need errors (teaching signal)
+var<workgroup> wg_metricCounts : array<u32, K>;    // per-need target-color matter counts
+
+// O(1) metric: expected count of a color in a disk of radius r at baseline uniform distribution
+fn expectedCount(r : f32) -> f32 {
+    let numTypesF = f32(opts.numTypes);
+    let area = opts.simWidth * opts.simHeight;
+    let numMatterApprox = max(f32(arrayLength(&particles)) - f32(opts.numNeurons + opts.numSenseNeurons), 1.0);
+    return numMatterApprox * 3.14159265 * r * r / area / numTypesF;
+}
 
 @compute @workgroup_size(64)
-fn main(@builtin(local_invocation_id) lid : vec3<u32>) {
+fn main(@builtin(global_invocation_id) gid : vec3<u32>,
+        @builtin(local_invocation_id) lid : vec3<u32>) {
+    let brainId = gid.x;
+    if (brainId >= opts.numBrains) { return; }
     let tid = lid.x;
-    let nU = min(brainOpts.numUrges, MAX_URGES);
-    let nN = min(brainOpts.numNeurons, MAX_NEURONS);
 
-    // --- Phase 0: Find urge positions by type (spatial hash sorts particles each frame) ---
-    if (tid < MAX_URGES) { wg_urgeIdx[tid] = 0xFFFFFFFFu; }
-    workgroupBarrier();
+    let genomeBase = brainId * GENOME_STRIDE;
+    let weightBase = genomeBase + NEEDS_SIZE; // offset to the weight region
 
-    let totalParticles = arrayLength(&particles);
-    for (var i = tid; i < totalParticles; i += 64u) {
-        let rawType = particles[i].particleType;
-        let intType = u32(rawType);
-        // Only originals (integer type, no fractional clone tag)
-        if (rawType == f32(intType) && intType >= brainOpts.numTypes && intType < brainOpts.numTypes + nU) {
-            wg_urgeIdx[intType - brainOpts.numTypes] = i;
+    let numSense = opts.numSenseNeurons;
+    let numMotor = opts.numNeurons;
+
+    // =====================================================================
+    // PHASE 1: Build ownership lists (which sense/motor neurons belong to this brain)
+    // =====================================================================
+    // Sense neurons occupy neuronOwners[0 .. numSense)
+    // Motor neurons occupy neuronOwners[numSense .. numSense+numMotor)
+    // Thread 0 does the linear scan (arrays are small: ≤ 200 + 80 = 280 entries)
+    if (tid == 0u) {
+        var countS : u32 = 0u;
+        for (var i = 0u; i < numSense && countS < MAX_S; i += 1u) {
+            if (neuronOwners[i] == brainId) {
+                wg_senseList[countS] = i; // store the local sense index
+                countS += 1u;
+            }
         }
+        wg_S = countS;
+
+        var countM : u32 = 0u;
+        for (var i = 0u; i < numMotor && countM < MAX_M; i += 1u) {
+            if (neuronOwners[numSense + i] == brainId) {
+                wg_motorList[countM] = i; // store the local motor index
+                countM += 1u;
+            }
+        }
+        wg_M = countM;
     }
     workgroupBarrier();
 
-    // --- Phase 1: Compute urge errors (threads 0..nU-1) ---
-    // Drive params are read FROM THE PARTICLE — they are per-particle and evolvable.
-    if (tid < nU) {
-        let pIdx = wg_urgeIdx[tid];
-        if (pIdx == 0xFFFFFFFFu) { wg_errors[tid] = 0.0; }
-        else {
-            let p = particles[pIdx];
+    let S = wg_S;
+    let M = wg_M;
 
-            let tgtVal = p.driveTarget;
-            let scl    = max(p.driveScale, 0.1);
-            let gain   = p.driveGain;
+    // If no neurons owned, nothing to compute — write zero drives and return
+    if (S == 0u && M == 0u) {
+        // Still need to zero the neuronMods for any motor that might reference this brain
+        // (but if M==0 there are none, so just return)
+        return;
+    }
 
-            // Error: how far is current metric from target? Positive = "too little" (want more)
-            let error = clamp((tgtVal - p.signal) / scl, -1.0, 1.0);
-            wg_errors[tid] = error * gain;
+    // =====================================================================
+    // PHASE 2: Compute net shape from S and M
+    // =====================================================================
+    let H : u32;
+    let depth : u32;
+    if (S + M <= 8u) {
+        // Single hidden layer, square-ish
+        H = max(4u, min(MAX_H, (S * M + 1u) / 2u)); // small: at least 4
+        if (H < 4u) { H = 4u; }
+        depth = 1u;
+    } else {
+        // Two hidden layers once S+M > 8
+        let hCalc = sqrt(f32(max(S, 1u) * max(M, 1u)));
+        H = min(MAX_H, max(4u, u32(hCalc + 0.5)));
+        depth = 2u;
+    }
+    wg_H = H;
+    wg_depth = depth;
+
+    // =====================================================================
+    // PHASE 3: Gather inputs (sense neuron signals)
+    // =====================================================================
+    // Find the buffer index of each sense neuron by its local index.
+    // Sense neurons have type = numTypes + numUrges + numNeurons + localS
+    let senseTypeBase = opts.numTypes + opts.numBrains + opts.numNeurons;
+    if (tid < S) {
+        let sLocal = wg_senseList[tid];
+        // Scan particles to find this sense neuron (sorted by spatial hash, so we scan all)
+        var found : f32 = 0.0;
+        for (var p = 0u; p < arrayLength(&particles); p += 1u) {
+            let pt = u32(particles[p].particleType);
+            if (pt == senseTypeBase + sLocal && particles[p].particleType == f32(pt)) {
+                found = particles[p].signal; // perception magnitude [0,1]
+                break;
+            }
+        }
+        wg_inputs[tid] = found;
+    } else {
+        wg_inputs[tid] = 0.0;
+    }
+    workgroupBarrier();
+
+    // =====================================================================
+    // PHASE 4: Forward pass (sense → motor)
+    // =====================================================================
+    let hW = f32(H);
+    let sW = f32(S);
+    let mW = f32(M);
+
+    if (depth == 1u) {
+        // Single layer: h[i] = tanh(W1[:,i]·x + b1[i])
+        if (tid < H) {
+            var val : f32 = genome[weightBase + S * H + tid]; // b1[tid]
+            for (var j = 0u; j < S; j += 1u) {
+                val += genome[weightBase + j * H + tid] * wg_inputs[j];
+            }
+            wg_hidden1[tid] = tanh(val);
+        }
+        workgroupBarrier();
+
+        // Output: o[m] = clamp(tanh(Wout[:,m]·h + bout[m]), -1, 1)
+        if (tid < M) {
+            var val : f32 = genome[weightBase + S * H + H + H * M + tid]; // bout[tid]
+            for (var i = 0u; i < H; i += 1u) {
+                val += genome[weightBase + S * H + H + i * M + tid] * wg_hidden1[i];
+            }
+            let out = clamp(tanh(val), -1.0, 1.0);
+            wg_outputs[tid] = out;
         }
     } else {
-        wg_errors[tid] = 0.0;
-    }
+        // Two layers: h1 → h2 → output
+        if (tid < H) {
+            var val : f32 = genome[weightBase + S * H + tid]; // b1[tid]
+            for (var j = 0u; j < S; j += 1u) {
+                val += genome[weightBase + j * H + tid] * wg_inputs[j];
+            }
+            wg_hidden1[tid] = tanh(val);
+        }
+        workgroupBarrier();
 
-    // --- Phase 2: Load previous hidden state into workgroup memory ---
-    if (tid < H) {
-        wg_hPrev[tid] = brainState[tid];
-    }
+        if (tid < H) {
+            var val : f32 = genome[weightBase + S * H + H + H * H + tid]; // b2[tid]
+            for (var j = 0u; j < H; j += 1u) {
+                val += genome[weightBase + S * H + H + j * H + tid] * wg_hidden1[j];
+            }
+            wg_hidden2[tid] = tanh(val);
+        }
+        workgroupBarrier();
 
+        if (tid < M) {
+            var val : f32 = genome[weightBase + S * H + H + H * H + H + H * M + tid]; // bout[tid]
+            for (var i = 0u; i < H; i += 1u) {
+                val += genome[weightBase + S * H + H + H * H + H + i * M + tid] * wg_hidden2[i];
+            }
+            let out = clamp(tanh(val), -1.0, 1.0);
+            wg_outputs[tid] = out;
+        }
+    }
     workgroupBarrier();
 
-    // --- Phase 3: Compute new hidden state (threads 0..H-1) ---
-    if (tid < H) {
-        let i = tid;
-        var val : f32 = weights.b_down[i];
-
-        // W_down @ errors: sum over all urges
-        for (var u = 0u; u < nU; u += 1u) {
-            val += weights.W_down[i * MAX_URGES + u] * wg_errors[u];
-        }
-
-        // W_recur @ h_prev: sum over hidden units
-        for (var j = 0u; j < H; j += 1u) {
-            val += weights.W_recur[i * H + j] * wg_hPrev[j];
-        }
-
-        wg_hNew[i] = tanh(val);
+    // =====================================================================
+    // PHASE 5: Write outputs to neuronMods (at the motor neuron's local index)
+    // =====================================================================
+    if (tid < M) {
+        let mLocal = wg_motorList[tid];
+        neuronMods[mLocal] = wg_outputs[tid];
     }
 
+    // =====================================================================
+    // PHASE 6: Compute teaching signal (K need errors)
+    // =====================================================================
+    // For each need i: err[i] = clamp((setpoint_i - metric_i) / scale_i, ±1) * gain_i
+    // Metric = normalized density of the need's target color within urgeRadius.
+    // We compute this by scanning matter particles for each target color.
+    // (O(N*K) but K=8 and we only scan once per brain workgroup.)
+
+    if (tid < K) {
+        let needBase = genomeBase + tid * 4u;
+        let targetColor = u32(genome[needBase]);       // stored as f32, cast back
+        let setpoint = genome[needBase + 1u];
+        let scale = max(genome[needBase + 2u], 0.1);
+        let gain = genome[needBase + 3u];
+
+        // Count target-color matter within urgeRadius of this brain's position
+        // Find the brain particle (type = numTypes + brainId)
+        var count : f32 = 0.0;
+        let brainType = opts.numTypes + brainId;
+        var brainPos = vec2f(0.0, 0.0);
+        var foundBrain = false;
+        let r2 = opts.urgeRadius * opts.urgeRadius;
+        for (var p = 0u; p < arrayLength(&particles); p += 1u) {
+            let pt = u32(particles[p].particleType);
+            if (!foundBrain && pt == brainType && particles[p].particleType == f32(pt)) {
+                brainPos = vec2f(particles[p].x, particles[p].y);
+                foundBrain = true;
+            }
+            if (pt < opts.numTypes && pt == targetColor) {
+                let dx = particles[p].x - brainPos.x;
+                let dy = particles[p].y - brainPos.y;
+                if (dx * dx + dy * dy < r2) {
+                    count += 1.0;
+                }
+            }
+        }
+
+        // Normalize to O(1): expected count at baseline
+        let expC = max(expectedCount(opts.urgeRadius), 0.001);
+        let metric = count / expC;
+        wg_metricCounts[tid] = u32(count); // store for potential debugging
+
+        let err = clamp((setpoint - metric) / scale, -1.0, 1.0);
+        wg_errors[tid] = err * gain;
+    } else {
+        wg_errors[tid % K] = wg_errors[tid % K]; // no-op for threads >= K (barrier sync)
+    }
     workgroupBarrier();
 
-    // --- Phase 4: Write new hidden state back to persistent buffer ---
-    if (tid < H) {
-        brainState[tid] = wg_hNew[tid];
-    }
+    // =====================================================================
+    // PHASE 7: Delta-rule learning (only if learnRate > 0)
+    // =====================================================================
+    let lr = opts.learnRate;
+    if (lr <= 0.0 || S == 0u || M == 0u) { return; }
 
-    // --- Phase 4b: Persist this frame's urge errors for the optional learn pass ---
-    // (wg_errors is still valid in workgroup memory; the learn pass reads h_new + these.)
-    if (tid < nU) {
-        storedErrors[tid] = wg_errors[tid];
-    }
+    // Scalar teaching signal: mean of K need errors
+    var teach : f32 = 0.0;
+    for (var k = 0u; k < K; k += 1u) { teach += wg_errors[k]; }
+    teach /= f32(K);
 
-    // --- Phase 5: Compute neuron modulations (threads 0..nN-1) ---
-    if (tid < nN) {
-        let n = tid;
+    if (abs(teach) < 0.001) { return; } // no learning needed
 
-        // Determine this neuron's group: n % G
-        let grp = n % G;
+    // Delta rule: reinforce active pathways scaled by teaching signal
+    // Output layer: ΔWout[i,m] = lr * teach * h_last[i]
+    // Input layer:  ΔW1[j,i]   = lr * teach * x[j] * mean(h)
 
-        // mod = tanh(groupW[grp] dot h_new) + bias[n]
-        var val : f32 = 0.0;
-        for (var i = 0u; i < H; i += 1u) {
-            val += weights.groupW[grp * H + i] * wg_hNew[i];
+    let wBase = weightBase;
+    if (depth == 1u) {
+        // Output weights: [H*M] at offset S*H + H
+        let outOff = S * H + H;
+        for (var idx = tid; idx < H * M; idx += 64u) {
+            let i = idx / M;
+            let m = idx % M;
+            let wIdx = wBase + outOff + i * M + m;
+            let updated = genome[wIdx] + lr * teach * wg_hidden1[i];
+            genome[wIdx] = clamp(updated, -2.0, 2.0);
         }
-        val = tanh(val) + weights.biases[n];
+        workgroupBarrier();
 
-        // Clamp to [-1, 1]
-        neuronMods[n] = clamp(val, -1.0, 1.0);
+        // Input weights: [S*H] at offset 0
+        for (var idx = tid; idx < S * H; idx += 64u) {
+            let j = idx / H;
+            let i = idx % H;
+            let wIdx = wBase + j * H + i;
+            let updated = genome[wIdx] + lr * teach * wg_inputs[j];
+            genome[wIdx] = clamp(updated, -2.0, 2.0);
+        }
+    } else {
+        // Two-layer: update all three weight matrices
+        // Wout: [H*M] at offset S*H + H + H*H + H
+        let outOff = S * H + H + H * H + H;
+        for (var idx = tid; idx < H * M; idx += 64u) {
+            let i = idx / M;
+            let m = idx % M;
+            let wIdx = wBase + outOff + i * M + m;
+            let updated = genome[wIdx] + lr * teach * wg_hidden2[i];
+            genome[wIdx] = clamp(updated, -2.0, 2.0);
+        }
+        workgroupBarrier();
+
+        // W2: [H*H] at offset S*H + H
+        let w2Off = S * H + H;
+        for (var idx = tid; idx < H * H; idx += 64u) {
+            let j = idx / H;
+            let i = idx % H;
+            let wIdx = wBase + w2Off + j * H + i;
+            let updated = genome[wIdx] + lr * teach * wg_hidden1[j];
+            genome[wIdx] = clamp(updated, -2.0, 2.0);
+        }
+        workgroupBarrier();
+
+        // W1: [S*H] at offset 0
+        for (var idx = tid; idx < S * H; idx += 64u) {
+            let j = idx / H;
+            let i = idx % H;
+            let wIdx = wBase + j * H + i;
+            let updated = genome[wIdx] + lr * teach * wg_inputs[j];
+            genome[wIdx] = clamp(updated, -2.0, 2.0);
+        }
     }
 }

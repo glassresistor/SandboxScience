@@ -69,15 +69,15 @@
                             <div flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Electrical Layer
-                                    <TooltipInfo container="#mainContainer" tooltip="Master switch for the urge/neuron (brain) layer. <br> Changing counts regenerates the map." />
+                                    <TooltipInfo container="#mainContainer" tooltip="Master switch for the brain/neuron layer. <br> Changing counts regenerates the map." />
                                 </p>
                                 <ToggleSwitch v-model="particleLife.isElectricalEnabled" label="On" colorful-label />
                             </div>
 
                             <RangeInput
-                                v-model="particleLife.numUrges" input
-                                label="Urge Count"
-                                tooltip="Number of urge particles. Changing this regenerates the map." :min="0" :max="2000" :step="1"
+                                v-model="particleLife.numBrains" input
+                                label="Brain Count"
+                                tooltip="Number of brain particles. Each owns a private neural net + captured neurons. Changing this regenerates the map." :min="0" :max="2000" :step="1"
                                 :disabled="!particleLife.isElectricalEnabled"
                             />
                             <RangeInput
@@ -195,60 +195,28 @@
                             />
                         </Collapse>
                         <Collapse
-                            label="Quantum / Electrical" icon="i-tabler-bolt text-lime-400"
-                            tooltip="Experimental particle types that act on the bodies in a 'quantum & electrical' way. <br> <b>Urges</b> each have their own goal (derived from their index) and learn an attract/repel intent. They do NOT push matter directly — they recruit nearby neurons. <br> <b>Neurons</b> are actuators for a single color: within range of an urge they are driven by it and then pull or push only that one color. <br> State persists across frames (the next step reads the previous one), so there is no second pass."
+                            label="Brains" icon="i-tabler-bolt text-lime-400"
+                            tooltip="Per-brain neural networks with homeostatic needs. <br> <b>Brains</b> own a private net + captured sense/motor neurons. Their needs define teaching signals; the net maps sense inputs to motor drives. <br> <b>Motor neurons</b> are actuators for one color, driven solely by their owning brain's net output. <br> <b>Sense neurons</b> feed perception into their owner's net as inputs."
                         >
                             <p mb-2 text-2sm text-gray-400>
                                 Counts & toggle are in <b>Randomizer Settings</b>. Changing counts regenerates the map.
                             </p>
 
-                            <div mt-2 flex items-center justify-between gap-2>
-                                <p class="w-1/3 shrink-0 text-2sm">
-                                    Urge Goal Family
-                                    <TooltipInfo container="#mainContainer" tooltip="The goal family for urges. Each urge targets a different color (by index). <br> <b>Cycle All</b>: each urge cycles through maximize, minimize, and homeostasis by its index — most diverse. <br> <b>All Maximize</b>: every urge wants to increase density of its target color. <br> <b>All Minimize</b>: every urge wants to decrease density of its target color. <br> <b>All Homeostasis</b>: every urge keeps its target color's density at a per-urge set point." />
-                                </p>
-                                <SelectInput
-                                    v-model="particleLife.metricMode" name="urge-metric-mode"
-                                    class="max-w-full!"
-                                    :options="[
-                                        { id: 0, name: 'Cycle All', category: 'Goal' },
-                                        { id: 1, name: 'All Maximize', category: 'Goal' },
-                                        { id: 2, name: 'All Minimize', category: 'Goal' },
-                                        { id: 3, name: 'All Homeostasis', category: 'Goal' },
-                                    ]"
-                                />
-                            </div>
-
                             <hr my-2 border-gray-500>
                             <RangeInput
                                 v-model="particleLife.urgeRadius" input
-                                label="Urge Radius"
-                                tooltip="Radius over which an urge measures its goal metric, and the range at which a neuron pushes/pulls its color. Larger = wider influence." :min="4" :max="160" :step="1"
+                                label="Brain Radius"
+                                tooltip="Radius over which a brain measures its need metrics, and the range at which a motor neuron pushes/pulls its color." :min="4" :max="160" :step="1"
                             />
                             <RangeInput
-                                v-model="particleLife.neuronRadius" input label="Neuron Radius"
+                                v-model="particleLife.neuronRadius" input label="Capture Radius"
                                 mt-2
-                                tooltip="Radius (measured from the neuron) within which an urge drives it. Closer urges have more influence on its drive." :min="4" :max="160" :step="1"
+                                tooltip="Distance within which a brain can capture free sense/motor neurons (organic growth)." :min="4" :max="160" :step="1"
                             />
                             <RangeInput
-                                v-model="particleLife.urgeForce" input label="Urge Field Strength"
+                                v-model="particleLife.urgeForce" input label="Neuron Force"
                                 mt-2
-                                tooltip="Strength of a neuron's field on its color, scaled by the drive it receives from nearby urges. Neurons near many strong urges push/pull harder." :min="0" :max="4" :step="0.01"
-                            />
-
-                            <hr my-2 border-gray-500>
-                            <p class="-mt-0.5" mb-1 text-gray-300 underline>
-                                Urge Learning :
-                            </p>
-                            <RangeInput
-                                v-model="particleLife.controlGain" input
-                                label="Control Gain"
-                                tooltip="Learning rate: how strongly the change in the urge's metric (vs the previous frame) pushes its attract/repel control. Higher = faster adaptation." :min="0" :max="1" :step="0.005"
-                            />
-                            <RangeInput
-                                v-model="particleLife.controlMax" input label="Control Max"
-                                mt-2
-                                tooltip="Clamp on an urge's control magnitude (attract +, repel -)." :min="0.1" :max="6" :step="0.1"
+                                tooltip="Strength of a motor neuron's actuation on its target color, scaled by the drive from its owning brain's net output." :min="0" :max="4" :step="0.01"
                             />
 
                             <hr my-2 border-gray-500>
@@ -261,29 +229,9 @@
                                 tooltip="Global brain network output gain added to neuron drive. 0 = no global modulation, high = over-control." :min="0" :max="3" :step="0.01"
                             />
                             <RangeInput
-                                v-model="particleLife.brainLearningRate" input label="Brain Learning Rate"
+                                v-model="particleLife.brainLearnRate" input label="Brain Learn Rate"
                                 mt-2
-                                tooltip="Hebbian learning rate for the brain's W_down weights (experiment). 0 = frozen brain; >0 lets the network adapt its input weights from urge errors." :min="0" :max="0.01" :step="0.0005"
-                            />
-
-                            <hr my-2 border-gray-500>
-                            <p class="-mt-0.5" mb-1 text-gray-300 underline>
-                                Neuron Control :
-                            </p>
-                            <RangeInput
-                                v-model="particleLife.neuronInfluence" input
-                                label="Neuron Influence"
-                                tooltip="(Legacy) How strongly a single nearby neuron nudged an urge's control. In the current model urges drive neurons, so this no longer has an effect." :min="0" :max="3" :step="0.01"
-                            />
-                            <RangeInput
-                                v-model="particleLife.neuronAuthority" input label="Authority / Neuron"
-                                mt-2
-                                tooltip="(Legacy) Extra authority gained per nearby neuron. In the current model urges drive neurons, so this no longer has an effect." :min="0" :max="2" :step="0.01"
-                            />
-                            <RangeInput
-                                v-model="particleLife.maxAuthority" input label="Max Authority"
-                                mt-2
-                                tooltip="(Legacy) Cap on the total neuron authority an urge could accumulate. No longer used." :min="1" :max="12" :step="0.5"
+                                tooltip="Delta-rule learning rate for brain weights. 0 = frozen (weights change only via heredity); >0 lets each brain's net adapt from its need errors." :min="0" :max="0.1" :step="0.005"
                             />
 
                             <hr my-2 border-gray-500>
@@ -335,10 +283,10 @@
                             <hr my-2 border-gray-500>
                             <div mb-1 flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
-                                    Urge Cloning
+                                    Brain Cloning
                                     <TooltipInfo container="#mainContainer" tooltip="When an urge's metric stays above the threshold, it gives birth: a dormant clone-pool particle is activated as a copy of that urge plus ALL its in-range neurons, shot outward with an impulse. <b>On every birth the parent's metric is split in half</b> — half stays with the parent, half goes to the clone. Urges keep giving birth for as long as their metric stays above the threshold, so highly successful urges (and urge+neuron combinations) keep replicating, while marginal ones stall or starve." />
                                 </p>
-                                <ToggleSwitch v-model="particleLife.isCloningEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                                <ToggleSwitch v-model="particleLife.isCloningEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numBrains === 0" />
                             </div>
 
                             <template v-if="particleLife.isCloningEnabled">
@@ -364,13 +312,13 @@
                                 />
                             </template>
 
-                            <!-- Urge Lifecycle: Death -->
+                            <!-- Brain Lifecycle: Death -->
                             <div class="mt-2 flex items-center justify-between">
                                 <p class="w-2/3 text-2sm">
-                                    Urge Death (Starvation)
+                                    Brain Death (Starvation)
                                     <TooltipInfo container="#mainContainer" tooltip="When an urge's metric stays below the threshold for the sustained time, it dies: its particle becomes dormant (invisible) and all neurons within neuronRadius of it also die. Death is permanent for the session." />
                                 </p>
-                                <ToggleSwitch v-model="particleLife.isDeathEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                                <ToggleSwitch v-model="particleLife.isDeathEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numBrains === 0" />
                             </div>
                             <template v-if="particleLife.isDeathEnabled">
                                 <RangeInput
@@ -383,13 +331,13 @@
                                 />
                             </template>
 
-                            <!-- Urge Lifecycle: Merges -->
+                            <!-- Brain Lifecycle: Merges -->
                             <div class="mt-2 flex items-center justify-between">
                                 <p class="w-2/3 text-2sm">
-                                    Urge Merges
+                                    Brain Merges
                                     <TooltipInfo container="#mainContainer" tooltip="When two live urges stay within the merge radius for the sustained time, they merge: the higher-power urge survives (absorbing the other's metric/control), and the loser dies along with its in-range neurons. Tie → lower display id wins." />
                                 </p>
-                                <ToggleSwitch v-model="particleLife.isMergeEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                                <ToggleSwitch v-model="particleLife.isMergeEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numBrains === 0" />
                             </div>
                             <template v-if="particleLife.isMergeEnabled">
                                 <RangeInput
@@ -402,13 +350,13 @@
                                 />
                             </template>
 
-                            <!-- Urge Lifecycle: Murders -->
+                            <!-- Brain Lifecycle: Murders -->
                             <div class="mt-2 flex items-center justify-between">
                                 <p class="w-2/3 text-2sm">
-                                    Urge Murders
+                                    Brain Murders
                                     <TooltipInfo container="#mainContainer" tooltip="When two live urges collide (distance below murderRadius) and their power gap exceeds the margin, the weaker dies immediately. No sustained requirement — instant collision event. Near-equal powers do not kill each other." />
                                 </p>
-                                <ToggleSwitch v-model="particleLife.isMurderEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numUrges === 0" />
+                                <ToggleSwitch v-model="particleLife.isMurderEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numBrains === 0" />
                             </div>
                             <template v-if="particleLife.isMurderEnabled">
                                 <RangeInput
@@ -431,7 +379,7 @@
                             </div>
                         </Collapse>
                         <Collapse
-                            label="Urge Inspector" icon="i-tabler-telescope text-sky-400"
+                            label="Brain Inspector" icon="i-tabler-telescope text-sky-400"
                             tooltip="Read-only telemetry for the Quantum / Electrical layer. <br> Flip <b>Live readback</b> on to sample each urge’s <b>control</b> and <b>metric</b> from the GPU a few times per second — off means zero overhead."
                         >
                             <div mb-1 flex items-center justify-between gap-2>
@@ -447,7 +395,7 @@
                                 v-model:selected-id="selectedUrgeId"
                                 :stats="urgeStats"
                                 :params="electricalParams"
-                                :control-max="particleLife.controlMax"
+                                :control-max="1"
                                 :target-colors="colorRgbStrings"
                                 :num-types="particleLife.numColors"
                                 :objective-label-for="objectiveLabelFor"
@@ -832,8 +780,8 @@ import particleAdvanceBrushShaderCode from 'assets/particle-brain-gpu/shaders/co
 import particleCompactShaderCode from 'assets/particle-brain-gpu/shaders/compute/particleCompact.wgsl?raw'
 
 import brainMutateShaderCode from 'assets/particle-brain-gpu/shaders/compute/brainMutate.wgsl?raw'
-import brainLearnShaderCode from 'assets/particle-brain-gpu/shaders/compute/brainLearn.wgsl?raw'
 import brainStepShaderCode from 'assets/particle-brain-gpu/shaders/compute/brainStep.wgsl?raw'
+import captureReleaseShaderCode from 'assets/particle-brain-gpu/shaders/compute/captureRelease.wgsl?raw'
 import particleComputeForcesShaderCode from 'assets/particle-brain-gpu/shaders/compute/particleComputeForces.wgsl?raw'
 import particleDrawShaderCode from 'assets/particle-brain-gpu/shaders/compute/particleDraw.wgsl?raw'
 import particleEraseShaderCode from 'assets/particle-brain-gpu/shaders/compute/particleErase.wgsl?raw'
@@ -993,7 +941,7 @@ export default defineComponent({
         let MATRIX_TYPES: number = NUM_TYPES + MATRIX_EXTRA_TYPES // total interaction matrix dimension
         let NEW_NUM_TYPES: number = NUM_TYPES
         // Quantum / electrical layer counts (each urge/neuron is a distinct type above the matter range)
-        let numUrges: number = particleLife.numUrges
+        let numUrges: number = particleLife.numBrains
         let numNeurons: number = particleLife.numNeurons
         let numSenseNeurons: number = particleLife.numSenseNeurons // sense neurons (sensors; one target color each)
         let numClonePool: number = particleLife.numClonePool // dormant slots for the cloning system
@@ -1100,9 +1048,9 @@ export default defineComponent({
         let particleComputeForcesPipeline: GPUComputePipeline
         let brainStepPipeline: GPUComputePipeline | undefined
         let brainValid = false // set true only after successful pipeline creation
-        let brainStateBuffer: GPUBuffer | undefined
-        let brainWeightsBuffer: GPUBuffer | undefined
-        let neuronModsBuffer: GPUBuffer | undefined
+        let genomeBuffer: GPUBuffer | undefined // per-brain genome (needs + weights), numBrains * GENOME_STRIDE floats
+        let neuronOwnersBuffer: GPUBuffer | undefined // per-neuron ownership: [numSense + numMotor] u32 entries
+        let neuronModsBuffer: GPUBuffer | undefined // per-motor-neuron drive output from brain forward pass
         let brainOptsBuffer: GPUBuffer | undefined
         let brainBindGroup: GPUBindGroup
         let brainOptsBindGroup: GPUBindGroup
@@ -1111,13 +1059,12 @@ export default defineComponent({
         let brainMutateOptsBindGroup: GPUBindGroup
         let brainMutateOptsBuffer: GPUBuffer | undefined
         let brainFrameCount = 0
-        // ---- Experiment buffers (Phase 4 damage + Phase 5 learning) -------------------------
+        let captureReleasePipeline: GPUComputePipeline | undefined
+        let captureReleaseBindGroup: GPUBindGroup
+        let captureReleaseOptsBindGroup: GPUBindGroup
+        let captureReleaseOptsBuffer: GPUBuffer | undefined
+        // ---- Experiment buffers (damage) -------------------------
         let neuronHealthBuffer: GPUBuffer | undefined // per-neuron health [0..1]; < 0.5 = damaged (cannot actuate)
-        let storedErrorsBuffer: GPUBuffer | undefined // persistent copy of this frame's urge errors (brainStep → brainLearn)
-        let brainLearnPipeline: GPUComputePipeline | undefined
-        let brainLearnBindGroup: GPUBindGroup
-        let brainLearnOptsBindGroup: GPUBindGroup
-        let brainLearnOptsBuffer: GPUBuffer | undefined // f32 learningRate, u32 numUrges (+12 pad) = 16 bytes
         let particleAdvancePipeline: GPUComputePipeline
         // eslint-disable-next-line unused-imports/no-unused-vars
         let debugConnectionsPipeline: GPUComputePipeline // emits debug connection dots
@@ -1885,33 +1832,25 @@ export default defineComponent({
         const step = () => {
             const encoder = device.createCommandEncoder()
 
-            // ---- BRAIN STEP: recurrent network maps urge errors → neuron modulations ----
-            // Runs first so the force pass can read the output. Reads particleBuffer
-            // (previous-frame state in original order) and writes neuronModsBuffer.
-            if (brainValid && particleLife.isElectricalEnabled && numUrges > 0 && numNeurons > 0) {
+            // ---- BRAIN STEP: per-brain forward pass + delta-rule learning ----
+            // One workgroup per brain. Runs first so the force pass can read neuronMods.
+            if (brainValid && particleLife.isElectricalEnabled && numUrges > 0) {
                 const brainPass = encoder.beginComputePass()
                 brainPass.setPipeline(brainStepPipeline!)
                 brainPass.setBindGroup(0, brainBindGroup)
                 brainPass.setBindGroup(1, brainOptsBindGroup)
-                brainPass.dispatchWorkgroups(1) // single workgroup of 64 threads
+                brainPass.dispatchWorkgroups(numUrges) // one workgroup per brain
                 brainPass.end()
             }
 
-            // ---- BRAIN LEARN (EXPERIMENT, Phase 5): Hebbian update of W_down ----------------
-            // Runs right after brainStep so it sees THIS frame's h_new + stored errors. Gated
-            // on learningRate > 0 — a frozen brain (rate 0) never dispatches this pass.
-            if (brainValid && brainLearnPipeline && particleLife.isElectricalEnabled && numUrges > 0 && particleLife.brainLearningRate > 0) {
-                const learnOpts = new ArrayBuffer(16)
-                const lv = new DataView(learnOpts)
-                lv.setFloat32(0, particleLife.brainLearningRate, true)
-                lv.setUint32(4, numUrges, true)
-                device.queue.writeBuffer(brainLearnOptsBuffer!, 0, learnOpts)
-                const learnPass = encoder.beginComputePass()
-                learnPass.setPipeline(brainLearnPipeline)
-                learnPass.setBindGroup(0, brainLearnBindGroup)
-                learnPass.setBindGroup(1, brainLearnOptsBindGroup)
-                learnPass.dispatchWorkgroups(1) // single workgroup of 64 threads
-                learnPass.end()
+            // ---- CAPTURE/RELEASE: organic neuron gain/loss (gated on frame counter) ----
+            if (brainValid && captureReleasePipeline && particleLife.isElectricalEnabled && numUrges > 0) {
+                const capPass = encoder.beginComputePass()
+                capPass.setPipeline(captureReleasePipeline!)
+                capPass.setBindGroup(0, captureReleaseBindGroup)
+                capPass.setBindGroup(1, captureReleaseOptsBindGroup)
+                capPass.dispatchWorkgroups(numUrges) // one workgroup per brain
+                capPass.end()
             }
 
             if (!useSpatialHash) {
@@ -1922,15 +1861,15 @@ export default defineComponent({
             else computeBruteForce(encoder)
             computeAdvance(encoder)
 
-            // ---- BRAIN MUTATE: slow drift of per-urge drive params ----
+            // ---- BRAIN MUTATE: slow drift of genome NEEDS (not weights) ----
             if (brainValid && particleLife.isElectricalEnabled && numUrges > 0) {
                 brainFrameCount++
-                device.queue.writeBuffer(brainMutateOptsBuffer!, 8, new Uint32Array([brainFrameCount]))
+                device.queue.writeBuffer(brainMutateOptsBuffer!, 4, new Uint32Array([brainFrameCount]))
                 const mutatePass = encoder.beginComputePass()
                 mutatePass.setPipeline(brainMutatePipeline!)
                 mutatePass.setBindGroup(0, brainMutateBindGroup)
                 mutatePass.setBindGroup(1, brainMutateOptsBindGroup)
-                mutatePass.dispatchWorkgroups(1)
+                mutatePass.dispatchWorkgroups(numUrges) // one workgroup per brain
                 mutatePass.end()
             }
 
@@ -2267,17 +2206,17 @@ export default defineComponent({
             const data = new ArrayBuffer(72)
             const v = new DataView(data)
             v.setUint32(0, particleLife.isElectricalEnabled ? 1 : 0, true)
-            v.setUint32(4, particleLife.metricMode, true)
+            v.setUint32(4, 0, true) // metricMode: deprecated (goal modes gone)
             v.setUint32(8, numUrges, true)
             v.setUint32(12, numNeurons, true)
             v.setFloat32(16, particleLife.urgeRadius, true)
-            v.setFloat32(20, particleLife.neuronRadius, true)
+            v.setFloat32(20, particleLife.neuronRadius, true) // repurposed: capture radius
             v.setFloat32(24, particleLife.urgeForce, true)
-            v.setFloat32(28, particleLife.controlGain, true)
-            v.setFloat32(32, particleLife.controlMax, true)
-            v.setFloat32(36, particleLife.neuronInfluence, true)
-            v.setFloat32(40, particleLife.neuronAuthority, true)
-            v.setFloat32(44, particleLife.maxAuthority, true)
+            v.setFloat32(28, 0, true) // controlGain: deprecated (no per-frame control learning)
+            v.setFloat32(32, 0, true) // controlMax: deprecated
+            v.setFloat32(36, 0, true) // neuronInfluence: legacy unused
+            v.setFloat32(40, 0, true) // neuronAuthority: legacy unused
+            v.setFloat32(44, 0, true) // maxAuthority: legacy unused
             v.setFloat32(48, particleLife.cohesion, true)
             // Sense-neuron fields (must match the WGSL ElectricalOptions struct field order)
             v.setUint32(52, numSenseNeurons, true)
@@ -2407,85 +2346,132 @@ export default defineComponent({
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             })
         }
-        // ---- BRAIN BUFFERS: recurrent network for urge→neuron modulation ----
-        const BRAIN_H = 8
-        const BRAIN_G = 16
-        const BRAIN_MAX_URGES = 64
-        const BRAIN_MAX_NEURONS = 128
-        const NEURON_HEALTH_CAPACITY = 2000 // UI max for numNeurons; sizes the damage health buffer so every mIdx is in-bounds
-        // Total floats in BrainWeights struct: 512+8+64+128+128 = 840 (drive params now per-particle)
-        const BRAIN_WEIGHTS_SIZE = 840 * 4
+        // ---- BRAIN BUFFERS: per-brain genome (needs + private net) + neuron ownership ----
+        const GENOME_K = 8 // needs per brain
+        const GENOME_W_BUDGET = 1024 // weight budget per brain
+        const GENOME_NEEDS_SIZE = GENOME_K * 4 // 32 floats for needs
+        const GENOME_STRIDE = GENOME_NEEDS_SIZE + GENOME_W_BUDGET // 1056 floats/brain
+        const NEURON_HEALTH_CAPACITY = 2000 // UI max for numNeurons; sizes the damage health buffer
+        const MAX_NEURONS_PER_BRAIN = 16 // cap on S and M per brain (keeps W_used < 1024)
 
         const updateBrainBuffers = () => {
-            if (brainStateBuffer) brainStateBuffer.destroy()
-            if (brainWeightsBuffer) brainWeightsBuffer.destroy()
+            if (genomeBuffer) genomeBuffer.destroy()
+            if (neuronOwnersBuffer) neuronOwnersBuffer.destroy()
             if (neuronModsBuffer) neuronModsBuffer.destroy()
             if (brainOptsBuffer) brainOptsBuffer.destroy()
             if (neuronHealthBuffer) neuronHealthBuffer.destroy()
-            if (storedErrorsBuffer) storedErrorsBuffer.destroy()
+            if (captureReleaseOptsBuffer) captureReleaseOptsBuffer.destroy()
 
-            // Hidden state: H floats, initialized to zero
-            brainStateBuffer = device.createBuffer({
-                size: BRAIN_H * 4,
-                usage: GPUBufferUsage.STORAGE,
-            })
-
-            // Weights: hardcoded random init for the experiment (drive params are now per-particle)
-            const w = new Float32Array(840)
-            // W_down [H * MAX_URGES] = first 512 floats
-            for (let i = 0; i < 512; i++) w[i] = (Math.random() - 0.5) * 0.6
-            // b_down [H] = next 8 (indices 512-519, left as 0)
-            // W_recur [H*H] = next 64
-            for (let i = 520; i < 584; i++) w[i] = (Math.random() - 0.5) * 0.1
-            // groupW [G*H] = next 128
-            for (let i = 584; i < 712; i++) w[i] = (Math.random() - 0.5) * 0.6
-            // biases [MAX_NEURONS] = next 128
-            for (let i = 712; i < 840; i++) w[i] = (Math.random() - 0.5) * 0.3
-
-            brainWeightsBuffer = device.createBuffer({
-                size: BRAIN_WEIGHTS_SIZE,
+            // Genome buffer: numBrains * GENOME_STRIDE floats, initialized with random needs + small weights
+            const genomeSize = numUrges * GENOME_STRIDE
+            genomeBuffer = device.createBuffer({
+                size: genomeSize * 4,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             })
-            device.queue.writeBuffer(brainWeightsBuffer, 0, w)
+            // Initialize each brain's genome: random needs + small-random weights
+            const genomeData = new Float32Array(genomeSize)
+            for (let b = 0; b < numUrges; b++) {
+                const base = b * GENOME_STRIDE
+                // Needs: K=8, each { targetColor(u32-as-f32), setpoint, scale, gain }
+                for (let k = 0; k < GENOME_K; k++) {
+                    const nb = base + k * 4
+                    genomeData[nb] = k % NUM_TYPES // targetColor spread across needs
+                    genomeData[nb + 1] = 0.6 + Math.random() * 0.8 // setpoint [0.6, 1.4]
+                    genomeData[nb + 2] = 0.3 + Math.random() * 0.5 // scale [0.3, 0.8]
+                    genomeData[nb + 3] = 0.5 + Math.random() * 1.0 // gain [0.5, 1.5]
+                }
+                // Weights: small random init (±0.3)
+                for (let w = GENOME_NEEDS_SIZE; w < GENOME_STRIDE; w++) {
+                    genomeData[base + w] = (Math.random() - 0.5) * 0.6
+                }
+            }
+            device.queue.writeBuffer(genomeBuffer, 0, genomeData)
 
-            // Neuron modulations output: MAX_NEURONS floats
+            // Neuron ownership: [numSenseNeurons + numNeurons] u32 entries, all FREE (0xFFFFFFFF)
+            const totalNeurons = numSenseNeurons + numNeurons
+            neuronOwnersBuffer = device.createBuffer({
+                size: totalNeurons * 4,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            })
+            const ownersData = new Uint32Array(totalNeurons).fill(0xFFFFFFFF)
+            device.queue.writeBuffer(neuronOwnersBuffer, 0, ownersData)
+
+            // Neuron modulations output: numNeurons floats (one per motor neuron)
             neuronModsBuffer = device.createBuffer({
-                size: BRAIN_MAX_NEURONS * 4,
+                size: Math.max(numNeurons, 1) * 4,
                 usage: GPUBufferUsage.STORAGE,
             })
 
-            // Experiment: per-neuron health, sized to the UI max (2000) so ANY mIdx the force
-            // pass can compute is in-bounds. Initialized healthy (1.0); the CPU re-uploads only
-            // when damage events change it. Separate buffer on purpose — a Particle field would
-            // break the 11-float stride contract.
+            // Per-neuron health buffer (damage experiment)
             neuronHealthBuffer = device.createBuffer({
                 size: NEURON_HEALTH_CAPACITY * 4,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             })
             device.queue.writeBuffer(neuronHealthBuffer, 0, new Float32Array(NEURON_HEALTH_CAPACITY).fill(1))
 
-            // Experiment: persistent urge errors (brainStep → brainLearn), MAX_URGES floats.
-            storedErrorsBuffer = device.createBuffer({
-                size: BRAIN_MAX_URGES * 4,
-                usage: GPUBufferUsage.STORAGE,
-            })
-
-            // Brain opts: numUrges, numNeurons, numTypes (3 u32s)
+            // Brain step opts uniform: numBrains, numNeurons, numSenseNeurons, numTypes (4 u32s = 16 bytes)
+            // + learnRate(f32), simWidth(f32), simHeight(f32), urgeRadius(f32) = 32 bytes total
             brainOptsBuffer = device.createBuffer({
-                size: 12,
+                size: 32,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             })
-            const optsData = new Uint32Array([numUrges, numNeurons, NUM_TYPES])
+            const optsData = new ArrayBuffer(32)
+            const ov = new DataView(optsData)
+            ov.setUint32(0, numUrges, true)       // numBrains
+            ov.setUint32(4, numNeurons, true)     // numNeurons (motor)
+            ov.setUint32(8, numSenseNeurons, true) // numSenseNeurons
+            ov.setUint32(12, NUM_TYPES, true)     // numTypes
+            ov.setFloat32(16, particleLife.brainLearnRate, true) // learnRate
+            ov.setFloat32(20, SIM_WIDTH, true)     // simWidth
+            ov.setFloat32(24, SIM_HEIGHT, true)    // simHeight
+            ov.setFloat32(28, particleLife.urgeRadius, true)       // urgeRadius
             device.queue.writeBuffer(brainOptsBuffer, 0, optsData)
 
-            // Brain mutate opts: numUrges, numTypes, frameCount (3 u32s = 12 bytes)
+            // Brain mutate opts: numBrains, frameCount (2 u32s = 8 bytes)
             if (brainMutateOptsBuffer) brainMutateOptsBuffer.destroy()
             brainMutateOptsBuffer = device.createBuffer({
-                size: 12,
+                size: 8,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             })
-            const mutateOptsData = new Uint32Array([numUrges, NUM_TYPES, 0])
+            const mutateOptsData = new Uint32Array([numUrges, 0])
             device.queue.writeBuffer(brainMutateOptsBuffer, 0, mutateOptsData)
+
+            // Capture release opts: numBrains, numNeurons, numSenseNeurons, captureRadius(f32), maxPerBrain, frameCount, captureInterval = 28 bytes (pad to 32)
+            if (captureReleaseOptsBuffer) captureReleaseOptsBuffer.destroy()
+            captureReleaseOptsBuffer = device.createBuffer({
+                size: 32,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            })
+            const capData = new ArrayBuffer(32)
+            const cv = new DataView(capData)
+            cv.setUint32(0, numUrges, true)         // numBrains
+            cv.setUint32(4, numNeurons, true)       // numNeurons (motor)
+            cv.setUint32(8, numSenseNeurons, true)  // numSenseNeurons
+            cv.setFloat32(12, particleLife.neuronRadius, true) // captureRadius
+            cv.setUint32(16, MAX_NEURONS_PER_BRAIN, true)     // maxPerBrain
+            cv.setUint32(20, 0, true)               // frameCount (updated per dispatch)
+            cv.setUint32(24, 600, true)             // captureInterval (~10s at 60fps)
+            device.queue.writeBuffer(captureReleaseOptsBuffer, 0, capData)
+
+            // Initialize neuron ownership: give each brain a starter set of 1-2 sense + 1-2 motor neurons.
+            // The rest stay FREE (0xFFFFFFFF) for organic capture over time.
+            if (numUrges > 0 && (numSenseNeurons > 0 || numNeurons > 0)) {
+                const owners = new Uint32Array(numSenseNeurons + numNeurons).fill(0xFFFFFFFF)
+                // Assign starter neurons: brain b gets sense neurons [b*2, b*2+1) and motor neurons [b*2, b*2+1)
+                for (let b = 0; b < numUrges; b++) {
+                    // 1-2 sense neurons (use 2 if available, else 1)
+                    const sStart = b * 2
+                    for (let s = 0; s < 2 && (sStart + s) < numSenseNeurons; s++) {
+                        owners[sStart + s] = b
+                    }
+                    // 1-2 motor neurons
+                    const mStart = b * 2
+                    for (let m = 0; m < 2 && (mStart + m) < numNeurons; m++) {
+                        owners[numSenseNeurons + mStart + m] = b
+                    }
+                }
+                device.queue.writeBuffer(neuronOwnersBuffer, 0, owners)
+            }
         }
 
         const updateEraseCompactBuffers = () => {
@@ -2937,50 +2923,48 @@ export default defineComponent({
                 brainBindGroup = device.createBindGroup({
                     layout: brainStepPipeline.getBindGroupLayout(0),
                     entries: [
-                        { binding: 0, resource: { buffer: particleBuffer! } },        // read particles (prev frame, original order)
-                        { binding: 1, resource: { buffer: brainStateBuffer! } },      // persistent hidden state
-                        { binding: 2, resource: { buffer: brainWeightsBuffer! } },    // network weights
-                        { binding: 3, resource: { buffer: neuronModsBuffer! } },      // output modulations
-                        { binding: 4, resource: { buffer: storedErrorsBuffer! } },    // experiment: persist urge errors for learn pass
+                        { binding: 0, resource: { buffer: particleBuffer! } },        // read particles (prev frame)
+                        { binding: 1, resource: { buffer: genomeBuffer! } },          // per-brain genome (read_write)
+                        { binding: 2, resource: { buffer: neuronOwnersBuffer! } },    // neuron ownership (read-only)
+                        { binding: 3, resource: { buffer: neuronModsBuffer! } },      // output drives (read_write)
                     ],
                 })
                 brainOptsBindGroup = device.createBindGroup({
                     layout: brainStepPipeline.getBindGroupLayout(1),
                     entries: [
-                        { binding: 0, resource: { buffer: brainOptsBuffer! } },       // numUrges, numNeurons, numTypes
+                        { binding: 0, resource: { buffer: brainOptsBuffer! } },       // brain opts uniform
                     ],
                 })
-
-                // Brain learn bind groups (EXPERIMENT, Phase 5)
-                if (brainLearnPipeline) {
-                    brainLearnBindGroup = device.createBindGroup({
-                        layout: brainLearnPipeline.getBindGroupLayout(0),
-                        entries: [
-                            { binding: 0, resource: { buffer: brainStateBuffer! } },    // h_new from this frame's brainStep
-                            { binding: 1, resource: { buffer: storedErrorsBuffer! } },  // errors persisted by brainStep
-                            { binding: 2, resource: { buffer: brainWeightsBuffer! } },  // weights (only W_down is written)
-                        ],
-                    })
-                    brainLearnOptsBindGroup = device.createBindGroup({
-                        layout: brainLearnPipeline.getBindGroupLayout(1),
-                        entries: [
-                            { binding: 0, resource: { buffer: brainLearnOptsBuffer! } },
-                        ],
-                    })
-                }
 
                 // Brain mutate bind groups
                 if (brainMutatePipeline) {
                     brainMutateBindGroup = device.createBindGroup({
                         layout: brainMutatePipeline.getBindGroupLayout(0),
                         entries: [
-                            { binding: 0, resource: { buffer: particleBuffer! } },   // particles (read_write)
+                            { binding: 0, resource: { buffer: genomeBuffer! } },      // genome (read_write)
                         ],
                     })
                     brainMutateOptsBindGroup = device.createBindGroup({
                         layout: brainMutatePipeline.getBindGroupLayout(1),
                         entries: [
-                            { binding: 0, resource: { buffer: brainMutateOptsBuffer! } }, // numUrges, numTypes, frameCount
+                            { binding: 0, resource: { buffer: brainMutateOptsBuffer! } }, // numBrains, frameCount
+                        ],
+                    })
+                }
+
+                // Capture/release bind groups
+                if (captureReleasePipeline) {
+                    captureReleaseBindGroup = device.createBindGroup({
+                        layout: captureReleasePipeline.getBindGroupLayout(0),
+                        entries: [
+                            { binding: 0, resource: { buffer: particleBuffer! } },        // particles (read-only)
+                            { binding: 1, resource: { buffer: neuronOwnersBuffer! } },    // ownership (read_write)
+                        ],
+                    })
+                    captureReleaseOptsBindGroup = device.createBindGroup({
+                        layout: captureReleasePipeline.getBindGroupLayout(1),
+                        entries: [
+                            { binding: 0, resource: { buffer: captureReleaseOptsBuffer! } },
                         ],
                     })
                 }
@@ -2991,6 +2975,7 @@ export default defineComponent({
                     { binding: 0, resource: { buffer: particleTempBuffer! } },
                     { binding: 1, resource: { buffer: particleBuffer! } },
                     { binding: 2, resource: { buffer: interactionMatrixBuffer! } },
+                    { binding: 3, resource: { buffer: neuronModsBuffer! } }, // brain output drive
                 ],
             })
             trackerComputeBindGroup = device.createBindGroup({
@@ -3119,7 +3104,8 @@ export default defineComponent({
                 entries: [
                     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particleTempBuffer
                     { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // particleBuffer
-                    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // interactionMatrixBuffer (includes urge + neuron rows)
+                    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // interactionMatrixBuffer
+                    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // neuronMods (brain output)
                 ],
             })
             simOptionsBindGroupLayout = device.createBindGroupLayout({
@@ -3292,7 +3278,7 @@ export default defineComponent({
                 }),
                 compute: { module: particleComputeForcesShader, entryPoint: 'computeForces' },
             })
-            // ---- Brain step pipeline (single workgroup recurrent network) ----
+            // ---- Brain step pipeline (per-brain forward + delta-rule learning) ----
             try {
             const brainStepShader = device.createShaderModule({ code: brainStepShaderCode })
             brainStepPipeline = device.createComputePipeline({
@@ -3301,15 +3287,14 @@ export default defineComponent({
                         device.createBindGroupLayout({
                             entries: [
                                 { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particles
-                                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // brainState (read_write)
-                                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // weights
+                                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // genome (read_write)
+                                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // neuronOwners
                                 { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // neuronMods (read_write)
-                                { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // storedErrors (experiment: read_write)
                             ],
                         }),
                         device.createBindGroupLayout({
                             entries: [
-                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} },           // brainOpts (uniform)
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} }, // brainOpts (uniform)
                             ],
                         }),
                     ],
@@ -3318,19 +3303,19 @@ export default defineComponent({
             })
             brainValid = true
 
-            // Brain mutate pipeline (slow drive param drift)
+            // Brain mutate pipeline (slow drift of genome needs only)
             const brainMutateShader = device.createShaderModule({ code: brainMutateShaderCode })
             brainMutatePipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
                     bindGroupLayouts: [
                         device.createBindGroupLayout({
                             entries: [
-                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // particles (read_write)
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // genome (read_write)
                             ],
                         }),
                         device.createBindGroupLayout({
                             entries: [
-                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }, // mutateOpts
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} }, // mutateOpts
                             ],
                         }),
                     ],
@@ -3338,33 +3323,25 @@ export default defineComponent({
                 compute: { module: brainMutateShader, entryPoint: 'main' },
             })
 
-            // Brain learn pipeline (EXPERIMENT, Phase 5): Hebbian update of W_down.
-            // Mirrors brainStepPipeline; dispatched only when brainLearningRate > 0.
-            const brainLearnShader = device.createShaderModule({ code: brainLearnShaderCode })
-            brainLearnPipeline = device.createComputePipeline({
+            // Capture/release pipeline (organic neuron gain/loss)
+            const captureReleaseShader = device.createShaderModule({ code: captureReleaseShaderCode })
+            captureReleasePipeline = device.createComputePipeline({
                 layout: device.createPipelineLayout({
                     bindGroupLayouts: [
                         device.createBindGroupLayout({
                             entries: [
-                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // brainState (h_new)
-                                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // storedErrors
-                                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // weights (read_write; only W_down touched)
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // particles
+                                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // neuronOwners (read_write)
                             ],
                         }),
                         device.createBindGroupLayout({
                             entries: [
-                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} }, // learnOpts (uniform: rate + numUrges)
+                                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} }, // captureOpts (uniform)
                             ],
                         }),
                     ],
                 }),
-                compute: { module: brainLearnShader, entryPoint: 'main' },
-            })
-
-            // Learn opts uniform: f32 learningRate @0, u32 numUrges @4 (16 bytes with pad).
-            brainLearnOptsBuffer = device.createBuffer({
-                size: 16,
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                compute: { module: captureReleaseShader, entryPoint: 'main' },
             })
             } catch (e) {
                 console.warn('[brain] pipeline creation failed, brain disabled:', e)
@@ -4183,7 +4160,7 @@ export default defineComponent({
             try {
                 // No matrix resize needed: the main matrix has fixed urge/neuron rows regardless of count.
                 // (Sense neurons do NOT get their own matrix row — they ride the neuron row for drift.)
-                numUrges = particleLife.numUrges
+                numUrges = particleLife.numBrains
                 numNeurons = particleLife.numNeurons
                 numSenseNeurons = particleLife.numSenseNeurons
                 updateAllInteractionBuffers() // rebuild the GPU buffer before relabeling
@@ -4448,22 +4425,11 @@ export default defineComponent({
                 // start at 0 (nothing sensed yet) so they don't fake a strong reading.
                 arr[k + 6] = (t >= NUM_TYPES && t < NUM_TYPES + numUrges) ? 1.0 : 0
                 arr[k + 7] = -1 // goalB: no secondary goal
-                // Drive params (per-urge brain model): deterministic pseudo-random per local index
-                if (t >= NUM_TYPES && t < NUM_TYPES + numUrges) {
-                    const localK = i - matterCount
-                    const h = (n: number) => {
-                        const x = Math.sin(localK * 127.1 + n * 311.7) * 43758.5453
-                        return x - Math.floor(x)
-                    }
-                    arr[k + 8] = 0.6 + h(1) * 0.8 // driveTarget: [0.6, 1.4]
-                    arr[k + 9] = 0.3 + h(2) * 0.5 // driveScale: [0.3, 0.8]
-                    arr[k + 10] = 0.5 + h(3) * 1.0 // driveGain: [0.5, 1.5]
-                }
-                else {
-                    arr[k + 8] = 0
-                    arr[k + 9] = 0
-                    arr[k + 10] = 0
-                }
+                // Drive params are non-authoritative (genome buffer is source of truth).
+                // Zero them for clarity.
+                arr[k + 8] = 0
+                arr[k + 9] = 0
+                arr[k + 10] = 0
             }
         }
         // Re-label the live population to the current layout, preserving positions/velocities.
@@ -4748,7 +4714,7 @@ export default defineComponent({
 
         // ---- Quantum / Electrical layer watchers -----------------------------------------
         // Changing the counts re-labels the population (matter/urge/neuron layout).
-        watch(() => particleLife.numUrges, () => setNewElectricalCounts())
+        watch(() => particleLife.numBrains, () => setNewElectricalCounts())
         watch(() => particleLife.numNeurons, () => setNewElectricalCounts())
         // Sense count changes are different: sense neurons are part of the NON-POOL population,
         // so the buffer must be resized to include them (like matter), and the following frame
@@ -4765,16 +4731,10 @@ export default defineComponent({
         // Changing a parameter just rewrites the electrical uniform.
         const watchElectrical = (effect: any) => watch(effect, () => updateElectricalOptionsBuffer())
         watchElectrical(() => particleLife.isElectricalEnabled)
-        watchElectrical(() => particleLife.metricMode)
         watchElectrical(() => particleLife.urgeRadius)
         watchElectrical(() => particleLife.neuronRadius)
         watchElectrical(() => particleLife.urgeForce)
-        watchElectrical(() => particleLife.controlGain)
-        watchElectrical(() => particleLife.controlMax)
         watchElectrical(() => particleLife.brainGain)
-        watchElectrical(() => particleLife.neuronInfluence)
-        watchElectrical(() => particleLife.neuronAuthority)
-        watchElectrical(() => particleLife.maxAuthority)
         watchElectrical(() => particleLife.cohesion)
         watchElectrical(() => particleLife.senseRadius)
         watchElectrical(() => particleLife.senseConeHalfAngleDeg)
@@ -4792,14 +4752,14 @@ export default defineComponent({
         })
         watch(() => particleLife.isElectricalEnabled, () => recomputeCellSize())
 
-        // ---- Urge Inspector: throttled, READ-ONLY GPU telemetry ---------------------------
+        // ---- Brain Inspector: throttled, READ-ONLY GPU telemetry ---------------------------
         // Off by default and zero-cost when off: no interval, no allocation, no readback.
         // It only ever reads `particleBuffer` — it never mutates particle state or the buffer.
         const URGE_READBACK_INTERVAL_MS = 200
         const urgeInspectorOpen = ref<boolean>(false)
         const urgeStats = ref<UrgeStat[]>([])
         // Per-urge brain drive parameters (target/scale/gain), built deterministically at init
-        // and shown in the Urge Inspector. Index = local urge index k.
+        // and shown in the Brain Inspector. Index = local urge index k.
         const brainDrives = ref<{ target: number, scale: number, gain: number }[]>([])
         let isReadingBackUrges = false // concurrency guard: one readback in flight at a time
         let urgeReadbackTimer: number | null = null
@@ -4827,33 +4787,21 @@ export default defineComponent({
 
         // Snapshot of the global electrical parameters for the parameter card (reactive).
         const electricalParams = computed<ElectricalParams>(() => ({
-            metricMode: particleLife.metricMode,
+            metricMode: 0, // deprecated (goal modes gone)
             urgeRadius: particleLife.urgeRadius,
             neuronRadius: particleLife.neuronRadius,
             urgeForce: particleLife.urgeForce,
-            controlGain: particleLife.controlGain,
-            controlMax: particleLife.controlMax,
-            neuronInfluence: particleLife.neuronInfluence,
-            neuronAuthority: particleLife.neuronAuthority,
-            maxAuthority: particleLife.maxAuthority,
+            controlGain: 0, // deprecated
+            controlMax: 0, // deprecated
+            neuronInfluence: 0, // legacy
+            neuronAuthority: 0, // legacy
+            maxAuthority: 0, // legacy
             cohesion: particleLife.cohesion,
         }))
 
-        // Per-urge goal (mirrors the shader's urgeGoal): each urge has a target color and a goal mode.
+        // Per-brain info (replaces old urgeGoalFor): brains have homeostatic needs in the genome.
         const urgeGoalFor = (k: number) => {
-            let mode: number
-            switch (((particleLife.metricMode % 4) + 4) % 4) {
-                case 0: mode = k % 3; break // cycle all three
-                case 1: mode = 0; break // all maximize
-                case 2: mode = 1; break // all minimize
-                default: mode = 2; break // all homeostasis
-            }
-            let targetValue = 1.0
-            if (mode === 2) {
-                const hash = Math.abs(Math.sin(k * 12.9898 + 78.233) * 43758.5453) % 1
-                targetValue = 0.6 + hash * 0.8
-            }
-            return { mode, targetValue }
+            return { mode: 2, targetValue: 1.0 } // always "homeostasis" (needs are setpoints)
         }
         const objectiveLabelFor = (k: number): string => {
             const g = urgeGoalFor(k)
@@ -5113,7 +5061,7 @@ export default defineComponent({
 
         // ---- Experiment telemetry: opt-in, throttled, READ-ONLY -------------------------
         // Off by default and zero-cost when off (no readback, no allocation). Mirrors the
-        // Urge Inspector pattern: a single guarded GPU readback of `particleBuffer`, parsed
+        // Brain Inspector pattern: a single guarded GPU readback of `particleBuffer`, parsed
         // into a Float32Array and fed to the pure helpers in helpers/utils/experimentMetrics.ts.
         //
         // MVE sweep protocol (control-gap inverted-U): fix numParticles=64000, numColors=7,
@@ -5321,7 +5269,7 @@ export default defineComponent({
             }
         })
 
-        // ---- Urge Lifecycle: Death, Murder, Merge & Clone (unified pass) -------------------------
+        // ---- Brain Lifecycle: Death, Murder, Merge & Clone (unified pass) -------------------------
         // Single buffer readback per tick (500 ms). Precedence order within a pass:
         //   1. Death (starvation) — sustained low metric → dormant sentinel + neurons die
         //   2. Murder — instant collision event, power gap > margin → weaker dies
@@ -5404,6 +5352,17 @@ export default defineComponent({
                     return
 
                 const particles = new Float32Array(arrayBuffer)
+                // Read genome + ownership buffers for heredity operations
+                let genome: Float32Array | null = null
+                let owners: Uint32Array | null = null
+                if (genomeBuffer && neuronOwnersBuffer) {
+                    const genomeBuf = await readBufferFromGPU(genomeBuffer, numUrges * GENOME_STRIDE * 4)
+                    if (isUpdatingParticles || isEraseCompleting) return
+                    genome = new Float32Array(genomeBuf)
+                    const ownersBuf = await readBufferFromGPU(neuronOwnersBuffer, (numSenseNeurons + numNeurons) * 4)
+                    if (isUpdatingParticles || isEraseCompleting) return
+                    owners = new Uint32Array(ownersBuf)
+                }
                 // Dormant sentinel must include the sense band, or clone-pool slots are misread.
                 const dormantType = NUM_TYPES + numUrges + numNeurons + numSenseNeurons
                 const motorBase = NUM_TYPES + numUrges
@@ -5464,10 +5423,17 @@ export default defineComponent({
                             const count = prev + 1
                             newSustainedBelow.set(id, count)
                             if (count >= deathTicks) {
-                                // THIS URGE DIES NOW
+                                // THIS BRAIN DIES NOW
                                 killUrge(particles, u.bufIdx, dormantType)
                                 deadBufIdx.add(u.bufIdx)
                                 bufferModified = true
+                                // Free all neurons owned by this brain back to the pool
+                                if (owners) {
+                                    const FREE = 0xFFFFFFFF
+                                    for (let ni = 0; ni < owners.length; ni++) {
+                                        if (owners[ni] === u.k) owners[ni] = FREE
+                                    }
+                                }
                                 // Clear all tracking for this id
                                 sustainedBelow.delete(id)
                                 sustainedAboveThreshold.delete(u.k)
@@ -5517,6 +5483,13 @@ export default defineComponent({
                             killUrge(particles, victim.bufIdx, dormantType)
                             deadBufIdx.add(victim.bufIdx)
                             bufferModified = true
+                            // Free the victim's neurons
+                            if (owners) {
+                                const FREE = 0xFFFFFFFF
+                                for (let ni = 0; ni < owners.length; ni++) {
+                                    if (owners[ni] === victim.k) owners[ni] = FREE
+                                }
+                            }
 
                             // Clear tracking for the victim
                             const vid = urgeDisplayId(victim.k, victim.isClone)
@@ -5571,19 +5544,32 @@ export default defineComponent({
                                 else if (pB > pA) { survivor = urges[b]; loser = urges[a] }
                                 else { survivor = idA < idB ? urges[a] : urges[b]; loser = survivor === urges[a] ? urges[b] : urges[a] }
 
-                                // Survivor absorbs: max signal, avg control, combined goal
+                                // Survivor absorbs: max signal, zero control (no per-frame control anymore)
                                 const s8 = survivor.bufIdx * PARTICLE_STRIDE
                                 particles[s8 + 6] = Math.max(survivor.signal, loser.signal) // signal = best metric
-                                particles[s8 + 5] = (survivor.control + loser.control) * 0.5 // control = blended
-                                // Combine goals: survivor now pursues both its own goal and the loser's.
-                                // If same k → double metric strength. If different → dual objective.
-                                particles[s8 + 7] = loser.k // goalB = loser's local urge index
-                                const l8 = loser.bufIdx * PARTICLE_STRIDE
-                                particles[s8 + 8] = (particles[s8 + 8] + particles[l8 + 8]) * 0.5 // driveTarget: blended
-                                particles[s8 + 9] = (particles[s8 + 9] + particles[l8 + 9]) * 0.5 // driveScale: blended
-                                particles[s8 + 10] = (particles[s8 + 10] + particles[l8 + 10]) * 0.5 // driveGain: blended
+                                particles[s8 + 5] = 0 // control: no longer used for brains
+                                particles[s8 + 7] = -1 // goalB: cleared (genome handles multi-need)
+                                // Zero non-authoritative drive fields
+                                particles[s8 + 8] = 0
+                                particles[s8 + 9] = 0
+                                particles[s8 + 10] = 0
 
-                                // Loser dies along with its neurons
+                                // Genome heredity: element-wise mean of both brains' genomes
+                                if (genome) {
+                                    const sBase = survivor.k * GENOME_STRIDE
+                                    const lBase = loser.k * GENOME_STRIDE
+                                    for (let gi = 0; gi < GENOME_STRIDE; gi++) {
+                                        genome[sBase + gi] = (genome[sBase + gi] + genome[lBase + gi]) * 0.5
+                                    }
+                                }
+                                // Ownership union: re-point loser's neurons to survivor
+                                if (owners) {
+                                    for (let ni = 0; ni < owners.length; ni++) {
+                                        if (owners[ni] === loser.k) owners[ni] = survivor.k
+                                    }
+                                }
+
+                                // Loser dies
                                 killUrge(particles, loser.bufIdx, dormantType)
                                 deadBufIdx.add(loser.bufIdx)
                                 bufferModified = true
@@ -5670,18 +5656,34 @@ export default defineComponent({
 
                         const halfMetric = urge.signal * 0.5 // the split: parent and clone each keep half
 
-                        // --- Clone the urge itself ---
+                        // --- Clone the brain itself ---
                         const slotIdx = dormantSlots[slotPtr++]
                         const s8 = slotIdx * PARTICLE_STRIDE
                         particles[s8 + 4] = NUM_TYPES + urge.k + 0.5 // fractional tag marks clone
                         particles[s8 + 5] = 0
                         particles[s8 + 6] = halfMetric // child inherits the other half of the parent's metric
-                        particles[s8 + 7] = -1 // goalB: clones start with no secondary goal
-                        // Clone inherits parent's drive params with small mutation (evolutionary drift)
-                        const pDriveBase = urge.bufIdx * PARTICLE_STRIDE
-                        particles[s8 + 8] = Math.min(3.0, Math.max(0.1, particles[pDriveBase + 8] + (Math.random() - 0.5) * 0.1))
-                        particles[s8 + 9] = Math.min(2.0, Math.max(0.05, particles[pDriveBase + 9] + (Math.random() - 0.5) * 0.06))
-                        particles[s8 + 10] = Math.min(3.0, Math.max(0.0, particles[pDriveBase + 10] + (Math.random() - 0.5) * 0.06))
+                        particles[s8 + 7] = -1 // goalB: unused
+                        // Drive params are non-authoritative (genome is source of truth)
+                        particles[s8 + 8] = 0
+                        particles[s8 + 9] = 0
+                        particles[s8 + 10] = 0
+
+                        // Genome heredity: jitter the parent's genome (shared slot for same type k)
+                        if (genome) {
+                            const gBase = urge.k * GENOME_STRIDE
+                            // Needs: Gaussian jitter on setpoint/scale/gain
+                            for (let k2 = 0; k2 < GENOME_K; k2++) {
+                                const nb = gBase + k2 * 4
+                                genome[nb + 1] = Math.min(3.0, Math.max(0.1, genome[nb + 1] + (Math.random() - 0.5) * 0.2)) // setpoint ±0.1
+                                genome[nb + 2] = Math.min(2.0, Math.max(0.05, genome[nb + 2] + (Math.random() - 0.5) * 0.12)) // scale ±0.06
+                                genome[nb + 3] = Math.min(3.0, Math.max(0.0, genome[nb + 3] + (Math.random() - 0.5) * 0.12)) // gain ±0.06
+                            }
+                            // Weights: light jitter (σ=0.05), clamped ±2
+                            for (let w = GENOME_NEEDS_SIZE; w < GENOME_STRIDE; w++) {
+                                genome[gBase + w] = Math.min(2.0, Math.max(-2.0,
+                                    genome[gBase + w] + (Math.random() - 0.5) * 0.1))
+                            }
+                        }
 
                         const angle = Math.random() * Math.PI * 2
                         const offsetDist = urgeRadius * 0.3 + Math.random() * urgeRadius * 0.3
@@ -5735,9 +5737,14 @@ export default defineComponent({
                     }
                 }
 
-                // --- Upload modified buffer back to GPU (only if something changed) ---
+                // --- Upload modified buffers back to GPU (only if something changed) ---
                 if (bufferModified) {
                     device.queue.writeBuffer(particleBuffer, 0, particles)
+                    // Write back genome + ownership if they were read and modified
+                    if (genome && genomeBuffer)
+                        device.queue.writeBuffer(genomeBuffer, 0, genome)
+                    if (owners && neuronOwnersBuffer)
+                        device.queue.writeBuffer(neuronOwnersBuffer, 0, owners)
                 }
             }
             catch {
@@ -5779,7 +5786,7 @@ export default defineComponent({
             else stopLifecycleCheck()
         })
         // Reset all lifecycle state when urge count changes (indices are no longer valid)
-        watch(() => particleLife.numUrges, () => {
+        watch(() => particleLife.numBrains, () => {
             clonedUrges.clear()
             sustainedAboveThreshold.clear()
             sustainedBelow.clear()
@@ -5932,12 +5939,11 @@ export default defineComponent({
             particleNextIndicesBuffer?.destroy(); particleNextIndicesBuffer = undefined
             particleBuffer?.destroy(); particleBuffer = undefined
             particleTempBuffer?.destroy(); particleTempBuffer = undefined
-            brainStateBuffer?.destroy(); brainStateBuffer = undefined
-            brainWeightsBuffer?.destroy(); brainWeightsBuffer = undefined
+            genomeBuffer?.destroy(); genomeBuffer = undefined
+            neuronOwnersBuffer?.destroy(); neuronOwnersBuffer = undefined
             neuronModsBuffer?.destroy(); neuronModsBuffer = undefined
             neuronHealthBuffer?.destroy(); neuronHealthBuffer = undefined
-            storedErrorsBuffer?.destroy(); storedErrorsBuffer = undefined
-            brainLearnOptsBuffer?.destroy(); brainLearnOptsBuffer = undefined
+            captureReleaseOptsBuffer?.destroy(); captureReleaseOptsBuffer = undefined
             brainOptsBuffer?.destroy(); brainOptsBuffer = undefined
             brainMutateOptsBuffer?.destroy(); brainMutateOptsBuffer = undefined
             binOffsetBuffer?.destroy(); binOffsetBuffer = undefined

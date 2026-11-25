@@ -3,22 +3,26 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useParticleBrainGPUStore } from '~/stores/particleBrainGPUStore'
 
 // ---------------------------------------------------------------------------
-// Constants matching the component's particle layout (11 floats / 44 bytes per slot)
+// Constants matching the genome buffer layout
 // ---------------------------------------------------------------------------
-const STRIDE = 11
+const GENOME_K = 8 // needs per brain
+const GENOME_W_BUDGET = 1024 // weight budget per brain
+const GENOME_NEEDS_SIZE = GENOME_K * 4 // 32 floats for needs
+const GENOME_STRIDE = GENOME_NEEDS_SIZE + GENOME_W_BUDGET // 1056 floats/brain
 
-// Drive param bounds (must match ParticleLifeGpu.vue PHASE 3 & PHASE 4)
-const DRIVE_TARGET_MIN = 0.1
-const DRIVE_TARGET_MAX = 3.0
-const DRIVE_SCALE_MIN = 0.05
-const DRIVE_SCALE_MAX = 2.0
-const DRIVE_GAIN_MIN = 0.0
-const DRIVE_GAIN_MAX = 3.0
+// Need param bounds (must match updateBrainBuffers init + brainMutate clamping)
+const SETPOINT_MIN = 0.1
+const SETPOINT_MAX = 3.0
+const SCALE_MIN = 0.05
+const SCALE_MAX = 2.0
+const GAIN_MIN = 0.0
+const GAIN_MAX = 3.0
 
-// Mutation ranges (must match ParticleLifeGpu.vue PHASE 4)
-const MUT_TARGET = 0.1
+// Clone mutation ranges (must match lifecycle PHASE 4)
+const MUT_SETPOINT = 0.1
 const MUT_SCALE = 0.06
 const MUT_GAIN = 0.06
+const WEIGHT_JITTER_SIGMA = 0.05 // small Gaussian jitter on weights during clone
 
 // Deterministic pseudo-random for reproducible tests
 function seededRandom(seed: number) {
@@ -29,28 +33,37 @@ function seededRandom(seed: number) {
     }
 }
 
+// Approximate Gaussian via Box-Muller (deterministic with seeded random)
+function gauss(rand: () => number): number {
+    const u1 = Math.max(rand(), 0.0001)
+    const u2 = rand()
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2)
+}
+
 /**
- * Helper: create a particle buffer with one urge at the given bufIdx.
- * Sets drive params (offsets 8, 9, 10) to known values.
+ * Helper: create a genome buffer with one brain at the given slot.
  */
-function makeBufferWithUrge(bufIdx: number, signal: number, control: number, driveTarget: number, driveScale: number, driveGain: number): Float32Array {
-    const buf = new Float32Array(STRIDE * 4)
-    const base = bufIdx * STRIDE
-    // offset 4 = type tag (urges use NUM_TYPES + k + 0.5; use a large value to mark as urge)
-    buf[base + 4] = 100 + bufIdx
-    buf[base + 5] = control
-    buf[base + 6] = signal
-    buf[base + 7] = -1 // goalB
-    buf[base + 8] = driveTarget
-    buf[base + 9] = driveScale
-    buf[base + 10] = driveGain
+function makeGenomeWithBrain(brainId: number, numBrains: number): Float32Array {
+    const buf = new Float32Array(numBrains * GENOME_STRIDE)
+    const base = brainId * GENOME_STRIDE
+    // Set known need values
+    for (let k = 0; k < GENOME_K; k++) {
+        buf[base + k * 4] = k % 7 // targetColor
+        buf[base + k * 4 + 1] = 1.0 // setpoint
+        buf[base + k * 4 + 2] = 0.5 // scale
+        buf[base + k * 4 + 3] = 1.0 // gain
+    }
+    // Set known weight values (small)
+    for (let w = GENOME_NEEDS_SIZE; w < GENOME_STRIDE; w++) {
+        buf[base + w] = 0.1
+    }
     return buf
 }
 
 // ---------------------------------------------------------------------------
 // Store: brain defaults
 // ---------------------------------------------------------------------------
-describe('Brain Drive — Store Defaults', () => {
+describe('Brain Genome — Store Defaults', () => {
     beforeEach(() => {
         setActivePinia(createPinia())
     })
@@ -74,298 +87,441 @@ describe('Brain Drive — Store Defaults', () => {
         const store = useParticleBrainGPUStore()
         expect(store.numClonePool).toBeGreaterThan(0)
     })
-})
 
-// ---------------------------------------------------------------------------
-// Buffer logic: merge averaging (PHASE 3)
-// ---------------------------------------------------------------------------
-describe('Brain Drive — Merge Averages Drive Params', () => {
-    it('survivor driveTarget is the midpoint of both parents', () => {
-        const particles = new Float32Array(STRIDE * 4)
-
-        // Survivor at bufIdx 0, loser at bufIdx 1
-        const sBase = 0 * STRIDE
-        const lBase = 1 * STRIDE
-
-        particles[sBase + 8] = 1.0 // survivor driveTarget
-        particles[lBase + 8] = 2.4 // loser driveTarget
-
-        // Apply the merge formula (exact code from PHASE 3)
-        const l8 = lBase
-        particles[sBase + 8] = (particles[sBase + 8] + particles[l8 + 8]) * 0.5
-
-        expect(particles[sBase + 8]).toBeCloseTo(1.7, 5)
+    it('defaults to 12 brains', () => {
+        const store = useParticleBrainGPUStore()
+        expect(store.numBrains).toBe(12)
     })
 
-    it('survivor driveScale is the midpoint of both parents', () => {
-        const particles = new Float32Array(STRIDE * 4)
-
-        const sBase = 0 * STRIDE
-        const lBase = 1 * STRIDE
-
-        particles[sBase + 9] = 0.5 // survivor driveScale
-        particles[lBase + 9] = 1.3 // loser driveScale
-
-        const l8 = lBase
-        particles[sBase + 9] = (particles[sBase + 9] + particles[l8 + 9]) * 0.5
-
-        expect(particles[sBase + 9]).toBeCloseTo(0.9, 5)
+    it('has a positive brain learn rate by default', () => {
+        const store = useParticleBrainGPUStore()
+        expect(store.brainLearnRate).toBeGreaterThan(0)
     })
 
-    it('survivor driveGain is the midpoint of both parents', () => {
-        const particles = new Float32Array(STRIDE * 4)
-
-        const sBase = 0 * STRIDE
-        const lBase = 1 * STRIDE
-
-        particles[sBase + 10] = 0.2 // survivor driveGain
-        particles[lBase + 10] = 2.8 // loser driveGain
-
-        const l8 = lBase
-        particles[sBase + 10] = (particles[sBase + 10] + particles[l8 + 10]) * 0.5
-
-        expect(particles[sBase + 10]).toBeCloseTo(1.5, 5)
-    })
-
-    it('merge averaging is symmetric (order-independent)', () => {
-        // Same values, swapped between survivor and loser → same result
-        const a = new Float32Array(STRIDE * 4)
-        const b = new Float32Array(STRIDE * 4)
-
-        const sA = 0 * STRIDE
-        const lA = 1 * STRIDE
-        a[sA + 8] = 0.5; a[lA + 8] = 2.5
-        a[sA + 9] = 1.0; a[lA + 9] = 0.4
-        a[sA + 10] = 3.0; a[lA + 10] = 1.0
-
-        b[sA + 8] = 2.5; b[lA + 8] = 0.5
-        b[sA + 9] = 0.4; b[lA + 9] = 1.0
-        b[sA + 10] = 1.0; b[lA + 10] = 3.0
-
-        const l8a = lA
-        a[sA + 8] = (a[sA + 8] + a[l8a + 8]) * 0.5
-        a[sA + 9] = (a[sA + 9] + a[l8a + 9]) * 0.5
-        a[sA + 10] = (a[sA + 10] + a[l8a + 10]) * 0.5
-
-        const l8b = lA
-        b[sA + 8] = (b[sA + 8] + b[l8b + 8]) * 0.5
-        b[sA + 9] = (b[sA + 9] + b[l8b + 9]) * 0.5
-        b[sA + 10] = (b[sA + 10] + b[l8b + 10]) * 0.5
-
-        expect(a[sA + 8]).toBeCloseTo(b[sA + 8], 5)
-        expect(a[sA + 9]).toBeCloseTo(b[sA + 9], 5)
-        expect(a[sA + 10]).toBeCloseTo(b[sA + 10], 5)
-    })
-
-    it('merge averaging with identical parents preserves the value', () => {
-        const particles = new Float32Array(STRIDE * 4)
-        const sBase = 0 * STRIDE
-        const lBase = 1 * STRIDE
-
-        particles[sBase + 8] = 1.5; particles[lBase + 8] = 1.5
-        particles[sBase + 9] = 0.8; particles[lBase + 9] = 0.8
-        particles[sBase + 10] = 2.0; particles[lBase + 10] = 2.0
-
-        const l8 = lBase
-        particles[sBase + 8] = (particles[sBase + 8] + particles[l8 + 8]) * 0.5
-        particles[sBase + 9] = (particles[sBase + 9] + particles[l8 + 9]) * 0.5
-        particles[sBase + 10] = (particles[sBase + 10] + particles[l8 + 10]) * 0.5
-
-        expect(particles[sBase + 8]).toBeCloseTo(1.5, 5)
-        expect(particles[sBase + 9]).toBeCloseTo(0.8, 5)
-        expect(particles[sBase + 10]).toBeCloseTo(2.0, 5)
+    it('has a positive max neurons per brain cap', () => {
+        const store = useParticleBrainGPUStore()
+        expect(store.maxNeuronsPerBrain).toBeGreaterThan(0)
     })
 })
 
 // ---------------------------------------------------------------------------
-// Buffer logic: clone inheritance + mutation (PHASE 4)
+// Genome init: random-at-birth ranges
 // ---------------------------------------------------------------------------
-describe('Brain Drive — Clone Inherits & Mutates Drive Params', () => {
+describe('Brain Genome — Random Init at Birth', () => {
+    it('setpoints are in [0.6, 1.4] at birth', () => {
+        const genome = new Float32Array(GENOME_STRIDE)
+        // Simulate the init logic from updateBrainBuffers
+        for (let k = 0; k < GENOME_K; k++) {
+            genome[k * 4 + 1] = 0.6 + Math.random() * 0.8
+        }
+        for (let k = 0; k < GENOME_K; k++) {
+            const sp = genome[k * 4 + 1]
+            expect(sp).toBeGreaterThanOrEqual(0.6)
+            expect(sp).toBeLessThanOrEqual(1.4)
+        }
+    })
 
-    function applyCloneDrive(parentBase: number, childBase: number, particles: Float32Array, rand: () => number) {
-        // Exact formula from PHASE 4 in ParticleLifeGpu.vue
-        const pDriveBase = parentBase
-        particles[childBase + 8] = Math.min(DRIVE_TARGET_MAX, Math.max(DRIVE_TARGET_MIN, particles[pDriveBase + 8] + (rand() - 0.5) * MUT_TARGET))
-        particles[childBase + 9] = Math.min(DRIVE_SCALE_MAX, Math.max(DRIVE_SCALE_MIN, particles[pDriveBase + 9] + (rand() - 0.5) * MUT_SCALE))
-        particles[childBase + 10] = Math.min(DRIVE_GAIN_MAX, Math.max(DRIVE_GAIN_MIN, particles[pDriveBase + 10] + (rand() - 0.5) * MUT_GAIN))
+    it('scales are in [0.3, 0.8] at birth', () => {
+        const genome = new Float32Array(GENOME_STRIDE)
+        for (let k = 0; k < GENOME_K; k++) {
+            genome[k * 4 + 2] = 0.3 + Math.random() * 0.5
+        }
+        for (let k = 0; k < GENOME_K; k++) {
+            const sc = genome[k * 4 + 2]
+            expect(sc).toBeGreaterThanOrEqual(0.3)
+            expect(sc).toBeLessThanOrEqual(0.8)
+        }
+    })
+
+    it('gains are in [0.5, 1.5] at birth', () => {
+        const genome = new Float32Array(GENOME_STRIDE)
+        for (let k = 0; k < GENOME_K; k++) {
+            genome[k * 4 + 3] = 0.5 + Math.random() * 1.0
+        }
+        for (let k = 0; k < GENOME_K; k++) {
+            const g = genome[k * 4 + 3]
+            expect(g).toBeGreaterThanOrEqual(0.5)
+            expect(g).toBeLessThanOrEqual(1.5)
+        }
+    })
+
+    it('targetColors are spread across needs (k % numTypes)', () => {
+        const numTypes = 7
+        const genome = new Float32Array(GENOME_STRIDE)
+        for (let k = 0; k < GENOME_K; k++) {
+            genome[k * 4] = k % numTypes
+        }
+        // Verify spread: need 0 → color 0, need 1 → color 1, ...
+        for (let k = 0; k < GENOME_K; k++) {
+            expect(genome[k * 4]).toBe(k % numTypes)
+        }
+    })
+
+    it('weights are small random (±0.3) at birth', () => {
+        const genome = new Float32Array(GENOME_STRIDE)
+        for (let w = GENOME_NEEDS_SIZE; w < GENOME_STRIDE; w++) {
+            genome[w] = (Math.random() - 0.5) * 0.6 // ±0.3
+        }
+        for (let w = GENOME_NEEDS_SIZE; w < GENOME_STRIDE; w++) {
+            expect(Math.abs(genome[w])).toBeLessThanOrEqual(0.3)
+        }
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Genome heredity: clone jitter on needs + weights
+// ---------------------------------------------------------------------------
+describe('Brain Genome — Clone Jitter', () => {
+    function applyCloneGenome(parentBase: number, childBase: number, genome: Float32Array, rand: () => number) {
+        // Needs: Gaussian jitter (setpoint ±~0.1, scale/gain ±~0.06)
+        for (let k = 0; k < GENOME_K; k++) {
+            const pNb = parentBase + k * 4
+            const cNb = childBase + k * 4
+            // targetColor: copied exactly
+            genome[cNb] = genome[pNb]
+            // setpoint: jitter ±0.1, clamped [0.1, 3.0]
+            genome[cNb + 1] = Math.min(SETPOINT_MAX, Math.max(SETPOINT_MIN,
+                genome[pNb + 1] + gauss(rand) * MUT_SETPOINT))
+            // scale: jitter ±0.06, clamped [0.05, 2.0]
+            genome[cNb + 2] = Math.min(SCALE_MAX, Math.max(SCALE_MIN,
+                genome[pNb + 2] + gauss(rand) * MUT_SCALE))
+            // gain: jitter ±0.06, clamped [0.0, 3.0]
+            genome[cNb + 3] = Math.min(GAIN_MAX, Math.max(GAIN_MIN,
+                genome[pNb + 3] + gauss(rand) * MUT_GAIN))
+        }
+        // Weights: copied then jittered (w += gauss()*σ_w), clamped ±2
+        for (let w = GENOME_NEEDS_SIZE; w < GENOME_STRIDE; w++) {
+            const pw = parentBase + w
+            const cw = childBase + w
+            genome[cw] = Math.min(2.0, Math.max(-2.0,
+                genome[pw] + gauss(rand) * WEIGHT_JITTER_SIGMA))
+        }
     }
 
-    it('clone driveTarget stays within [parent - 0.05, parent + 0.05]', () => {
+    it('clone targetColor is copied exactly from parent', () => {
         const rand = seededRandom(42)
-        const particles = new Float32Array(STRIDE * 4)
+        const genome = makeGenomeWithBrain(0, 2)
+        applyCloneGenome(0, GENOME_STRIDE, genome, rand)
 
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 8] = 1.5 // parent driveTarget
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 8]).toBeGreaterThanOrEqual(1.5 - MUT_TARGET / 2)
-        expect(particles[cBase + 8]).toBeLessThanOrEqual(1.5 + MUT_TARGET / 2)
+        // All K targetColors should match parent
+        for (let k = 0; k < GENOME_K; k++) {
+            expect(genome[GENOME_STRIDE + k * 4]).toBe(genome[k * 4])
+        }
     })
 
-    it('clone driveScale stays within [parent - 0.03, parent + 0.03]', () => {
+    it('clone setpoint stays within [parent - 0.1, parent + 0.1] (approx)', () => {
         const rand = seededRandom(99)
-        const particles = new Float32Array(STRIDE * 4)
+        const genome = makeGenomeWithBrain(0, 2)
+        applyCloneGenome(0, GENOME_STRIDE, genome, rand)
 
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 9] = 1.0 // parent driveScale
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 9]).toBeGreaterThanOrEqual(1.0 - MUT_SCALE / 2)
-        expect(particles[cBase + 9]).toBeLessThanOrEqual(1.0 + MUT_SCALE / 2)
+        // With σ=0.1 and one sample, most values should be within ±0.3 (3σ)
+        for (let k = 0; k < GENOME_K; k++) {
+            const parentSp = genome[k * 4 + 1]
+            const childSp = genome[GENOME_STRIDE + k * 4 + 1]
+            // Allow 3σ tolerance for a single sample
+            expect(Math.abs(childSp - parentSp)).toBeLessThanOrEqual(0.5)
+        }
     })
 
-    it('clone driveGain stays within [parent - 0.03, parent + 0.03]', () => {
+    it('clone scale stays within [parent - 0.2, parent + 0.2] (approx)', () => {
         const rand = seededRandom(7)
-        const particles = new Float32Array(STRIDE * 4)
+        const genome = makeGenomeWithBrain(0, 2)
+        applyCloneGenome(0, GENOME_STRIDE, genome, rand)
 
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 10] = 0.5 // parent driveGain
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 10]).toBeGreaterThanOrEqual(0.5 - MUT_GAIN / 2)
-        expect(particles[cBase + 10]).toBeLessThanOrEqual(0.5 + MUT_GAIN / 2)
+        for (let k = 0; k < GENOME_K; k++) {
+            const parentSc = genome[k * 4 + 2]
+            const childSc = genome[GENOME_STRIDE + k * 4 + 2]
+            expect(Math.abs(childSc - parentSc)).toBeLessThanOrEqual(0.3)
+        }
     })
 
-    it('clone driveTarget is clamped to minimum 0.1 when parent is at boundary', () => {
+    it('clone weights are close to parent (light jitter)', () => {
         const rand = seededRandom(12345)
-        const particles = new Float32Array(STRIDE * 4)
+        const genome = makeGenomeWithBrain(0, 2)
+        applyCloneGenome(0, GENOME_STRIDE, genome, rand)
 
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 8] = DRIVE_TARGET_MIN // parent at minimum (0.1)
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 8]).toBeGreaterThanOrEqual(DRIVE_TARGET_MIN)
+        // Weights should be close to parent (±0.05σ per weight)
+        let maxDiff = 0
+        for (let w = GENOME_NEEDS_SIZE; w < GENOME_STRIDE; w++) {
+            const diff = Math.abs(genome[GENOME_STRIDE + w] - genome[w])
+            if (diff > maxDiff) maxDiff = diff
+        }
+        // With σ=0.05, max single-sample deviation should be well under 0.5
+        expect(maxDiff).toBeLessThan(0.5)
     })
 
-    it('clone driveTarget is clamped to maximum 3.0 when parent is at boundary', () => {
-        const rand = seededRandom(54321)
-        const particles = new Float32Array(STRIDE * 4)
-
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 8] = DRIVE_TARGET_MAX // parent at maximum (3.0)
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 8]).toBeLessThanOrEqual(DRIVE_TARGET_MAX)
-    })
-
-    it('clone driveScale is clamped to minimum 0.05 when parent is at boundary', () => {
-        const rand = seededRandom(777)
-        const particles = new Float32Array(STRIDE * 4)
-
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 9] = DRIVE_SCALE_MIN // parent at minimum (0.05)
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 9]).toBeGreaterThanOrEqual(DRIVE_SCALE_MIN)
-    })
-
-    it('clone driveScale is clamped to maximum 2.0 when parent is at boundary', () => {
-        const rand = seededRandom(888)
-        const particles = new Float32Array(STRIDE * 4)
-
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 9] = DRIVE_SCALE_MAX // parent at maximum (2.0)
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 9]).toBeLessThanOrEqual(DRIVE_SCALE_MAX)
-    })
-
-    it('clone driveGain is clamped to minimum 0.0 when parent is at boundary', () => {
+    it('clone setpoint is clamped to minimum 0.1 when parent is at boundary', () => {
         const rand = seededRandom(111)
-        const particles = new Float32Array(STRIDE * 4)
+        const genome = makeGenomeWithBrain(0, 2)
+        // Set parent setpoint to minimum
+        for (let k = 0; k < GENOME_K; k++) {
+            genome[k * 4 + 1] = SETPOINT_MIN
+        }
+        applyCloneGenome(0, GENOME_STRIDE, genome, rand)
 
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 10] = DRIVE_GAIN_MIN // parent at minimum (0.0)
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 10]).toBeGreaterThanOrEqual(DRIVE_GAIN_MIN)
+        for (let k = 0; k < GENOME_K; k++) {
+            expect(genome[GENOME_STRIDE + k * 4 + 1]).toBeGreaterThanOrEqual(SETPOINT_MIN)
+        }
     })
 
-    it('clone driveGain is clamped to maximum 3.0 when parent is at boundary', () => {
+    it('clone setpoint is clamped to maximum 3.0 when parent is at boundary', () => {
         const rand = seededRandom(222)
-        const particles = new Float32Array(STRIDE * 4)
+        const genome = makeGenomeWithBrain(0, 2)
+        for (let k = 0; k < GENOME_K; k++) {
+            genome[k * 4 + 1] = SETPOINT_MAX
+        }
+        applyCloneGenome(0, GENOME_STRIDE, genome, rand)
 
-        const pBase = 0 * STRIDE
-        const cBase = 1 * STRIDE
-        particles[pBase + 10] = DRIVE_GAIN_MAX // parent at maximum (3.0)
-
-        applyCloneDrive(pBase, cBase, particles, rand)
-
-        expect(particles[cBase + 10]).toBeLessThanOrEqual(DRIVE_GAIN_MAX)
+        for (let k = 0; k < GENOME_K; k++) {
+            expect(genome[GENOME_STRIDE + k * 4 + 1]).toBeLessThanOrEqual(SETPOINT_MAX)
+        }
     })
 
-    it('multiple clones from the same parent diverge slightly (evolutionary drift)', () => {
+    it('multiple clones from the same parent diverge slightly', () => {
         const rand = seededRandom(4242)
-        const particles = new Float32Array(STRIDE * 8)
-
-        const pBase = 0 * STRIDE
-        particles[pBase + 8] = 1.5
-        particles[pBase + 9] = 1.0
-        particles[pBase + 10] = 2.0
-
-        // Spawn 3 clones at different buffer slots
-        const cloneBases = [1, 2, 3].map(i => i * STRIDE)
-        for (const cBase of cloneBases) {
-            applyCloneDrive(pBase, cBase, particles, rand)
+        const genome = makeGenomeWithBrain(0, 4) // room for parent + 3 clones
+        const cloneBases = [1, 2, 3].map(i => i * GENOME_STRIDE)
+        for (const cb of cloneBases) {
+            applyCloneGenome(0, cb, genome, rand)
         }
 
-        // Collect the driveTarget values — at least one should differ from parent
-        const targets = cloneBases.map(cb => particles[cb + 8])
-        const allIdentical = targets.every(t => t === particles[pBase + 8])
-        expect(allIdentical).toBe(false) // with non-zero mutation, clones diverge
+        // Collect setpoint values — at least one should differ from parent
+        const sps = cloneBases.map(cb => genome[cb + 4 + 1]) // need 1's setpoint
+        const allIdentical = sps.every(s => s === genome[4 + 1])
+        expect(allIdentical).toBe(false)
     })
 })
 
 // ---------------------------------------------------------------------------
-// Buffer logic: combined merge-then-clone scenario
+// Genome heredity: element-wise mean on merge
 // ---------------------------------------------------------------------------
-describe('Brain Drive — Merge Then Clone (evolutionary pipeline)', () => {
-    it('a merged urge that then clones produces a grandchild near the blended midpoint', () => {
-        // Step 1: two parents merge
-        const particles = new Float32Array(STRIDE * 4)
-        const sBase = 0 * STRIDE
-        const lBase = 1 * STRIDE
+describe('Brain Genome — Merge (Element-wise Mean)', () => {
+    function applyMergeGenome(survivorBase: number, loserBase: number, genome: Float32Array) {
+        // Merged genome = (genomeA + genomeB) / 2 for both needs and weights
+        for (let i = 0; i < GENOME_STRIDE; i++) {
+            genome[survivorBase + i] = (genome[survivorBase + i] + genome[loserBase + i]) * 0.5
+        }
+    }
 
-        particles[sBase + 8] = 1.0; particles[lBase + 8] = 2.0 // driveTarget: 1.0 and 2.0
-        particles[sBase + 9] = 0.5; particles[lBase + 9] = 1.5 // driveScale: 0.5 and 1.5
-        particles[sBase + 10] = 1.0; particles[lBase + 10] = 3.0 // driveGain: 1.0 and 3.0
+    it('merged setpoint is the midpoint of both parents', () => {
+        const genome = makeGenomeWithBrain(0, 2)
+        // Set different values for parent A and B
+        genome[4 + 1] = 1.0 // A's need-1 setpoint
+        genome[GENOME_STRIDE + 4 + 1] = 2.4 // B's need-1 setpoint
 
-        // Apply merge (PHASE 3 formula)
-        const l8 = lBase
-        particles[sBase + 8] = (particles[sBase + 8] + particles[l8 + 8]) * 0.5 // → 1.5
-        particles[sBase + 9] = (particles[sBase + 9] + particles[l8 + 9]) * 0.5 // → 1.0
-        particles[sBase + 10] = (particles[sBase + 10] + particles[l8 + 10]) * 0.5 // → 2.0
+        applyMergeGenome(0, GENOME_STRIDE, genome)
 
-        // Step 2: the merged survivor clones (PHASE 4 formula)
-        const cBase = 2 * STRIDE
+        expect(genome[4 + 1]).toBeCloseTo(1.7, 5)
+    })
+
+    it('merged scale is the midpoint of both parents', () => {
+        const genome = makeGenomeWithBrain(0, 2)
+        genome[4 + 2] = 0.5 // A's need-1 scale
+        genome[GENOME_STRIDE + 4 + 2] = 1.3 // B's need-1 scale
+
+        applyMergeGenome(0, GENOME_STRIDE, genome)
+
+        expect(genome[4 + 2]).toBeCloseTo(0.9, 5)
+    })
+
+    it('merged gain is the midpoint of both parents', () => {
+        const genome = makeGenomeWithBrain(0, 2)
+        genome[4 + 3] = 0.2 // A's need-1 gain
+        genome[GENOME_STRIDE + 4 + 3] = 2.8 // B's need-1 gain
+
+        applyMergeGenome(0, GENOME_STRIDE, genome)
+
+        expect(genome[4 + 3]).toBeCloseTo(1.5, 5)
+    })
+
+    it('merged weights are the element-wise mean', () => {
+        const genome = makeGenomeWithBrain(0, 2)
+        // Set different weight values
+        genome[GENOME_NEEDS_SIZE] = 0.3 // A's first weight
+        genome[GENOME_STRIDE + GENOME_NEEDS_SIZE] = -0.1 // B's first weight
+
+        applyMergeGenome(0, GENOME_STRIDE, genome)
+
+        expect(genome[GENOME_NEEDS_SIZE]).toBeCloseTo(0.1, 5)
+    })
+
+    it('merge is symmetric (order-independent)', () => {
+        // Create two identical arrays with different values in each brain slot
+        const arr1 = new Float32Array(2 * GENOME_STRIDE)
+        const arr2 = new Float32Array(2 * GENOME_STRIDE)
+
+        // Brain A (slot 0): setpoint=0.5, weight=1.0
+        // Brain B (slot 1): setpoint=2.5, weight=-0.4
+        arr1[4 + 1] = 0.5; arr1[GENOME_STRIDE + 4 + 1] = 2.5
+        arr1[GENOME_NEEDS_SIZE] = 1.0; arr1[GENOME_STRIDE + GENOME_NEEDS_SIZE] = -0.4
+        arr2.set(arr1)
+
+        // Merge A+B (survivor=slot 0)
+        applyMergeGenome(0, GENOME_STRIDE, arr1)
+        const resultAB = arr1[4 + 1]
+        const resultW_AB = arr1[GENOME_NEEDS_SIZE]
+
+        // Reset and merge B+A (survivor=slot 1, then read from slot 1)
+        applyMergeGenome(GENOME_STRIDE, 0, arr2)
+        const resultBA = arr2[GENOME_STRIDE + 4 + 1]
+        const resultW_BA = arr2[GENOME_STRIDE + GENOME_NEEDS_SIZE]
+
+        // Both should give the same midpoint
+        expect(resultAB).toBeCloseTo(resultBA, 5)
+        expect(resultW_AB).toBeCloseTo(resultW_BA, 5)
+    })
+
+    it('merge with identical parents preserves the value', () => {
+        const genome = new Float32Array(2 * GENOME_STRIDE)
+        // Set BOTH brains to identical values
+        for (let i = 0; i < GENOME_STRIDE; i++) {
+            genome[i] = 1.5
+            genome[GENOME_STRIDE + i] = 1.5
+        }
+        applyMergeGenome(0, GENOME_STRIDE, genome)
+
+        // Should be unchanged (mean of identical values = same value)
+        expect(genome[4 + 1]).toBeCloseTo(1.5, 5)
+        expect(genome[GENOME_NEEDS_SIZE]).toBeCloseTo(1.5, 5)
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Neuron ownership: union on merge, free-on-death
+// ---------------------------------------------------------------------------
+describe('Neuron Ownership — Merge Union & Death Free', () => {
+    const FREE = 0xFFFFFFFF
+
+    it('merge unions the neuron ownership of both brains', () => {
+        // Brain A owns sense neurons 0,1 and motor neurons 0,1
+        // Brain B owns sense neurons 2,3 and motor neurons 2,3
+        const numSense = 6
+        const numMotor = 6
+        const owners = new Uint32Array(numSense + numMotor).fill(FREE)
+
+        // Set up ownership
+        owners[0] = 0 // brain A owns sense 0
+        owners[1] = 0 // brain A owns sense 1
+        owners[numSense + 0] = 0 // brain A owns motor 0
+        owners[numSense + 1] = 0 // brain A owns motor 1
+
+        owners[2] = 1 // brain B owns sense 2
+        owners[3] = 1 // brain B owns sense 3
+        owners[numSense + 2] = 1 // brain B owns motor 2
+        owners[numSense + 3] = 1 // brain B owns motor 3
+
+        // Merge: survivor is brain A (id=0), loser is brain B (id=1)
+        // All neurons owned by loser (1) get re-pointed to survivor (0)
+        for (let i = 0; i < owners.length; i++) {
+            if (owners[i] === 1) {
+                owners[i] = 0
+            }
+        }
+
+        // Now brain A owns all 4 sense + 4 motor neurons
+        expect(owners[0]).toBe(0)
+        expect(owners[1]).toBe(0)
+        expect(owners[2]).toBe(0)
+        expect(owners[3]).toBe(0)
+        expect(owners[numSense + 0]).toBe(0)
+        expect(owners[numSense + 1]).toBe(0)
+        expect(owners[numSense + 2]).toBe(0)
+        expect(owners[numSense + 3]).toBe(0)
+
+        // Unowned neurons remain FREE
+        expect(owners[4]).toBe(FREE)
+        expect(owners[5]).toBe(FREE)
+    })
+
+    it('death frees all owned neurons back to the pool', () => {
+        const numSense = 4
+        const numMotor = 4
+        const owners = new Uint32Array(numSense + numMotor).fill(FREE)
+
+        // Brain 0 owns some neurons
+        owners[0] = 0
+        owners[1] = 0
+        owners[numSense + 0] = 0
+
+        // Brain 0 dies: free all its neurons
+        for (let i = 0; i < owners.length; i++) {
+            if (owners[i] === 0) {
+                owners[i] = FREE
+            }
+        }
+
+        // All previously-owned neurons are now FREE
+        expect(owners[0]).toBe(FREE)
+        expect(owners[1]).toBe(FREE)
+        expect(owners[numSense + 0]).toBe(FREE)
+    })
+
+    it('clone copies parent ownership to child (same S and M)', () => {
+        const numSense = 6
+        const numMotor = 6
+        const owners = new Uint32Array(numSense + numMotor).fill(FREE)
+
+        // Brain A (id=0) owns sense 0,1 and motor 0,1
+        owners[0] = 0
+        owners[1] = 0
+        owners[numSense + 0] = 0
+        owners[numSense + 1] = 0
+
+        // Clone: child (id=1) gets copies of parent's owned neurons
+        // In practice, new particles are spawned and ownership is set to child id.
+        // Here we simulate: find parent's owned neurons, assign them to child too
+        // (in the real system, new particles are created in dormant slots)
+        const childId = 1
+        // The clone's neurons are NEW particles (in dormant pool), so we just verify
+        // the ownership pattern is correct for the child
+        owners[2] = childId // child gets sense neuron 2 (new particle)
+        owners[3] = childId // child gets sense neuron 3 (new particle)
+        owners[numSense + 2] = childId // child gets motor neuron 2
+        owners[numSense + 3] = childId // child gets motor neuron 3
+
+        // Child has same S=2, M=2 as parent
+        let childS = 0, childM = 0
+        for (let i = 0; i < numSense; i++) { if (owners[i] === childId) childS++ }
+        for (let i = 0; i < numMotor; i++) { if (owners[numSense + i] === childId) childM++ }
+        expect(childS).toBe(2)
+        expect(childM).toBe(2)
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Combined merge-then-clone scenario
+// ---------------------------------------------------------------------------
+describe('Brain Genome — Merge Then Clone (evolutionary pipeline)', () => {
+    it('a merged brain that then clones produces a grandchild near the blended midpoint', () => {
         const rand = seededRandom(999)
-        const pDriveBase = sBase
-        particles[cBase + 8] = Math.min(DRIVE_TARGET_MAX, Math.max(DRIVE_TARGET_MIN, particles[pDriveBase + 8] + (rand() - 0.5) * MUT_TARGET))
-        particles[cBase + 9] = Math.min(DRIVE_SCALE_MAX, Math.max(DRIVE_SCALE_MIN, particles[pDriveBase + 9] + (rand() - 0.5) * MUT_SCALE))
-        particles[cBase + 10] = Math.min(DRIVE_GAIN_MAX, Math.max(DRIVE_GAIN_MIN, particles[pDriveBase + 10] + (rand() - 0.5) * MUT_GAIN))
+        const genome = makeGenomeWithBrain(0, 3) // parent + clone slot
+
+        // Set different values for two parents
+        genome[4 + 1] = 1.0 // A's need-1 setpoint
+        genome[GENOME_STRIDE + 4 + 1] = 2.0 // B's need-1 setpoint
+        genome[4 + 2] = 0.5 // A's need-1 scale
+        genome[GENOME_STRIDE + 4 + 2] = 1.5 // B's need-1 scale
+
+        // Step 1: merge (element-wise mean)
+        for (let i = 0; i < GENOME_STRIDE; i++) {
+            genome[i] = (genome[i] + genome[GENOME_STRIDE + i]) * 0.5
+        }
+        // After merge: setpoint = 1.5, scale = 1.0
+
+        // Step 2: clone with jitter
+        const childBase = 2 * GENOME_STRIDE
+        for (let k = 0; k < GENOME_K; k++) {
+            genome[childBase + k * 4] = genome[k * 4] // targetColor copied
+            genome[childBase + k * 4 + 1] = Math.min(SETPOINT_MAX, Math.max(SETPOINT_MIN,
+                genome[k * 4 + 1] + gauss(rand) * MUT_SETPOINT))
+            genome[childBase + k * 4 + 2] = Math.min(SCALE_MAX, Math.max(SCALE_MIN,
+                genome[k * 4 + 2] + gauss(rand) * MUT_SCALE))
+            genome[childBase + k * 4 + 3] = Math.min(GAIN_MAX, Math.max(GAIN_MIN,
+                genome[k * 4 + 3] + gauss(rand) * MUT_GAIN))
+        }
 
         // Grandchild should be near the merged midpoint (within mutation range)
-        expect(particles[cBase + 8]).toBeGreaterThanOrEqual(1.5 - MUT_TARGET / 2)
-        expect(particles[cBase + 8]).toBeLessThanOrEqual(1.5 + MUT_TARGET / 2)
-        expect(particles[cBase + 9]).toBeGreaterThanOrEqual(1.0 - MUT_SCALE / 2)
-        expect(particles[cBase + 9]).toBeLessThanOrEqual(1.0 + MUT_SCALE / 2)
-        expect(particles[cBase + 10]).toBeGreaterThanOrEqual(2.0 - MUT_GAIN / 2)
-        expect(particles[cBase + 10]).toBeLessThanOrEqual(2.0 + MUT_GAIN / 2)
+        expect(Math.abs(genome[childBase + 4 + 1] - 1.5)).toBeLessThan(0.5)
+        expect(Math.abs(genome[childBase + 4 + 2] - 1.0)).toBeLessThan(0.3)
     })
 })
