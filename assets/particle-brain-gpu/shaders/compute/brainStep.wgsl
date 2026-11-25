@@ -80,10 +80,14 @@ fn expectedCount(r : f32) -> f32 {
     return numMatterApprox * 3.14159265 * r * r / area / numTypesF;
 }
 
+// NOTE: dispatched as ONE WORKGROUP PER BRAIN (dispatchWorkgroups(numBrains)).
+// brainId MUST be uniform across the workgroup so that early-returns keep every
+// subsequent workgroupBarrier() in uniform control flow. Using gid.x would give each
+// thread a different brain id -> non-uniform branch -> naga rejects the barriers.
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>,
+fn main(@builtin(workgroup_id) wid : vec3<u32>,
         @builtin(local_invocation_id) lid : vec3<u32>) {
-    let brainId = gid.x;
+    let brainId = wid.x;
     if (brainId >= opts.numBrains) { return; }
     let tid = lid.x;
 
@@ -133,8 +137,8 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>,
     // =====================================================================
     // PHASE 2: Compute net shape from S and M
     // =====================================================================
-    let H : u32;
-    let depth : u32;
+    var H : u32 = 0u;
+    var depth : u32 = 0u;
     if (S + M <= 8u) {
         // Single hidden layer, square-ish
         H = max(4u, min(MAX_H, (S * M + 1u) / 2u)); // small: at least 4

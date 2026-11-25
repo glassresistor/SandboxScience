@@ -57,6 +57,7 @@ struct ElectricalOptions {
     senseRadius: f32,
     senseConeHalfAngle: f32,
     senseMode: u32,
+    brainGain: f32,      // global brain network output gain (must match particleComputeForces.wgsl + JS offset 68)
 };
 
 // NOTE: brute-force path does NOT have neuronMods binding (no brain modulation in O(N^2) mode
