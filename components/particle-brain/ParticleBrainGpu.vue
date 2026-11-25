@@ -425,7 +425,7 @@
                             <div flex items-center justify-between gap-2>
                                 <p class="w-2/3 text-2sm">
                                     Debug links
-                                    <TooltipInfo container="#mainContainer" tooltip="Draw light dotted lines from each neuron to the urges within its radius — i.e. the urges currently driving it, so you can see which neurons an urge is recruiting." />
+                                    <TooltipInfo container="#mainContainer" tooltip="Shows the live wiring: light dotted lines from every urge to each motor neuron within Neuron Radius (the urges currently driving it), a dotted ring at each urge's Neuron Radius, enlarged neurons (diamond = motor, ring = sense) with their own dotted ring, and the perception circle around sense neurons." />
                                 </p>
                                 <ToggleSwitch v-model="particleLife.isDebugConnections" label="On" colorful-label />
                             </div>
@@ -870,6 +870,7 @@ import { generateColors, PALETTE_OPTIONS } from "~/helpers/utils/colorsGenerator
 import { generatePositions, POSITION_OPTIONS } from "~/helpers/utils/positionsGeneratorBrain"
 import { PARTICLE_STRIDE, PARTICLE_BYTES } from '~/constants/particleStride'
 import { driftInteractionMatrix, measureControlGap, measureMatterEntropy, noveltyRate, scheduleNeuronDamage } from '~/helpers/utils/experimentMetrics'
+import { assignCloneIds, compareUrgeRows, pruneCloneRegistry } from '~/helpers/utils/cloneIdentity'
 import { generateRules, RULES_OPTIONS } from '~/helpers/utils/rulesGenerator'
 
 export default defineComponent({
@@ -1831,7 +1832,9 @@ export default defineComponent({
                 const encoder = device.createCommandEncoder()
                 if (isCameraTracking)
                     computeTrackerCameraUpdate(encoder)
+                computeDebugConnections(encoder) // Debug links still show while paused
                 renderParticles(encoder)
+                renderDebugConnections(encoder)
                 if (isDebugBinsActive && useSpatialHash)
                     renderDebugBins(encoder)
                 if (isBrushActive && showBrushCircle)
@@ -1934,8 +1937,11 @@ export default defineComponent({
             if (isTrackerActive)
                 computeTracking(encoder)
 
+            computeDebugConnections(encoder) // Debug links: emit urge<->neuron line dots (no-op when off)
+
             renderParticles(encoder)
 
+            renderDebugConnections(encoder) // Debug links: draw the dotted lines on top of particles
             if (isDebugBinsActive && useSpatialHash)
                 renderDebugBins(encoder)
             if (isBrushActive && showBrushCircle)
@@ -2135,9 +2141,41 @@ export default defineComponent({
                 renderPass.end()
             }
 
-            // Debug connections: now rendered inline in the main particle pass via
-            // isDebugConnections flag in SimOptions. Urges render a black-and-white dotted
-            // circle at neuronRadius; neurons get a smaller dotted ring. No separate compute pass needed.
+        }
+        // -------------------------------------------------------------------------------------------------------------
+        // ---- Debug links: urge<->neuron dotted lines ----------------------------------
+        // The debugConnections compute pass emits one soft dot per step of every
+        // (urge, motor-neuron within neuronRadius) segment; render_connections draws them
+        // as a light dotted line ON TOP of the particles. Zero-cost when off.
+        const computeDebugConnections = (encoder: GPUCommandEncoder) => {
+            if (!isDebugConnections || !particleLife.isElectricalEnabled || numUrges <= 0)
+                return
+            // Reset the dot counter before the dispatch (queue writes order before this encoder's submit).
+            device.queue.writeBuffer(connCountBuffer!, 0, new Uint32Array([0]))
+            const pass = encoder.beginComputePass()
+            pass.setPipeline(debugConnectionsPipeline)
+            pass.setBindGroup(0, connectionsComputeBindGroup)
+            pass.setBindGroup(1, simOptionsBindGroup)
+            pass.setBindGroup(2, electricalBindGroup)
+            pass.dispatchWorkgroups(Math.ceil(numUrges / 64))
+            pass.end()
+        }
+        const renderDebugConnections = (encoder: GPUCommandEncoder) => {
+            if (!isDebugConnections || !particleLife.isElectricalEnabled || numUrges <= 0)
+                return
+            const pass = encoder.beginRenderPass({
+                colorAttachments: [{
+                    view: ctx.getCurrentTexture().createView(),
+                    loadOp: 'load',
+                    storeOp: 'store',
+                }],
+            })
+            pass.setPipeline(renderConnectionsPipeline)
+            pass.setBindGroup(0, connectionsRenderBindGroup)
+            pass.setBindGroup(1, cameraBindGroup)
+            pass.setBindGroup(2, simOptionsBindGroup)
+            pass.draw(4, MAX_CONN_DOTS)
+            pass.end()
         }
         // -------------------------------------------------------------------------------------------------------------
         const renderBrushCircle = (encoder: GPUCommandEncoder) => {
@@ -4768,6 +4806,17 @@ export default defineComponent({
         // Previous per-urge values (keyed by urge id) so we can show a trend between readbacks.
         let prevUrgeValues = new Map<number, { control: number, signal: number, driveTarget: number, driveScale: number, driveGain: number }>()
 
+        // ---- Stable clone identity across readbacks --------------------------------------
+        // Clones have no persistent GPU-side id (a dormant-pool slot re-labeled with a fractional
+        // type tag), so we match each live clone to its previous-readback identity by NEAREST
+        // POSITION — clones move continuously, so at 200 ms apart they can't teleport past each
+        // other. This gives every clone a STABLE UNIQUE id: every clone gets its own tracking
+        // card that doesn't vanish (old bug: all siblings shared one id and dedup dropped them)
+        // and rows don't jump around when siblings are born or die.
+        // The matching itself is pure + unit-tested in helpers/utils/cloneIdentity.ts.
+        const cloneRegistry = new Map<number, Map<number, { x: number, y: number }>>() // parentK -> cloneId -> last pos
+        const cloneSeq = new Map<number, number>() // parentK -> next clone sequence number
+
         // ---- On-canvas tracking of a single selected urge -------------------------------
         const selectedUrgeId = ref<number>(-1) // which urge (local index) to highlight on the canvas (-1 = none)
         const urgeMarkerEl = ref<HTMLElement | null>(null) // moving marker element (positioned imperatively)
@@ -4862,6 +4911,8 @@ export default defineComponent({
                 if (urgeStats.value.length !== 0)
                     urgeStats.value = [] // avoid reactive churn when already empty
                 prevUrgeValues.clear()
+                cloneRegistry.clear()
+                cloneSeq.clear()
                 return
             }
 
@@ -4876,7 +4927,7 @@ export default defineComponent({
                 // Collect urges (originals + clones), motor neurons, and sense neurons.
                 // Clones are identified by the fractional part of their type float (set to .5 at
                 // activation; the shader truncates via u32() so it sees the same integer type).
-                const urgeEntries: { k: number, isClone: boolean, x: number, y: number, vx: number, vy: number, control: number, signal: number, goalB: number, driveTarget: number, driveScale: number, driveGain: number }[] = []
+                const urgeEntries: { k: number, isClone: boolean, x: number, y: number, vx: number, vy: number, control: number, signal: number, goalB: number, driveTarget: number, driveScale: number, driveGain: number, displayId: number }[] = []
                 const motorNeuronPos: { x: number, y: number }[] = []
                 const senseNeuronPos: { x: number, y: number, mode: number }[] = [] // mode: 0=sight, 1=smell, 2=sound
 
@@ -4890,7 +4941,7 @@ export default defineComponent({
                     if (localType < numUrges) {
                         const isClone = rawType - intType > 0.1 // fractional tag = clone
                         const goalB = Math.floor(particles[idx + 7])
-                        urgeEntries.push({ k: localType, isClone, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], control: particles[idx + 5], signal: particles[idx + 6], goalB: goalB >= 0 ? goalB : -1, driveTarget: particles[idx + 8], driveScale: particles[idx + 9], driveGain: particles[idx + 10] })
+                        urgeEntries.push({ k: localType, isClone, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], control: particles[idx + 5], signal: particles[idx + 6], goalB: goalB >= 0 ? goalB : -1, driveTarget: particles[idx + 8], driveScale: particles[idx + 9], driveGain: particles[idx + 10], displayId: 0 })
                     }
                     else if (localType - numUrges < numNeurons) {
                         // Motor neuron (muscle)
@@ -4910,8 +4961,40 @@ export default defineComponent({
                     }
                 }
 
-                // Build rows with unique ids: originals get id = k, clones get a stable negative id
-                // derived from the parent's k (-(k+1)*10 - 1) so they're unique per clone identity.
+                // Assign stable display ids: originals = k; clones matched to their identity by
+                // nearest position (see matchCloneIds). Every live clone ends up with a UNIQUE id,
+                // so multi-clone parents no longer lose rows to dedup.
+                for (const u of urgeEntries)
+                    u.displayId = u.isClone ? -1 : u.k
+                {
+                    const cloneLists = new Map<number, { x: number, y: number, id: number }[]>()
+                    for (const u of urgeEntries) {
+                        if (!u.isClone)
+                            continue
+                        let list = cloneLists.get(u.k)
+                        if (!list) {
+                            list = []
+                            cloneLists.set(u.k, list)
+                        }
+                        list.push({ x: u.x, y: u.y, id: -1 })
+                    }
+                    // Match each parent's clones to their known identities (pure helper).
+                    const idByParent = new Map<number, number[]>()
+                    for (const [k, list] of cloneLists)
+                        idByParent.set(k, assignCloneIds(k, list, cloneRegistry, cloneSeq))
+                    // Write matched ids back onto the entries (scan order per parent is preserved).
+                    const cursor = new Map<number, number>()
+                    for (const u of urgeEntries) {
+                        if (!u.isClone)
+                            continue
+                        const i = cursor.get(u.k) ?? 0
+                        u.displayId = idByParent.get(u.k)![i]
+                        cursor.set(u.k, i + 1)
+                    }
+                    pruneCloneRegistry(new Set(cloneLists.keys()), cloneRegistry, cloneSeq)
+                }
+
+                // Build rows. Clone sequence number (C1, C2, ...) is recovered from the id scheme.
                 const muscleR2 = particleLife.neuronRadius * particleLife.neuronRadius
                 const senseR2 = particleLife.senseRadius * particleLife.senseRadius
                 const next: UrgeStat[] = urgeEntries.map((u) => {
@@ -4935,7 +5018,7 @@ export default defineComponent({
                         }
                     }
                     const wired = muscles + eyes + ears + nose
-                    const id = u.isClone ? -((u.k + 1) * 10 + 1) : u.k
+                    const id = u.displayId
                     return {
                         id,
                         type: NUM_TYPES + u.k,
@@ -4953,7 +5036,7 @@ export default defineComponent({
                         driveTarget: u.driveTarget,
                         driveScale: u.driveScale,
                         driveGain: u.driveGain,
-                        ...(u.isClone ? { isClone: true as const, cloneOf: u.k, cloneId: 1 } : {}),
+                        ...(u.isClone ? { isClone: true as const, cloneOf: u.k, cloneId: -id - (u.k + 1) * 1000 } : {}),
                     }
                 })
 
@@ -4964,8 +5047,10 @@ export default defineComponent({
                         return false; seen.add(s.id); return true
                 })
 
-                // Keep rows stable (by urge id) and compute the trend vs the previous readback.
-                deduped.sort((a, b) => a.id - b.id)
+                // Stable row order: group by parent (original + its clones together), original
+                // first, then clones in birth order. Rows only move when their own urge dies —
+                // never when an unrelated clone is born elsewhere.
+                deduped.sort(compareUrgeRows)
                 const newPrev = new Map<number, { control: number, signal: number, driveTarget: number, driveScale: number, driveGain: number }>()
                 for (const s of deduped) {
                     const prev = prevUrgeValues.get(s.id)
@@ -4992,10 +5077,8 @@ export default defineComponent({
 
                 // Refresh the on-canvas tracking data (positions + velocities) keyed by row id.
                 const posMap = new Map<number, { x: number, y: number, vx: number, vy: number }>()
-                for (const u of urgeEntries) {
-                    const eid = u.isClone ? -((u.k + 1) * 10 + 1) : u.k
-                    posMap.set(eid, { x: u.x, y: u.y, vx: u.vx, vy: u.vy })
-                }
+                for (const u of urgeEntries)
+                    posMap.set(u.displayId, { x: u.x, y: u.y, vx: u.vx, vy: u.vy })
                 urgeWorldPos = posMap
                 lastReadTimeMs = performance.now()
 
@@ -5230,6 +5313,8 @@ export default defineComponent({
                 stopUrgeReadback()
                 urgeStats.value = []
                 prevUrgeValues.clear()
+                cloneRegistry.clear()
+                cloneSeq.clear()
                 // Drop on-canvas tracking state so nothing lingers once the panel is closed.
                 selectedUrgeId.value = -1
                 urgeWorldPos = new Map()

@@ -49,11 +49,15 @@
                     <p class="text-2sm text-emerald-200 font-semibold">
                         Per-urge live state
                     </p>
-                    <span class="ml-auto rounded bg-emerald-500/15 px-1.5 py-0.5 text-[0.6rem] text-emerald-300 tracking-wide font-mono uppercase ring-1 ring-emerald-500/40">per urge</span>
+                    <span class="ml-auto rounded bg-emerald-500/15 px-1.5 py-0.5 text-[0.6rem] text-emerald-300 tracking-wide font-mono uppercase ring-1 ring-emerald-500/40">
+                        {{ stats.length }} cards · {{ cloneCount }} clones
+                    </span>
                 </div>
                 <p class="mb-2 text-[0.72rem] text-zinc-400 leading-snug">
-                    Each row’s top line is its <b>objective</b> (what it wants) — fixed unless you change the
-                    metric or species count. The <span class="text-emerald-300">control</span> bar is centred at 0:
+                    One tracking card per live urge — every clone gets its own card (grouped under its parent,
+                    e.g. <span class="text-violet-300 font-mono">#3-C1</span>), and rows keep their place as clones
+                    are born or die. Each row’s top line is its <b>objective</b> (what it wants) — fixed unless you
+                    change the metric or species count. The <span class="text-emerald-300">control</span> bar is centred at 0:
                     <span class="text-rose-300">left = repel</span>, <span class="text-emerald-300">right = attract</span>.<br>
                     <span class="text-sky-300">Click a row to track that urge on the canvas.</span>
                 </p>
@@ -188,7 +192,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent } from 'vue'
+import { computed, defineComponent } from 'vue'
 
 // A single urge's live telemetry, read back from the GPU a few times per second.
 export interface UrgeStat {
@@ -288,6 +292,9 @@ export default defineComponent({
         const TREND_EPS_LOCAL = TREND_EPS
         const paramMeta = PARAM_META
 
+        // How many of the live cards are clones (shown in the list header).
+        const cloneCount = computed(() => props.stats.filter(s => s.isClone).length)
+
         // Toggle tracking of a single urge on the canvas (click again to deselect).
         const select = (id: number) => {
             emit('update:selectedId', props.selectedId === id ? -1 : id)
@@ -355,7 +362,7 @@ export default defineComponent({
             return delta > 0 ? 'i-tabler-arrow-up text-emerald-400' : 'i-tabler-arrow-down text-rose-400'
         }
 
-        return { paramMeta, displayValue, fmt, barFill, signalFill, colorFor, objectiveLabelFor, brainDriveFor, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
+        return { paramMeta, cloneCount, displayValue, fmt, barFill, signalFill, colorFor, objectiveLabelFor, brainDriveFor, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
     },
 })
 </script>

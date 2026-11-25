@@ -63,9 +63,8 @@ struct VertexOutput {
     @location(0) offset: vec2<f32>,
     @location(1) color: vec4<f32>,
     @location(2) particleType: f32,
-    @location(3) isDebugCircle: f32, // 1 = this quad is a debug dotted circle (urge in debug mode)
-    @location(4) shapeType: f32,     // 0=circle (matter), 1=star (urge), 2=teardrop (neuron)
-    @location(5) orientation: f32,   // angle in radians for teardrop pointing direction
+    @location(3) isDebugCircle: f32, // 1 = this quad is a debug radius ring (dot pattern at the edge)
+    @location(4) shapeType: f32,     // 0=circle (matter), 1=star (urge), 2=diamond (motor neuron), 3=ring (sense neuron)
 }
 
 @vertex
@@ -74,7 +73,7 @@ fn vertexMain(
     @builtin(vertex_index) vertexIndex: u32
 ) -> VertexOutput {
     if (instanceIndex >= options.numParticles) {
-        return VertexOutput(vec4f(0.0), vec2f(0.0), vec4f(0.0), 0.0, 0.0, 0.0, 0.0);
+        return VertexOutput(vec4f(0.0), vec2f(0.0), vec4f(0.0), 0.0, 0.0, 0.0);
     }
     let particle = particles[instanceIndex];
     let pType = u32(particle.particleType);
@@ -94,28 +93,28 @@ fn vertexMain(
     );
     color = vec4f(color.rgb * bright, color.a);
 
-    // Determine render size: urges in debug mode get a larger quad for the dotted circle
+    // Determine render size + shape. Neurons are ALWAYS drawn in an unmistakable shape and
+    // larger than matter: motor neurons = diamond (2x matter size), sense neurons = ring.
     let isUrge = pType >= options.numTypes && pType < options.numTypes + options.numUrges;
     let isMotor = pType >= options.numTypes + options.numUrges && pType < senseBase;
     var size: f32 = options.particleSize;
     var isDebugCircle: f32 = 0.0;
-    // Shape type: matter=circle(0), urge=star(1), motor/sense neuron=teardrop(2)
+    // Shape type: matter=circle(0), urge=star(1), motor neuron=diamond(2), sense neuron=ring(3)
     var shapeType: f32 = 0.0;
     if (isUrge) { shapeType = 1.0; }
-    else if (isMotor || isSenseType) { shapeType = 2.0; }
-    // Orientation for teardrops: use velocity direction (neurons tend to move toward/from urges)
-    let orientation = atan2(particle.vy, particle.vx);
+    else if (isMotor) { shapeType = 2.0; size = options.particleSize * 2.0; }
+    else if (isSenseType) { shapeType = 3.0; size = options.particleSize * 2.0; }
     if (options.isDebugConnections != 0u) {
         if (isUrge) {
-            // Scale up to neuronRadius (world units) for the dotted circle
+            // Dotted circle at Neuron Radius, star body stays visible in the center
             size = options.neuronRadius;
             isDebugCircle = 1.0;
         } else if (isMotor) {
-            // Slightly larger for motor neurons: small dotted ring
-            size = options.particleSize * 2.5;
+            // Debug: clearly bigger diamond + dotted ring around it
+            size = options.particleSize * 8.0;
             isDebugCircle = 1.0;
         } else if (isSenseType) {
-            // Sense neurons: dotted circle at their perception radius (senseRadius)
+            // Sense neurons: dotted circle at their perception radius, ring body in the center
             size = options.senseRadius;
             isDebugCircle = 1.0;
         }
@@ -142,8 +141,7 @@ fn vertexMain(
         color,
         f32(pType),
         isDebugCircle,
-        shapeType,
-        orientation
+        shapeType
     );
 }
 
@@ -157,103 +155,58 @@ fn starRadius(angle: f32) -> f32 {
     return mix(1.0, 0.382, t); // outer radius 1.0, inner radius 0.382 (golden ratio star)
 }
 
-// Teardrop boundary radius at local angle (teardrop points in +X direction in local frame)
-fn teardropRadius(localAngle: f32) -> f32 {
-    // cardioid-like: r = 1 + elongation * cos(θ), point at θ=π, fat at θ=0
-    // We want the point in the +X direction (localAngle=0), so flip:
-    // r = 1 - elongation * cos(localAngle) → small at localAngle=0 (point), large at π (fat)
-    let elongation = 0.55;
-    return max(0.15, 1.0 - elongation * cos(localAngle));
+// Diamond boundary radius at a given angle: |x| + |y| <= 1  →  r(θ) = 1/(|cosθ| + |sinθ|)
+fn diamondRadius(angle: f32) -> f32 {
+    return 1.0 / (abs(cos(angle)) + abs(sin(angle)));
 }
 
-@fragment
-fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
-    let dist_sq = dot(in.offset, in.offset);
-    // fwidth must be called from uniform control flow — compute before any per-fragment branch.
-    let edge_width = fwidth(dist_sq);
-    let dist = sqrt(dist_sq);
-
-    // ---- Debug dotted circle mode (urges/neurons when isDebugConnections is on) ----
-    if (in.isDebugCircle == 1.0) {
-        // Draw a black-and-white dotted ring at the edge of the quad.
-        // The ring sits at dist ≈ 0.92 (slightly inside the edge for visibility).
-        let ringRadius = 0.92;
-        let ringWidth = 0.06;
-        let inRing = abs(dist - ringRadius) < ringWidth;
-        if (!inRing) { discard; }
-
-        // 16 dots around the circle, alternating black and white
-        let angle = atan2(in.offset.y, in.offset.x);
-        let numDots = 16.0;
-        let dotAngle = fract((angle + 3.14159265) / (6.2831853 * 2.0 / numDots));
-        // Each dot occupies half its segment
-        let inDot = dotAngle < 0.5;
-        if (!inDot) { discard; }
-
-        // Alternate: even dots white, odd dots black
-        let segmentIndex = fract((angle + 3.14159265) / (6.2831853 * 2.0 / numDots)) * numDots;
-        let isWhite = fract(segmentIndex) < 0.5;
-        // Use floor of the segment index to determine color
-        let segIdx = i32(floor((angle + 3.14159265) / (6.2831853 * 2.0 / numDots)));
-        let white = (segIdx % 2) == 0;
-
-        // Soft edge on the dot
-        let edgeFade = 1.0 - smoothstep(ringWidth * 0.5, ringWidth, abs(dist - ringRadius));
-        if (white) {
-            return vec4f(1.0, 1.0, 1.0, 0.9 * edgeFade);
-        } else {
-            return vec4f(0.0, 0.0, 0.0, 0.9 * edgeFade);
-        }
+// Fill alpha for a shape, given the quad-space offset and precomputed distances.
+// distSq/edge_width are in squared space (edge_width = fwidth(dist_sq)).
+fn shapeAlpha(shapeType: f32, off: vec2<f32>, dist: f32, distSq: f32, edge_width: f32) -> f32 {
+    let angle = atan2(off.y, off.x);
+    if (shapeType == 1.0) {
+        // Star (urges)
+        let rStar = starRadius(angle);
+        return 1.0 - smoothstep(max(0.0, rStar - edge_width), rStar, dist);
     }
+    else if (shapeType == 2.0) {
+        // Diamond (motor neurons) — unmistakably not a circle
+        let rDia = diamondRadius(angle);
+        return 1.0 - smoothstep(max(0.0, rDia - edge_width), rDia, dist);
+    }
+    else if (shapeType == 3.0) {
+        // Ring / annulus (sense neurons): outer edge at 1.0, hollow center to ~0.45
+        let outer = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist);
+        let hole = smoothstep(0.38, 0.52, dist);
+        return outer * hole;
+    }
+    // Circle (matter particles) — original behavior
+    return 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, distSq);
+}
 
-    // ---- Shape-aware particle rendering ----
+// Shape boundary radius at the fragment's angle (for the electrical border ring).
+fn shapeBoundaryR(shapeType: f32, off: vec2<f32>) -> f32 {
+    let angle = atan2(off.y, off.x);
+    if (shapeType == 1.0) { return starRadius(angle); }
+    if (shapeType == 2.0) { return diamondRadius(angle); }
+    return 1.0;
+}
+
+// Final color for a particle body: shape fill + optional electrical border ring.
+fn drawBody(in: VertexOutput, dist: f32, distSq: f32, edge_width: f32) -> vec4f {
     let isElectrical = in.particleType >= f32(options.numTypes);
-    // Sense-neuron band (for the accent border): ends at the dormant entry, starts numSenseNeurons before.
     let senseBaseF = f32(u32(arrayLength(&colors)) - 1u) - f32(options.numSenseNeurons);
     let isSenseBorder = in.particleType >= senseBaseF && in.particleType < f32(u32(arrayLength(&colors)) - 1u);
 
-    // Compute alpha based on shape type
-    var alpha: f32;
-    if (in.shapeType == 1.0) {
-        // ---- Star shape (urges) ----
-        let angle = atan2(in.offset.y, in.offset.x);
-        let rStar = starRadius(angle);
-        alpha = 1.0 - smoothstep(max(0.0, rStar - edge_width), rStar, dist);
-    } else if (in.shapeType == 2.0) {
-        // ---- Teardrop shape (neurons) — small/pointy end points toward the urge ----
-        // Rotate offset into local frame where teardrop points in +X direction
-        let cosA = cos(in.orientation);
-        let sinA = sin(in.orientation);
-        let localX =  in.offset.x * cosA + in.offset.y * sinA;
-        let localY = -in.offset.x * sinA + in.offset.y * cosA;
-        let localAngle = atan2(localY, localX);
-        let rDrop = teardropRadius(localAngle);
-        alpha = 1.0 - smoothstep(max(0.0, rDrop - edge_width), rDrop, dist);
-    } else {
-        // ---- Circle (matter particles) — original behavior ----
-        alpha = 1.0 - smoothstep(max(0.0, 1.0 - edge_width), 1.0, dist_sq);
-    }
+    let alpha = shapeAlpha(in.shapeType, in.offset, dist, distSq, edge_width);
 
     // Draw a thin border ring for electrical particles (follows the shape boundary).
-    if (isElectrical && alpha > 0.0) {
-        // Compute the shape boundary radius at this fragment's angle
-        var boundaryR: f32 = 1.0; // default: circle
-        if (in.shapeType == 1.0) {
-            let angle = atan2(in.offset.y, in.offset.x);
-            boundaryR = starRadius(angle);
-        } else if (in.shapeType == 2.0) {
-            let cosA = cos(in.orientation);
-            let sinA = sin(in.orientation);
-            let localX =  in.offset.x * cosA + in.offset.y * sinA;
-            let localY = -in.offset.x * sinA + in.offset.y * cosA;
-            let localAngle = atan2(localY, localX);
-            boundaryR = teardropRadius(localAngle);
-        }
-        // Border sits just inside the shape boundary
+    // Ring-shaped sense neurons skip it — the annulus itself is their outline.
+    if (isElectrical && alpha > 0.0 && in.shapeType != 3.0) {
+        let boundaryR = shapeBoundaryR(in.shapeType, in.offset);
         let borderDist = boundaryR * 0.85;
         let borderWidth = 0.06;
-        let inBorder = abs(dist - borderDist) < borderWidth;
-        if (inBorder) {
+        if (abs(dist - borderDist) < borderWidth) {
             let borderFade = 1.0 - smoothstep(borderWidth * 0.5, borderWidth, abs(dist - borderDist));
             let borderAlpha = borderFade * options.particleOpacity * alpha;
             let borderColor = select(vec3f(1.0, 1.0, 1.0), vec3f(0.30, 0.95, 1.0), isSenseBorder); // white vs cyan
@@ -262,4 +215,48 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     }
 
     return vec4f(in.color.rgb, in.color.a * options.particleOpacity * alpha);
+}
+
+// Debug radius quads draw the particle body at this fraction of the quad size, centered.
+const DEBUG_BODY_SCALE: f32 = 0.16;
+
+@fragment
+fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
+    let dist_sq = dot(in.offset, in.offset);
+    // fwidth must be called from uniform control flow — compute BOTH before any per-fragment branch.
+    let edge_width = fwidth(dist_sq);
+    let bodyDistSq = dist_sq / (DEBUG_BODY_SCALE * DEBUG_BODY_SCALE);
+    let bodyEdgeWidth = fwidth(bodyDistSq);
+    let dist = sqrt(dist_sq);
+
+    // ---- Debug radius-ring mode (urges/neurons when isDebugConnections is on) ----
+    if (in.isDebugCircle == 1.0) {
+        // The particle body stays visible in the center of the big radius quad, so you can see
+        // WHAT the ring belongs to (star urge / diamond motor neuron / ring sense neuron).
+        if (dist < DEBUG_BODY_SCALE * 1.4) {
+            return drawBody(in, sqrt(bodyDistSq), bodyDistSq, bodyEdgeWidth);
+        }
+
+        // Black-and-white dotted ring at the edge of the quad (radius indicator).
+        let ringRadius = 0.92;
+        let ringWidth = 0.06;
+        if (abs(dist - ringRadius) >= ringWidth) { discard; }
+
+        // 16 dots around the circle, alternating black and white
+        let angle = atan2(in.offset.y, in.offset.x);
+        let segAngle = 6.2831853 * 2.0 / 16.0;
+        let segIdx = i32(floor((angle + 3.14159265) / segAngle));
+        let localAngle = (angle + 3.14159265) - f32(segIdx) * segAngle;
+        if (localAngle >= segAngle * 0.5) { discard; } // every other segment is a gap
+
+        // Soft edge on the dot
+        let edgeFade = 1.0 - smoothstep(ringWidth * 0.5, ringWidth, abs(dist - ringRadius));
+        if ((segIdx % 2) == 0) {
+            return vec4f(1.0, 1.0, 1.0, 0.9 * edgeFade);
+        }
+        return vec4f(0.0, 0.0, 0.0, 0.9 * edgeFade);
+    }
+
+    // ---- Normal particle body (shape-aware) ----
+    return drawBody(in, dist, dist_sq, edge_width);
 }
