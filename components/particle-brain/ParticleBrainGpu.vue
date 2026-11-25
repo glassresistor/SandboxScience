@@ -1659,16 +1659,23 @@ export default defineComponent({
             const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
             if (!adapter)
                 throw new Error("WebGPU adapter not found")
-            // The force shaders use 5 bind groups (particles, simOptions, deltaTime,
-            // electrical options, extended interaction matrix). WebGPU's default limit is 4,
-            // so request the higher limit up front — otherwise createPipelineLayout fails and
-            // every compute pipeline comes back invalid (black screen).
-            if ((adapter.limits.maxBindGroups ?? 4) < 5) {
-                console.warn('[particle-life-gpu] GPU reports maxBindGroups < 5; the electrical-layer force shaders need 5 bind groups and will not work on this device.')
+            // Bind-group budget: our force + brain + render shaders only ever use bind
+            // groups 0-3 (four groups total). WebGPU's DEFAULT maxBindGroups limit is 4, and
+            // browsers cap it at 4 in practice (the spec maximum is 8, but most devices expose
+            // exactly 4), so requesting more than 4 makes requestDevice() throw and the entire
+            // sim fails to load — no particles, black canvas.
+            //
+            // DO NOT raise this above 4. The regression test tests/wgslBindGroupLimit.test.ts
+            // hard-errors if any shader declares @group(4)+ or if requiredLimits requests more
+            // than 4, so a 5th group is caught at CI time. If you truly need one, consolidate
+            // existing bind groups first instead of raising the cap.
+            if ((adapter.limits.maxBindGroups ?? 4) < 4) {
+                console.warn('[particle-life-gpu] GPU reports maxBindGroups < 4; the force shaders need 4 bind groups (0-3) and will not work on this device.')
             }
             device = await adapter.requestDevice({
                 requiredLimits: {
-                    maxBindGroups: Math.min(5, adapter.limits.maxBindGroups),
+                    // Keep at 4 — this is the browser cap, not a tunable. See comment above.
+                    maxBindGroups: Math.min(4, adapter.limits.maxBindGroups ?? 4),
                 },
             })
             ctx = canvasRef.value!.getContext('webgpu')!
