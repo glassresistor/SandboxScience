@@ -8,8 +8,16 @@
 //   FREE motor neuron within captureRadius. If found and below S/M caps,
 //   sets their neuronOwners = brainId.
 //
-// RELEASE: neurons whose owning brain has died (type != valid brain type)
-//   return to the free pool (neuronOwners = 0xFFFFFFFF).
+// RELEASE is handled CPU-side (a dying brain's neurons are set back to FREE in
+// JS), so this shader only performs CAPTURE.
+//
+// NAGA / UNIFORM CONTROL FLOW (why this file looks the way it does):
+//   * brainId comes from workgroup_id, NOT global_invocation_id — with one
+//     workgroup per brain, gid.x would give every thread a DIFFERENT id and
+//     make the early return below non-uniform (naga rejects the barriers that
+//     follow it; on top of that, capture would never run for brains ≥ 64).
+//   * The only early return is the uniform numBrains guard. The frame gate and
+//     the at-cap check are FLAGS so all threads reach all barriers.
 // =============================================================================
 
 const MAX_S : u32 = 32u;
@@ -38,6 +46,7 @@ struct CaptureOpts {
     maxPerBrain : u32,     // cap on S and M per brain
     frameCount : u32,
     captureInterval : u32, // frames between capture attempts (e.g. 600)
+    numTypes : u32,        // matter colors; special types start at numTypes
 };
 
 @group(0) @binding(0) var<storage, read> particles : array<Particle>;
@@ -55,59 +64,25 @@ var<workgroup> wg_bestMotorDist : f32;
 var<workgroup> wg_bestMotorIdx : u32;
 
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>,
+fn main(@builtin(workgroup_id) wid : vec3<u32>,
         @builtin(local_invocation_id) lid : vec3<u32>) {
-    let brainId = gid.x;
+    let brainId = wid.x;
+    // The ONLY early return in this shader. brainId is derived from workgroup_id,
+    // which is uniform across the workgroup, so every barrier below is reached by
+    // either all 64 threads or none — exactly what naga requires of a barrier.
     if (brainId >= opts.numBrains) { return; }
     let tid = lid.x;
 
-    // Gated: only run capture every captureInterval frames
-    if (opts.frameCount % opts.captureInterval != 0u) { return; }
+    // Gated: only run capture every captureInterval frames. FLAG, not an early
+    // return (the old return sat before the barriers below). The interval guard
+    // keeps the modulo well-defined if a zero ever reaches the shader.
+    let captureGateOpen = (opts.captureInterval > 0u) && (opts.frameCount % opts.captureInterval == 0u);
 
     let numSense = opts.numSenseNeurons;
     let numMotor = opts.numNeurons;
     let capR2 = opts.captureRadius * opts.captureRadius;
 
-    // --- Find this brain's position (type = numTypes + brainId) ---
-    // We need numTypes from the particle types: brains are in [numTypes, numTypes+numBrains)
-    // But we don't have numTypes directly — derive it: the first non-brain type boundary.
-    // Actually, we can find the brain by scanning for its specific type.
-    // Brain b has type = (some base) + b. We know brains are contiguous after matter.
-    // Let's just scan all particles for a particle whose type maps to this brain.
-    // The brain's type is: it's in the "urge band" which starts at numTypes.
-    // Since we don't have numTypes in opts, let's add it. Actually let me re-check...
-    // I'll use a different approach: scan for the particle that has this brain's ownership.
-    // Actually, the simplest: brains are particles with type in [numTypes, numTypes+numBrains).
-    // We need numTypes. Let me add it to opts.
-
-    // For now, let's find the brain by scanning all particles and checking which ones
-    // have types that would be "brain" types. Since we don't have numTypes in opts,
-    // I'll derive it: a brain particle is one where its type T satisfies:
-    //   there exist exactly numBrainId particles with type < T that are also "brain" type.
-    // This is too complex. Let me just add numTypes to the opts struct.
-
-    // WORKAROUND: scan all particles, find the one whose type matches brainId's expected type.
-    // Brain b has particleType = (numTypes + b). We need numTypes.
-    // Since we can't easily get it, let's use a different strategy:
-    // Find any particle that owns neurons for this brain and is close to them.
-    // Actually the simplest correct approach: just scan all particles and find the one
-    // whose type is in the "brain band". The brain band is [numTypes, numTypes+numBrains).
-    // We can derive numTypes: it's the smallest type value that has exactly numBrains
-    // distinct integer values starting from it. But that's O(N) to verify.
-
-    // SIMPLEST: just add numTypes to CaptureOpts. Let me fix the struct.
-    // For now I'll use a placeholder approach: scan for particles with type > 0 and
-    // try to identify the brain by its position relative to owned neurons.
-
-    // Actually, let me just find the brain by scanning: the brain particle is the one
-    // whose type, when subtracted from the minimum "special" type, equals brainId.
-    // The minimum special type = numTypes (first brain). So I need to find it.
-
-    // PRACTICAL SOLUTION: scan all particles, collect those with integer types that are
-    // >= some threshold. The first such type is numTypes. Then brain b = type numTypes+b.
-    // But this is O(N) per workgroup which is fine for ≤ 64000 particles with 64 threads.
-
-    // Let me just do a cooperative scan:
+    // --- Initialize workgroup state (thread 0) ---
     if (tid == 0u) {
         wg_brainPos = vec2f(0.0, 0.0);
         wg_countS = 0u;
@@ -134,51 +109,22 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>,
     }
     workgroupBarrier();
 
-    // If at cap, skip capture
-    if (wg_countS >= opts.maxPerBrain && wg_countM >= opts.maxPerBrain) { return; }
+    // At-cap check as a FLAG (was a workgroup-memory-keyed early return before
+    // the last barrier). doCapture is uniform per workgroup in practice, but
+    // naga cannot see through workgroup memory — so it only gates thread-0
+    // work below; every thread still reaches the next barrier.
+    let atCap = (wg_countS >= opts.maxPerBrain) && (wg_countM >= opts.maxPerBrain);
+    let doCapture = captureGateOpen && !atCap;
 
-    // Find brain position: scan for particle with type that maps to this brain.
-    // Brain particles have type in [numTypes, numTypes+numBrains). We need numTypes.
-    // Derive it: the minimum integer type value among all "special" particles.
-    // Special particles are those with type >= numTypes. Since matter types are [0, numTypes),
-    // the minimum special type IS numTypes.
-    // Cooperative min-find:
-    var localMin : u32 = 0xFFFFFFFFu;
-    let totalP = arrayLength(&particles);
-    for (var i = tid; i < totalP; i += 64u) {
-        let rawT = particles[i].particleType;
-        let intT = u32(rawT);
-        if (rawT == f32(intT) && intT > 0u) {
-            // Could be a special particle (brain, neuron, sense, or dormant)
-            // We want the minimum type that is a brain: it's in [numTypes, numTypes+numBrains)
-            // But we don't know numTypes yet. Let's just find the global min of all int types > 0.
-            // That gives us numTypes (since matter starts at 0 and brains are the first specials).
-            if (intT < localMin) { localMin = intT; }
-        }
-    }
-    // Reduce: find workgroup min
-    var wMin = localMin;
-    for (var offset = 1u; offset < 64u; offset <<= 1u) {
-        let other = arrayLength(&particles); // placeholder, will use proper reduction
-        // WGSL doesn't have easy cross-thread reduction without a shared array.
-        // Let me use a different approach.
-        break;
-    }
+    // --- Find brain position + nearest free sense/motor neurons (thread 0) ---
+    // Type layout: matter [0, numTypes), brains [numTypes, numTypes+numBrains),
+    // motors [numTypes+numBrains, ...+numMotor), senses after that. Thread 0
+    // does the O(N) scans; this only runs on capture frames, so it is cheap.
+    if (doCapture && tid == 0u) {
+        let totalP = arrayLength(&particles);
+        let brainType = opts.numTypes + brainId;
 
-    // SIMPLER APPROACH: just have thread 0 do the full scan (it's O(N) but N ≤ 64000,
-    // and this only runs every 600 frames so it's negligible).
-    if (tid == 0u) {
-        // Find numTypes: minimum integer type > 0 among all particles
-        var minType : u32 = 0xFFFFFFFFu;
-        for (var i = 0u; i < totalP; i += 1u) {
-            let rawT = particles[i].particleType;
-            let intT = u32(rawT);
-            if (rawT == f32(intT) && intT > 0u && intT < minType) {
-                minType = intT;
-            }
-        }
-        // Now brain b has type = minType + brainId
-        let brainType = minType + brainId;
+        // Find the brain particle's position
         for (var i = 0u; i < totalP; i += 1u) {
             let rawT = particles[i].particleType;
             let intT = u32(rawT);
@@ -192,8 +138,8 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>,
         if (wg_countS < opts.maxPerBrain) {
             for (var i = 0u; i < numSense; i += 1u) {
                 if (neuronOwners[i] == FREE) {
-                    // Find this sense neuron's position: type = minType + numBrains + numMotor + i
-                    let sType = minType + opts.numBrains + numMotor + i;
+                    // This sense neuron's particle: type = numTypes + numBrains + numMotor + i
+                    let sType = opts.numTypes + opts.numBrains + numMotor + i;
                     for (var p = 0u; p < totalP; p += 1u) {
                         let pt = u32(particles[p].particleType);
                         if (particles[p].particleType == f32(pt) && pt == sType) {
@@ -215,7 +161,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>,
         if (wg_countM < opts.maxPerBrain) {
             for (var i = 0u; i < numMotor; i += 1u) {
                 if (neuronOwners[numSense + i] == FREE) {
-                    let mType = minType + opts.numBrains + i;
+                    let mType = opts.numTypes + opts.numBrains + i;
                     for (var p = 0u; p < totalP; p += 1u) {
                         let pt = u32(particles[p].particleType);
                         if (particles[p].particleType == f32(pt) && pt == mType) {
@@ -236,7 +182,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>,
     workgroupBarrier();
 
     // Perform capture (thread 0 writes)
-    if (tid == 0u) {
+    if (doCapture && tid == 0u) {
         if (wg_bestSenseIdx != FREE && wg_countS < opts.maxPerBrain) {
             neuronOwners[wg_bestSenseIdx] = brainId;
         }

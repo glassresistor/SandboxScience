@@ -14,7 +14,9 @@
 // =============================================================================
 
 const K : u32 = 8u;
+const W_BUDGET : u32 = 1024u; // weight budget per brain (must match brainStep/CPU)
 const NEEDS_SIZE : u32 = K * 4u; // 32 floats per brain for needs
+const GENOME_STRIDE : u32 = NEEDS_SIZE + W_BUDGET; // 1056 floats/brain
 
 struct BrainMutateOpts {
     numBrains : u32,
@@ -40,16 +42,19 @@ fn gauss3(salt: u32, seed: u32) -> f32 {
 }
 
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>,
+fn main(@builtin(workgroup_id) wid : vec3<u32>,
         @builtin(local_invocation_id) lid : vec3<u32>) {
-    let brainId = gid.x;
+    let brainId = wid.x; // one workgroup per brain (dispatchWorkgroups(numBrains))
     if (brainId >= opts.numBrains) { return; }
     let tid = lid.x;
 
     // Each thread handles one need (K=8, so only threads 0..7 do work)
     if (tid >= K) { return; }
 
-    let genomeBase = brainId * NEEDS_SIZE; // needs start at the beginning of each slot
+    // Needs start at the beginning of each brain's GENOME_STRIDE-float slot.
+    // (The old code used gid.x and a NEEDS_SIZE stride, which wrote into
+    // brain 0's weight region instead of each brain's own needs.)
+    let genomeBase = brainId * GENOME_STRIDE;
     let needBase = genomeBase + tid * 4u;
 
     // Per-need changeability: deterministic from (brainId, needIndex)

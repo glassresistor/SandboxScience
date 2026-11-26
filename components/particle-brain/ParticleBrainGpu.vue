@@ -1852,6 +1852,7 @@ export default defineComponent({
 
             // ---- CAPTURE/RELEASE: organic neuron gain/loss (gated on frame counter) ----
             if (brainValid && captureReleasePipeline && particleLife.isElectricalEnabled && numUrges > 0) {
+                device.queue.writeBuffer(captureReleaseOptsBuffer!, 20, new Uint32Array([brainFrameCount])) // frameCount
                 const capPass = encoder.beginComputePass()
                 capPass.setPipeline(captureReleasePipeline!)
                 capPass.setBindGroup(0, captureReleaseBindGroup)
@@ -2456,8 +2457,9 @@ export default defineComponent({
             cv.setUint32(8, numSenseNeurons, true)  // numSenseNeurons
             cv.setFloat32(12, particleLife.neuronRadius, true) // captureRadius
             cv.setUint32(16, MAX_NEURONS_PER_BRAIN, true)     // maxPerBrain
-            cv.setUint32(20, 0, true)               // frameCount (updated per dispatch)
+            cv.setUint32(20, 0, true)               // frameCount (updated per dispatch below)
             cv.setUint32(24, 600, true)             // captureInterval (~10s at 60fps)
+            cv.setUint32(28, NUM_TYPES, true)       // numTypes (special types start here)
             device.queue.writeBuffer(captureReleaseOptsBuffer, 0, capData)
 
             // Initialize neuron ownership: give each brain a starter set of 1-2 sense + 1-2 motor neurons.

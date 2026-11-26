@@ -15,6 +15,16 @@
 // Weight layout within the W region (offset from genome base + K*4):
 //   Single layer:  [W1: S*H][b1: H][Wout: H*M][bout: M]
 //   Two layers:    [W1: S*H][b1: H][W2: H*H][b2: H][Wout: H*M][bout: M]
+//
+// NAGA / UNIFORM CONTROL FLOW (why this file looks the way it does):
+//   * brainId comes from workgroup_id, so the ONLY early return in this shader
+//     is uniform across the whole workgroup.
+//   * Every workgroupBarrier() sits at function scope after that guard, so all
+//     64 threads reach every barrier (naga rejects barriers inside branches it
+//     cannot prove uniform — e.g. on values read from workgroup memory).
+//   * Per-workgroup conditions naga cannot prove uniform (S/M/depth read after
+//     a barrier, the teach signal) become FLAGS that gate straight-line work;
+//     they never cause an early return and never wrap a barrier.
 // =============================================================================
 
 const K : u32 = 8u;            // needs per brain
@@ -67,8 +77,6 @@ var<workgroup> wg_hidden2 : array<f32, MAX_H>;     // hidden layer 2 activations
 var<workgroup> wg_outputs : array<f32, MAX_M>;     // output drives
 var<workgroup> wg_S : u32;                         // count of owned sense neurons
 var<workgroup> wg_M : u32;                         // count of owned motor neurons
-var<workgroup> wg_H : u32;                         // hidden width
-var<workgroup> wg_depth : u32;                     // 1 or 2
 var<workgroup> wg_errors : array<f32, K>;          // need errors (teaching signal)
 var<workgroup> wg_metricCounts : array<u32, K>;    // per-need target-color matter counts
 
@@ -81,13 +89,13 @@ fn expectedCount(r : f32) -> f32 {
 }
 
 // NOTE: dispatched as ONE WORKGROUP PER BRAIN (dispatchWorkgroups(numBrains)).
-// brainId MUST be uniform across the workgroup so that early-returns keep every
-// subsequent workgroupBarrier() in uniform control flow. Using gid.x would give each
-// thread a different brain id -> non-uniform branch -> naga rejects the barriers.
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) wid : vec3<u32>,
         @builtin(local_invocation_id) lid : vec3<u32>) {
     let brainId = wid.x;
+    // The ONLY early return in this shader. brainId is derived from workgroup_id,
+    // which is uniform across the workgroup, so every barrier below is reached by
+    // either all 64 threads or none — exactly what naga requires of a barrier.
     if (brainId >= opts.numBrains) { return; }
     let tid = lid.x;
 
@@ -126,23 +134,20 @@ fn main(@builtin(workgroup_id) wid : vec3<u32>,
 
     let S = wg_S;
     let M = wg_M;
-
-    // If no neurons owned, nothing to compute — write zero drives and return
-    if (S == 0u && M == 0u) {
-        // Still need to zero the neuronMods for any motor that might reference this brain
-        // (but if M==0 there are none, so just return)
-        return;
-    }
+    // FLAG (replaces an early return): a brain with no neurons still walks the
+    // uniform barrier sequence below but does no net work.
+    let hasNeurons = (S > 0u || M > 0u);
 
     // =====================================================================
     // PHASE 2: Compute net shape from S and M
+    // (S and M are identical across the workgroup after the barrier above, so
+    //  H and depth are uniform per brain even though naga cannot prove it.)
     // =====================================================================
-    var H : u32 = 0u;
-    var depth : u32 = 0u;
+    var H : u32 = 4u;
+    var depth : u32 = 1u;
     if (S + M <= 8u) {
         // Single hidden layer, square-ish
         H = max(4u, min(MAX_H, (S * M + 1u) / 2u)); // small: at least 4
-        if (H < 4u) { H = 4u; }
         depth = 1u;
     } else {
         // Two hidden layers once S+M > 8
@@ -150,14 +155,12 @@ fn main(@builtin(workgroup_id) wid : vec3<u32>,
         H = min(MAX_H, max(4u, u32(hCalc + 0.5)));
         depth = 2u;
     }
-    wg_H = H;
-    wg_depth = depth;
 
     // =====================================================================
     // PHASE 3: Gather inputs (sense neuron signals)
     // =====================================================================
     // Find the buffer index of each sense neuron by its local index.
-    // Sense neurons have type = numTypes + numUrges + numNeurons + localS
+    // Sense neurons have type = numTypes + numBrains + numNeurons + localS
     let senseTypeBase = opts.numTypes + opts.numBrains + opts.numNeurons;
     if (tid < S) {
         let sLocal = wg_senseList[tid];
@@ -171,66 +174,49 @@ fn main(@builtin(workgroup_id) wid : vec3<u32>,
             }
         }
         wg_inputs[tid] = found;
-    } else {
+    } else if (tid < MAX_S) {
+        // Zero-fill the rest of the input vector. Bounded by MAX_S: wg_inputs has
+        // MAX_S elements while tid runs to 63 (an unbounded else here was an
+        // out-of-bounds workgroup write).
         wg_inputs[tid] = 0.0;
     }
     workgroupBarrier();
 
     // =====================================================================
     // PHASE 4: Forward pass (sense → motor)
+    // All barriers at function scope. The two-layer case is folded into a
+    // flag-guarded block BETWEEN two uniform barriers instead of owning its
+    // own nested barriers.
     // =====================================================================
-    let hW = f32(H);
-    let sW = f32(S);
-    let mW = f32(M);
+    // h1[i] = tanh(W1[:,i]·x + b1[i])
+    if (tid < H) {
+        var val : f32 = genome[weightBase + S * H + tid]; // b1[tid]
+        for (var j = 0u; j < S; j += 1u) {
+            val += genome[weightBase + j * H + tid] * wg_inputs[j];
+        }
+        wg_hidden1[tid] = tanh(val);
+    }
+    workgroupBarrier();
 
-    if (depth == 1u) {
-        // Single layer: h[i] = tanh(W1[:,i]·x + b1[i])
-        if (tid < H) {
-            var val : f32 = genome[weightBase + S * H + tid]; // b1[tid]
-            for (var j = 0u; j < S; j += 1u) {
-                val += genome[weightBase + j * H + tid] * wg_inputs[j];
-            }
-            wg_hidden1[tid] = tanh(val);
+    // h2[i] = tanh(W2[:,i]·h1 + b2[i]) — two-layer nets only
+    if (depth == 2u && tid < H) {
+        var val : f32 = genome[weightBase + S * H + H + H * H + tid]; // b2[tid]
+        for (var j = 0u; j < H; j += 1u) {
+            val += genome[weightBase + S * H + H + j * H + tid] * wg_hidden1[j];
         }
-        workgroupBarrier();
+        wg_hidden2[tid] = tanh(val);
+    }
+    workgroupBarrier();
 
-        // Output: o[m] = clamp(tanh(Wout[:,m]·h + bout[m]), -1, 1)
-        if (tid < M) {
-            var val : f32 = genome[weightBase + S * H + H + H * M + tid]; // bout[tid]
-            for (var i = 0u; i < H; i += 1u) {
-                val += genome[weightBase + S * H + H + i * M + tid] * wg_hidden1[i];
-            }
-            let out = clamp(tanh(val), -1.0, 1.0);
-            wg_outputs[tid] = out;
+    // o[m] = clamp(tanh(Wout[:,m]·h_last + bout[m]), -1, 1)
+    if (tid < M) {
+        let lastOff = S * H + H + select(0u, H * H + H, depth == 2u);
+        var val : f32 = genome[weightBase + lastOff + H * M + tid]; // bout[tid]
+        for (var i = 0u; i < H; i += 1u) {
+            let hLast = select(wg_hidden1[i], wg_hidden2[i], depth == 2u);
+            val += genome[weightBase + lastOff + i * M + tid] * hLast;
         }
-    } else {
-        // Two layers: h1 → h2 → output
-        if (tid < H) {
-            var val : f32 = genome[weightBase + S * H + tid]; // b1[tid]
-            for (var j = 0u; j < S; j += 1u) {
-                val += genome[weightBase + j * H + tid] * wg_inputs[j];
-            }
-            wg_hidden1[tid] = tanh(val);
-        }
-        workgroupBarrier();
-
-        if (tid < H) {
-            var val : f32 = genome[weightBase + S * H + H + H * H + tid]; // b2[tid]
-            for (var j = 0u; j < H; j += 1u) {
-                val += genome[weightBase + S * H + H + j * H + tid] * wg_hidden1[j];
-            }
-            wg_hidden2[tid] = tanh(val);
-        }
-        workgroupBarrier();
-
-        if (tid < M) {
-            var val : f32 = genome[weightBase + S * H + H + H * H + H + H * M + tid]; // bout[tid]
-            for (var i = 0u; i < H; i += 1u) {
-                val += genome[weightBase + S * H + H + H * H + H + i * M + tid] * wg_hidden2[i];
-            }
-            let out = clamp(tanh(val), -1.0, 1.0);
-            wg_outputs[tid] = out;
-        }
+        wg_outputs[tid] = clamp(tanh(val), -1.0, 1.0);
     }
     workgroupBarrier();
 
@@ -286,78 +272,56 @@ fn main(@builtin(workgroup_id) wid : vec3<u32>,
 
         let err = clamp((setpoint - metric) / scale, -1.0, 1.0);
         wg_errors[tid] = err * gain;
-    } else {
-        wg_errors[tid % K] = wg_errors[tid % K]; // no-op for threads >= K (barrier sync)
     }
     workgroupBarrier();
 
     // =====================================================================
-    // PHASE 7: Delta-rule learning (only if learnRate > 0)
+    // PHASE 7: Delta-rule learning (flags instead of early returns)
     // =====================================================================
     let lr = opts.learnRate;
-    if (lr <= 0.0 || S == 0u || M == 0u) { return; }
 
     // Scalar teaching signal: mean of K need errors
     var teach : f32 = 0.0;
     for (var k = 0u; k < K; k += 1u) { teach += wg_errors[k]; }
     teach /= f32(K);
 
-    if (abs(teach) < 0.001) { return; } // no learning needed
+    // doLearn folds in the old early returns (lr<=0, S==0||M==0, |teach|<0.001)
+    let doLearn = (lr > 0.0) && hasNeurons && (abs(teach) >= 0.001);
 
     // Delta rule: reinforce active pathways scaled by teaching signal
     // Output layer: ΔWout[i,m] = lr * teach * h_last[i]
-    // Input layer:  ΔW1[j,i]   = lr * teach * x[j] * mean(h)
-
-    let wBase = weightBase;
-    if (depth == 1u) {
-        // Output weights: [H*M] at offset S*H + H
-        let outOff = S * H + H;
+    if (doLearn) {
+        let outOff = S * H + H + select(0u, H * H + H, depth == 2u);
         for (var idx = tid; idx < H * M; idx += 64u) {
             let i = idx / M;
             let m = idx % M;
-            let wIdx = wBase + outOff + i * M + m;
-            let updated = genome[wIdx] + lr * teach * wg_hidden1[i];
+            let wIdx = weightBase + outOff + i * M + m;
+            let hLast = select(wg_hidden1[i], wg_hidden2[i], depth == 2u);
+            let updated = genome[wIdx] + lr * teach * hLast;
             genome[wIdx] = clamp(updated, -2.0, 2.0);
         }
-        workgroupBarrier();
+    }
+    workgroupBarrier();
 
-        // Input weights: [S*H] at offset 0
-        for (var idx = tid; idx < S * H; idx += 64u) {
-            let j = idx / H;
-            let i = idx % H;
-            let wIdx = wBase + j * H + i;
-            let updated = genome[wIdx] + lr * teach * wg_inputs[j];
-            genome[wIdx] = clamp(updated, -2.0, 2.0);
-        }
-    } else {
-        // Two-layer: update all three weight matrices
-        // Wout: [H*M] at offset S*H + H + H*H + H
-        let outOff = S * H + H + H * H + H;
-        for (var idx = tid; idx < H * M; idx += 64u) {
-            let i = idx / M;
-            let m = idx % M;
-            let wIdx = wBase + outOff + i * M + m;
-            let updated = genome[wIdx] + lr * teach * wg_hidden2[i];
-            genome[wIdx] = clamp(updated, -2.0, 2.0);
-        }
-        workgroupBarrier();
-
-        // W2: [H*H] at offset S*H + H
+    // Hidden layer: ΔW2[j,i] = lr * teach * h1[j] (two-layer nets only)
+    if (doLearn && depth == 2u) {
         let w2Off = S * H + H;
         for (var idx = tid; idx < H * H; idx += 64u) {
             let j = idx / H;
             let i = idx % H;
-            let wIdx = wBase + w2Off + j * H + i;
+            let wIdx = weightBase + w2Off + j * H + i;
             let updated = genome[wIdx] + lr * teach * wg_hidden1[j];
             genome[wIdx] = clamp(updated, -2.0, 2.0);
         }
-        workgroupBarrier();
+    }
+    workgroupBarrier();
 
-        // W1: [S*H] at offset 0
+    // Input layer: ΔW1[j,i] = lr * teach * x[j]
+    if (doLearn) {
         for (var idx = tid; idx < S * H; idx += 64u) {
             let j = idx / H;
             let i = idx % H;
-            let wIdx = wBase + j * H + i;
+            let wIdx = weightBase + j * H + i;
             let updated = genome[wIdx] + lr * teach * wg_inputs[j];
             genome[wIdx] = clamp(updated, -2.0, 2.0);
         }
