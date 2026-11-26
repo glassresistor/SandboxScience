@@ -322,8 +322,8 @@
                             </div>
                             <template v-if="particleLife.isDeathEnabled">
                                 <RangeInput
-                                    v-model="particleLife.deathMetricThreshold" input label="Metric Threshold"
-                                    tooltip="Signal below this counts as 'starved'. Signal is ≥ 0 by construction, so a small epsilon means effectively zero." :min="0" :max="2" :step="0.01" mt-1
+                                    v-model="particleLife.deathMetricThreshold" input label="Utility Threshold"
+                                    tooltip="Utility below this counts as 'starved'. Utility = how well the brain meets its own needs (1 = all met, 0 = none), so a low value kills brains that can't satisfy their goals. Effectively 0..1 (>1 = never starves)." :min="0" :max="2" :step="0.01" mt-1
                                 />
                                 <RangeInput
                                     v-model="particleLife.deathSustainedTicks" input label="Sustained Ticks"
@@ -335,7 +335,7 @@
                             <div class="mt-2 flex items-center justify-between">
                                 <p class="w-2/3 text-2sm">
                                     Brain Merges
-                                    <TooltipInfo container="#mainContainer" tooltip="When two live urges stay within the merge radius for the sustained time, they merge: the higher-power urge survives (absorbing the other's metric/control), and the loser dies along with its in-range neurons. Tie → lower display id wins." />
+                                    <TooltipInfo container="#mainContainer" tooltip="When two live brains stay within the merge radius for the sustained time, they merge: the higher-utility brain survives (better at satisfying its own goals) and absorbs the other's neurons. The merged genome is weighted by each brain's utility, so the fitter one's goals dominate. Tie → lower display id wins." />
                                 </p>
                                 <ToggleSwitch v-model="particleLife.isMergeEnabled" label="On" colorful-label :disabled="!particleLife.isElectricalEnabled || particleLife.numBrains === 0" />
                             </div>
@@ -2378,15 +2378,24 @@ export default defineComponent({
                 size: genomeSize * 4,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
             })
-            // Initialize each brain's genome: random needs + small-random weights
+            // Initialize each brain's genome: DISTINCT needs + small-random weights.
+            // Every brain gets its own shuffled color palette (its "diet") and varied
+            // setpoints, so brains have genuinely different goals — a precondition for
+            // merge/death to mean anything in terms of utility.
             const genomeData = new Float32Array(genomeSize)
             for (let b = 0; b < numUrges; b++) {
                 const base = b * GENOME_STRIDE
+                // Shuffle the color palette so each brain wants a different mix of colors.
+                const palette = Array.from({ length: NUM_TYPES }, (_, c) => c)
+                for (let i = palette.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1))
+                    ;[palette[i], palette[j]] = [palette[j], palette[i]]
+                }
                 // Needs: K=8, each { targetColor(u32-as-f32), setpoint, scale, gain }
                 for (let k = 0; k < GENOME_K; k++) {
                     const nb = base + k * 4
-                    genomeData[nb] = k % NUM_TYPES // targetColor spread across needs
-                    genomeData[nb + 1] = 0.6 + Math.random() * 0.8 // setpoint [0.6, 1.4]
+                    genomeData[nb] = palette[k % NUM_TYPES] // distinct target color per brain
+                    genomeData[nb + 1] = 0.3 + Math.random() * 1.7 // setpoint [0.3, 2.0] — varied intensity
                     genomeData[nb + 2] = 0.3 + Math.random() * 0.5 // scale [0.3, 0.8]
                     genomeData[nb + 3] = 0.5 + Math.random() * 1.0 // gain [0.5, 1.5]
                 }
@@ -5509,6 +5518,33 @@ export default defineComponent({
                     if (isUpdatingParticles || isEraseCompleting) return
                     owners = new Uint32Array(ownersBuf)
                 }
+                // Read live per-need metrics so merge/death can act on real utility (not the
+                // stale particle-buffer signal proxy).
+                let metrics: Float32Array | null = null
+                if (brainMetricsBuffer && numUrges > 0) {
+                    const mBuf = await readBufferFromGPU(brainMetricsBuffer, numUrges * GENOME_K * 4)
+                    if (isUpdatingParticles || isEraseCompleting)
+                        return
+                    metrics = new Float32Array(mBuf)
+                }
+                // Utility of brain k = mean over its K needs of how close the LIVE metric is to
+                // its setpoint: 1 = every need exactly at target, 0 = everything off by a full
+                // scale or more. This "how well does this brain satisfy its own goals" number now
+                // drives merge (who survives + genome weighting) and death (starvation).
+                const utilityOf = (k: number): number => {
+                    if (!genome || !metrics || k < 0 || k >= numUrges)
+                        return 0
+                    const base = k * GENOME_STRIDE
+                    let sum = 0
+                    for (let i = 0; i < GENOME_K; i++) {
+                        const nb = base + i * 4
+                        const setpoint = genome[nb + 1]
+                        const scale = Math.max(genome[nb + 2], 0.1)
+                        const metric = metrics[k * GENOME_K + i]
+                        sum += Math.min(1, Math.max(0, 1 - Math.abs(metric - setpoint) / scale))
+                    }
+                    return sum / GENOME_K
+                }
                 // Dormant sentinel must include the sense band, or clone-pool slots are misread.
                 const dormantType = NUM_TYPES + numUrges + numNeurons + numSenseNeurons
                 const motorBase = NUM_TYPES + numUrges
@@ -5564,7 +5600,8 @@ export default defineComponent({
                         if (deadBufIdx.has(u.bufIdx))
                             continue // already dead this pass
                         const id = urgeDisplayId(u.k, u.isClone)
-                        if (u.signal < deathThreshold) {
+                        // Starve on low UTILITY (can't satisfy its own goals), not the stale signal.
+                        if (utilityOf(u.k) < deathThreshold) {
                             const prev = sustainedBelow.get(id) ?? 0
                             const count = prev + 1
                             newSustainedBelow.set(id, count)
@@ -5682,12 +5719,13 @@ export default defineComponent({
                             const count = prev + 1
 
                             if (count >= mergeTicks) {
-                                // MERGE: higher power survives, lower dies
-                                const pA = urgePower(urges[a].signal, urges[a].control)
-                                const pB = urgePower(urges[b].signal, urges[b].control)
+                                // MERGE: higher UTILITY survives — the brain better at satisfying its
+                                // own goals wins, so a merge represents the parents' utilities.
+                                const uA = utilityOf(urges[a].k)
+                                const uB = utilityOf(urges[b].k)
                                 let survivor: UrgeEntry, loser: UrgeEntry
-                                if (pA > pB) { survivor = urges[a]; loser = urges[b] }
-                                else if (pB > pA) { survivor = urges[b]; loser = urges[a] }
+                                if (uA > uB) { survivor = urges[a]; loser = urges[b] }
+                                else if (uB > uA) { survivor = urges[b]; loser = urges[a] }
                                 else { survivor = idA < idB ? urges[a] : urges[b]; loser = survivor === urges[a] ? urges[b] : urges[a] }
 
                                 // Survivor absorbs: max signal, zero control (no per-frame control anymore)
@@ -5700,12 +5738,18 @@ export default defineComponent({
                                 particles[s8 + 9] = 0
                                 particles[s8 + 10] = 0
 
-                                // Genome heredity: element-wise mean of both brains' genomes
+                                // Genome heredity weighted by UTILITY: the fitter brain's goals and
+                                // weights dominate the merged genome (w in [0.5, 1] since it is the
+                                // higher-utility survivor), so the merge encodes both parents' fitness.
                                 if (genome) {
                                     const sBase = survivor.k * GENOME_STRIDE
                                     const lBase = loser.k * GENOME_STRIDE
+                                    const uS = utilityOf(survivor.k)
+                                    const uL = utilityOf(loser.k)
+                                    const totalU = uS + uL
+                                    const w = totalU > 1e-6 ? uS / totalU : 0.5
                                     for (let gi = 0; gi < GENOME_STRIDE; gi++) {
-                                        genome[sBase + gi] = (genome[sBase + gi] + genome[lBase + gi]) * 0.5
+                                        genome[sBase + gi] = w * genome[sBase + gi] + (1 - w) * genome[lBase + gi]
                                     }
                                 }
                                 // Ownership union: re-point loser's neurons to survivor

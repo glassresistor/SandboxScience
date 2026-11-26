@@ -109,9 +109,12 @@
 
                         <!-- objective (live): homeostasis + how many needs are met right now -->
                         <div class="mt-1">
-                            <p v-if="s.brain" class="flex items-center gap-1.5 text-[0.74rem] leading-tight">
+                            <p v-if="s.brain" class="flex flex-wrap items-center gap-1.5 text-[0.74rem] leading-tight">
                                 <span class="i-tabler-target shrink-0 text-amber-400" />
                                 <span class="text-zinc-200">Homeostasis</span>
+                                <span class="text-fuchsia-300 font-mono" :title="`This brain's strongest goals (top needs by setpoint): ${dominantNeeds(s.brain)}`">
+                                    favors {{ dominantNeeds(s.brain) }}
+                                </span>
                                 <span
                                     class="rounded px-1 py-px font-mono ring-1"
                                     :class="metBadgeClass(s.brain)"
@@ -347,6 +350,16 @@ export default defineComponent({
             return 'bg-rose-500/15 text-rose-300 ring-rose-500/40'
         }
 
+        // This brain's distinct "diet": its top needs by setpoint, as color numbers (C1..).
+        // Because every brain is seeded with a different shuffled palette + varied setpoints,
+        // this label differs brain-to-brain and makes the individual goals visible.
+        const dominantNeeds = (brain: BrainNet): string => {
+            if (!brain.needs.length)
+                return '—'
+            const top = [...brain.needs].sort((x, y) => y.setpoint - x.setpoint).slice(0, 3)
+            return top.map(n => `C${n.targetColor + 1}`).join('·')
+        }
+
         // ---- Per-need homeostasis gauge (live metric vs target zone) -------------------
         // A need is "met" when its live metric sits inside the target band
         // [setpoint − scale, setpoint + scale] — exactly where |error| stays below `gain`
@@ -411,7 +424,7 @@ export default defineComponent({
             return delta > 0 ? 'i-tabler-arrow-up text-emerald-400' : 'i-tabler-arrow-down text-rose-400'
         }
 
-        return { paramMeta, cloneCount, displayValue, fmt, actFill, metBadgeClass, colorFor, objectiveLabelFor, cardCap, pct, bandLeft, bandWidth, metricPos, needleClass, needErrClass, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
+        return { paramMeta, cloneCount, displayValue, fmt, actFill, metBadgeClass, dominantNeeds, colorFor, objectiveLabelFor, cardCap, pct, bandLeft, bandWidth, metricPos, needleClass, needErrClass, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
     },
 })
 </script>
