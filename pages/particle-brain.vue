@@ -20,7 +20,7 @@
             <header>
                 <div mb-3 flex items-center class="text-2xl font-bold sm:text-[1.75rem]">
                     <h1 flex items-center>
-                        Particle Life
+                        Particle Brain
                     </h1>
                     <p class="ml-2 justify-center rounded-lg px-2 py-1 font-mono uppercase ring-1" :class="currentRenderer === 'gpu' ? 'bg-fuchsia-600/20 text-fuchsia-400 ring-fuchsia-500/30' : 'bg-sky-600/20 text-sky-400 ring-sky-500/30'">
                         {{ currentRenderer === 'cpu' ? 'CPU' : 'GPU' }}
