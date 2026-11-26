@@ -107,35 +107,38 @@
                             </span>
                         </div>
 
-                        <!-- objective (stable): homeostasis across its K need-colors -->
+                        <!-- objective (live): homeostasis + how many needs are met right now -->
                         <div class="mt-1">
-                            <p class="flex items-center gap-1.5 text-[0.74rem] text-zinc-200 leading-tight">
+                            <p v-if="s.brain" class="flex items-center gap-1.5 text-[0.74rem] leading-tight">
+                                <span class="i-tabler-target shrink-0 text-amber-400" />
+                                <span class="text-zinc-200">Homeostasis</span>
+                                <span
+                                    class="rounded px-1 py-px font-mono ring-1"
+                                    :class="metBadgeClass(s.brain)"
+                                    :title="`${s.brain.metNeeds} of ${s.brain.needs.length} needs currently inside their target band`"
+                                >
+                                    {{ s.brain.metNeeds }}/{{ s.brain.needs.length }} met
+                                </span>
+                            </p>
+                            <p v-else class="flex items-center gap-1.5 text-[0.74rem] text-zinc-200 leading-tight">
                                 <span class="i-tabler-target shrink-0 text-amber-400" />
                                 <span>{{ objectiveLabelFor(s.cloneOf ?? s.id) }}</span>
                             </p>
                         </div>
 
-                        <!-- net output: the REAL brain→muscle drive (mean of owned motor drives, signed [-1,1]) -->
+                        <!-- actuation: how hard the brain is pushing its muscles right now (peak |drive|, 0..1) -->
                         <div class="mt-1.5 flex items-center gap-2">
-                            <span class="w-14 shrink-0 text-[0.68rem] text-zinc-400">Net output</span>
+                            <span class="w-14 shrink-0 text-[0.68rem] text-zinc-400" title="Strongest motor-neuron drive right now (|drive|, 0..1). The mean across colors cancels out, so we show the peak.">Actuation</span>
                             <div class="relative h-2 flex-1 overflow-hidden rounded-full bg-slate-700/70">
-                                <!-- center divider -->
-                                <div class="absolute bottom-0 left-1/2 top-0 w-px bg-white/40" />
-                                <!-- signed fill -->
-                                <div
-                                    class="absolute bottom-0 top-0 rounded-full"
-                                    :class="s.control >= 0 ? 'bg-emerald-500/80' : 'bg-rose-500/80'"
-                                    :style="barFill(s.control)"
-                                />
+                                <div class="absolute bottom-0 left-0 top-0 rounded-full bg-emerald-500/80" :style="{ width: actFill(s.control) }" />
                             </div>
-                            <span
-                                class="w-14 shrink-0 text-right text-[0.72rem] font-mono tabular-nums"
-                                :class="s.control >= 0 ? 'text-emerald-300' : 'text-rose-300'"
-                            >{{ fmt(s.control) }}</span>
-                            <span class="w-4 shrink-0 text-center" title="Δ net output vs previous readback">
+                            <span class="w-14 shrink-0 text-right text-[0.72rem] text-emerald-300 font-mono tabular-nums">{{ fmt(s.control) }}</span>
+                            <span v-if="s.brain" class="w-auto flex shrink-0 items-center gap-0.5 text-[0.68rem] text-fuchsia-200 font-mono" :title="`${s.brain.activeMuscles} of ${s.brain.M} motor neurons firing (|drive| > 0.1)`">
+                                <span class="i-tabler-bolt inline-block align-middle" />{{ s.brain.activeMuscles }}/{{ s.brain.M }}
+                            </span>
+                            <span v-if="s.trendControl > TREND_EPS || s.trendControl < -TREND_EPS" class="w-4 shrink-0 text-center" title="Δ actuation vs previous readback">
                                 <span v-if="s.trendControl > TREND_EPS" class="i-tabler-arrow-up text-emerald-400" />
-                                <span v-else-if="s.trendControl < -TREND_EPS" class="i-tabler-arrow-down text-rose-400" />
-                                <span v-else class="i-tabler-minus text-zinc-500" />
+                                <span v-else class="i-tabler-arrow-down text-rose-400" />
                             </span>
                         </div>
 
@@ -156,21 +159,27 @@
 
                         <!-- per-need live table: each genome need's target color vs its setpoint -->
                         <div v-if="s.brain" class="mt-1.5">
-                            <p class="mb-0.5 text-[0.62rem] text-zinc-500 tracking-wide font-mono uppercase">
-                                Needs · live metric vs setpoint
+                            <p class="mb-1 text-[0.62rem] text-zinc-500 leading-snug">
+                                <span class="tracking-wide font-mono uppercase">Needs</span>
+                                <span class="ml-1">— needle = live density, green band = target zone (setpoint ± scale). Needle in the band = need met.</span>
                             </p>
                             <ul class="flex flex-col gap-0.5">
                                 <li v-for="(n, i) in s.brain.needs" :key="i" class="flex items-center gap-1.5 text-[0.68rem] font-mono tabular-nums">
                                     <span class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/30" :style="{ backgroundColor: colorFor(n.targetColor) }" />
                                     <span class="w-7 shrink-0 text-zinc-400">C{{ n.targetColor + 1 }}</span>
-                                    <!-- metric bar (fill = live metric vs a soft cap); white tick marks the setpoint -->
-                                    <div class="relative h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/70">
-                                        <div class="absolute bottom-0 left-0 top-0 rounded-full" :class="needBarColor(n)" :style="{ width: needFill(n) }" />
-                                        <div class="absolute bottom-0 top-0 w-px bg-white/60" :style="{ left: setpointPos(n) }" title="setpoint" />
+                                    <!-- homeostasis gauge: green band = target zone (setpoint ± scale),
+                                         white line = exact setpoint, needle = live metric -->
+                                    <div
+                                        class="relative h-2.5 flex-1 overflow-hidden rounded-full bg-slate-700/70"
+                                        :title="`metric ${fmt(n.metric)} · target ${fmt(n.setpoint)} ± ${fmt(n.scale)}`"
+                                    >
+                                        <div class="absolute bottom-0 top-0 bg-emerald-400/15 ring-1 ring-emerald-400/30 ring-inset" :style="{ left: bandLeft(n, cardCap(s.brain)), width: bandWidth(n, cardCap(s.brain)) }" />
+                                        <div class="absolute bottom-0 top-0 w-px bg-white/70" :style="{ left: pct(n.setpoint, cardCap(s.brain)) }" title="setpoint" />
+                                        <div class="absolute top-1/2 h-3.5 w-[3px] rounded-full ring-1 ring-black/50 -translate-x-1/2 -translate-y-1/2" :class="needleClass(n)" :style="{ left: metricPos(n, cardCap(s.brain)) }" title="live metric" />
                                     </div>
                                     <span class="w-12 shrink-0 text-right text-zinc-300">{{ fmt(n.metric) }}</span>
-                                    <span class="w-16 shrink-0 text-right" :class="needErrClass(n)" title="error = clamp((setpoint − metric)/scale, ±1) × gain">
-                                        {{ n.error >= 0 ? '↑' : '↓' }}{{ fmt(Math.abs(n.error), 2) }}
+                                    <span class="w-16 shrink-0 text-right" :class="needErrClass(n)" title="error = clamp((setpoint − metric)/scale, ±1) × gain — + wants more of this color, − has too much">
+                                        {{ n.error >= 0 ? '+' : '−' }}{{ fmt(Math.abs(n.error), 2) }}
                                     </span>
                                 </li>
                             </ul>
@@ -210,9 +219,11 @@ export interface BrainNet {
     M: number // motor neurons owned → net outputs
     H: number // hidden units (mirrors brainStep.wgsl shape)
     depth: number // 1 or 2 hidden layers
-    meanDrive: number // mean signed net output across owned motor neurons (the real "control")
-    maxAbsDrive: number // strongest |drive| among owned motor neurons
+    meanDrive: number // mean signed net output across owned motor neurons (can cancel to ~0)
+    maxAbsDrive: number // strongest |drive| among owned motor neurons (peak actuation, 0..1)
+    activeMuscles: number // count of owned motor neurons firing (|drive| > 0.1)
     teach: number // scalar teaching signal = mean of the K need errors
+    metNeeds: number // count of needs whose live metric is inside their target band (homeostasis met)
     meanMetric: number // mean of the K live need metrics (aggregate activity)
     usedWeights: number // total weights in the net (S*H + H [+H*H+H] + H*M + M)
     strongWeights: number // count of |w| > 0.5 (net has learned structure)
@@ -323,43 +334,55 @@ export default defineComponent({
             return fmt(props.params[meta.key])
         }
 
-        // Signed bar centred at 0: left half = repel, right half = attract.
-        const barFill = (control: number): Record<string, string> => {
-            const max = Math.max(props.controlMax, 1e-6)
-            let f = control / max
-            if (f > 1)
-                f = 1
-            else if (f < -1)
-                f = -1
-            const widthPct = Math.abs(f) * 50 // each side is at most half the bar
-            if (f >= 0)
-                return { left: '50%', right: 'auto', width: `${widthPct}%` }
-            return { right: '50%', left: 'auto', width: `${widthPct}%` }
+        // Actuation bar fill: peak |drive| is a 0..1 magnitude, so it fills left→right.
+        const actFill = (v: number): string => `${(Math.min(Math.max(v, 0), 1) * 100).toFixed(1)}%`
+
+        // Color of the "N/K met" badge by the fraction of needs inside their target band.
+        const metBadgeClass = (brain: BrainNet): string => {
+            const frac = brain.needs.length ? brain.metNeeds / brain.needs.length : 0
+            if (frac >= 0.75)
+                return 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/40'
+            if (frac >= 0.4)
+                return 'bg-amber-500/15 text-amber-300 ring-amber-500/40'
+            return 'bg-rose-500/15 text-rose-300 ring-rose-500/40'
         }
 
-        // ---- Per-need table helpers (live metric vs setpoint) --------------------------
-        // Soft cap so one need's bar fill stays comparable to its siblings.
-        const needCap = (n: NeedStat): number => Math.max(n.setpoint * 1.6, 0.8)
+        // ---- Per-need homeostasis gauge (live metric vs target zone) -------------------
+        // A need is "met" when its live metric sits inside the target band
+        // [setpoint − scale, setpoint + scale] — exactly where |error| stays below `gain`
+        // (the teaching signal hasn't saturated). All needs in a card share ONE scale so their
+        // gauges are directly comparable and none pin at 0%/100%.
 
-        const needFill = (n: NeedStat): string => {
-            const ratio = Math.min(Math.max(n.metric, 0) / needCap(n), 1)
-            return `${(ratio * 100).toFixed(1)}%`
+        // Shared density scale for every need in a card: covers the highest setpoint with a
+        // little headroom, clamped to a sane range.
+        const cardCap = (brain: BrainNet): number => {
+            let m = 1
+            for (const n of brain.needs) {
+                if (n.setpoint > m)
+                    m = n.setpoint
+            }
+            return Math.min(Math.max(Math.ceil(m), 1), 4)
         }
 
-        // Position of the setpoint tick on the same scale as the metric fill.
-        const setpointPos = (n: NeedStat): string => {
-            const ratio = Math.min(Math.max(n.setpoint, 0) / needCap(n), 1)
-            return `${(ratio * 100).toFixed(1)}%`
+        const pct = (v: number, cap: number): string => `${(Math.min(Math.max(v / cap, 0), 1) * 100).toFixed(1)}%`
+
+        // Target-band left edge + width (setpoint ± scale), clamped to the track.
+        const bandLeft = (n: NeedStat, cap: number): string => pct(n.setpoint - n.scale, cap)
+        const bandWidth = (n: NeedStat, cap: number): string => {
+            const lo = Math.max(0, (n.setpoint - n.scale) / cap)
+            const hi = Math.min(1, (n.setpoint + n.scale) / cap)
+            return `${((hi - lo) * 100).toFixed(1)}%`
         }
 
-        // Fill color by how close the live metric is to its setpoint (homeostasis met?).
-        const needBarColor = (n: NeedStat): string => {
-            const dev = Math.abs(n.metric - n.setpoint) / Math.max(n.setpoint, 0.1)
-            if (dev < 0.3)
-                return 'bg-emerald-500/70'
-            if (dev < 0.8)
-                return 'bg-amber-500/70'
-            return 'bg-rose-500/70'
+        // Needle position = the live metric on the shared scale.
+        const metricPos = (n: NeedStat, cap: number): string => pct(n.metric, cap)
+
+        // Needle color: green inside the target band (homeostasis met), rose below it (brain
+        // wants MORE of that color), amber above it (has too much).
+        const needleClass = (n: NeedStat): string => {
+            if (Math.abs(n.metric - n.setpoint) <= n.scale)
+                return 'bg-emerald-400'
+            return n.metric < n.setpoint ? 'bg-rose-400' : 'bg-amber-400'
         }
 
         // Error readout color: small = satisfied, large = far from setpoint.
@@ -388,7 +411,7 @@ export default defineComponent({
             return delta > 0 ? 'i-tabler-arrow-up text-emerald-400' : 'i-tabler-arrow-down text-rose-400'
         }
 
-        return { paramMeta, cloneCount, displayValue, fmt, barFill, colorFor, objectiveLabelFor, needFill, setpointPos, needBarColor, needErrClass, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
+        return { paramMeta, cloneCount, displayValue, fmt, actFill, metBadgeClass, colorFor, objectiveLabelFor, cardCap, pct, bandLeft, bandWidth, metricPos, needleClass, needErrClass, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
     },
 })
 </script>

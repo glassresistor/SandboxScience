@@ -2373,9 +2373,10 @@ export default defineComponent({
 
             // Genome buffer: numBrains * GENOME_STRIDE floats, initialized with random needs + small weights
             const genomeSize = numUrges * GENOME_STRIDE
+            // COPY_SRC so the inspector can map it back (copyBufferToBuffer needs a copy source).
             genomeBuffer = device.createBuffer({
                 size: genomeSize * 4,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
             })
             // Initialize each brain's genome: random needs + small-random weights
             const genomeData = new Float32Array(genomeSize)
@@ -2398,17 +2399,19 @@ export default defineComponent({
 
             // Neuron ownership: [numSenseNeurons + numNeurons] u32 entries, all FREE (0xFFFFFFFF)
             const totalNeurons = numSenseNeurons + numNeurons
+            // COPY_SRC so the inspector can map ownership back.
             neuronOwnersBuffer = device.createBuffer({
                 size: totalNeurons * 4,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
             })
             const ownersData = new Uint32Array(totalNeurons).fill(0xFFFFFFFF)
             device.queue.writeBuffer(neuronOwnersBuffer, 0, ownersData)
 
-            // Neuron modulations output: numNeurons floats (one per motor neuron)
+            // Neuron modulations output: numNeurons floats (one per motor neuron).
+            // COPY_SRC so the inspector can read back the live net outputs.
             neuronModsBuffer = device.createBuffer({
                 size: Math.max(numNeurons, 1) * 4,
-                usage: GPUBufferUsage.STORAGE,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             })
 
             // Per-neuron health buffer (damage experiment)
@@ -4873,6 +4876,7 @@ export default defineComponent({
             const needs: NeedStat[] = []
             let teachSum = 0
             let metricSum = 0
+            let metNeeds = 0
             for (let i = 0; i < GENOME_K; i++) {
                 const nb = base + i * 4
                 const targetColor = Math.round(genome[nb]) % NUM_TYPES
@@ -4885,6 +4889,9 @@ export default defineComponent({
                 needs.push({ targetColor, setpoint, scale, gain, metric, error })
                 teachSum += error
                 metricSum += metric
+                // Homeostasis met when the live metric sits inside the target band.
+                if (Math.abs(metric - setpoint) <= scale)
+                    metNeeds++
             }
             const teach = teachSum / GENOME_K
             const meanMetric = metricSum / GENOME_K
@@ -4921,6 +4928,7 @@ export default defineComponent({
             // Live net outputs (neuronMods is the pre-brainGain drive, signed [-1,1]).
             let meanDrive = 0
             let maxAbsDrive = 0
+            let activeMuscles = 0
             if (neuronMods && ownedMotorIdx.length) {
                 let sum = 0
                 for (const m of ownedMotorIdx) {
@@ -4929,6 +4937,8 @@ export default defineComponent({
                     const a = Math.abs(d)
                     if (a > maxAbsDrive)
                         maxAbsDrive = a
+                    if (a > 0.1)
+                        activeMuscles++
                 }
                 meanDrive = sum / ownedMotorIdx.length
             }
@@ -4945,7 +4955,7 @@ export default defineComponent({
                     weightMaxAbs = a
             }
 
-            return { S, M, H, depth, meanDrive, maxAbsDrive, teach, meanMetric, usedWeights, strongWeights, weightMaxAbs, needs }
+            return { S, M, H, depth, meanDrive, maxAbsDrive, activeMuscles, teach, metNeeds, meanMetric, usedWeights, strongWeights, weightMaxAbs, needs }
         }
 
         // A single guarded readback. Never runs while a resize/erase is mutating buffers.
@@ -5086,7 +5096,10 @@ export default defineComponent({
                 const muscleR2 = particleLife.neuronRadius * particleLife.neuronRadius
                 const senseR2 = particleLife.senseRadius * particleLife.senseRadius
                 const next: UrgeStat[] = urgeEntries.map((u) => {
-                    let muscles = 0, eyes = 0, ears = 0, nose = 0
+                    let muscles = 0
+                    let eyes = 0
+                    let ears = 0
+                    let nose = 0
                     for (let n = 0; n < motorNeuronPos.length; n++) {
                         const dx = u.x - motorNeuronPos[n].x
                         const dy = u.y - motorNeuronPos[n].y
@@ -5113,7 +5126,7 @@ export default defineComponent({
                         id,
                         type: NUM_TYPES + u.k,
                         targetColor: u.k % NUM_TYPES,
-                        control: brain ? brain.meanDrive : 0, // real net output (was hardcoded 0)
+                        control: brain ? brain.maxAbsDrive : 0, // peak actuation 0..1 (mean cancels to ~0 across colors)
                         signal: brain ? brain.meanMetric : 0, // live aggregate metric (was stale proxy)
                         trendControl: 0,
                         trendSignal: 0,
