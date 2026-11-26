@@ -128,7 +128,9 @@ export default defineNuxtConfig({
         },
         prerender: {
             crawlLinks: false,
-            routes: ['/', '/about', '/particle-life', '/game-of-life', '/hash-life', '/sitemap.xml', '/robots.txt'], // Pre-render routes
+            // Every page in pages/ must be listed here (crawlLinks is false), otherwise the
+            // static GitHub Pages build omits it and the route 404s on deploy.
+            routes: ['/', '/about', '/particle-life', '/particle-brain', '/game-of-life', '/hash-life', '/sitemap.xml', '/robots.txt'], // Pre-render routes
             ignore: [],
         },
         compressPublicAssets: {
