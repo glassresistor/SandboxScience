@@ -399,7 +399,6 @@
                                 :target-colors="colorRgbStrings"
                                 :num-types="particleLife.numColors"
                                 :objective-label-for="objectiveLabelFor"
-                                :brain-drives="brainDrives"
                             />
 
                             <hr my-2 border-gray-500>
@@ -767,7 +766,7 @@
 </template>
 
 <script lang="ts">
-import type { ElectricalParams, UrgeStat } from "~/components/particle-brain/UrgeInspector.vue"
+import type { BrainNet, ElectricalParams, NeedStat, UrgeStat } from "~/components/particle-brain/UrgeInspector.vue"
 import heatmapImage from 'assets/particle-life-gpu/images/heatmap_red4x_256x1.png'
 import composeHdrShaderCode from 'assets/particle-brain-gpu/shaders/compose/compose_hdr.wgsl?raw'
 import infiniteCompositorShaderCode from 'assets/particle-brain-gpu/shaders/compose/infinite_compositor.wgsl?raw'
@@ -1051,6 +1050,7 @@ export default defineComponent({
         let genomeBuffer: GPUBuffer | undefined // per-brain genome (needs + weights), numBrains * GENOME_STRIDE floats
         let neuronOwnersBuffer: GPUBuffer | undefined // per-neuron ownership: [numSense + numMotor] u32 entries
         let neuronModsBuffer: GPUBuffer | undefined // per-motor-neuron drive output from brain forward pass
+        let brainMetricsBuffer: GPUBuffer | undefined // per-brain per-need live metric (numBrains * K floats), written by brainStep for the inspector
         let brainOptsBuffer: GPUBuffer | undefined
         let brainBindGroup: GPUBindGroup
         let brainOptsBindGroup: GPUBindGroup
@@ -2366,6 +2366,7 @@ export default defineComponent({
             if (genomeBuffer) genomeBuffer.destroy()
             if (neuronOwnersBuffer) neuronOwnersBuffer.destroy()
             if (neuronModsBuffer) neuronModsBuffer.destroy()
+            if (brainMetricsBuffer) brainMetricsBuffer.destroy()
             if (brainOptsBuffer) brainOptsBuffer.destroy()
             if (neuronHealthBuffer) neuronHealthBuffer.destroy()
             if (captureReleaseOptsBuffer) captureReleaseOptsBuffer.destroy()
@@ -2416,6 +2417,14 @@ export default defineComponent({
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             })
             device.queue.writeBuffer(neuronHealthBuffer, 0, new Float32Array(NEURON_HEALTH_CAPACITY).fill(1))
+
+            // Per-brain per-need live metric buffer (numBrains * K floats), written by brainStep each frame.
+            // Sized for COPY_SRC so the inspector can map it back. Zeroed until the first brain pass runs.
+            brainMetricsBuffer = device.createBuffer({
+                size: Math.max(numUrges, 1) * GENOME_K * 4,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+            })
+            device.queue.writeBuffer(brainMetricsBuffer, 0, new Float32Array(Math.max(numUrges, 1) * GENOME_K))
 
             // Brain step opts uniform: numBrains, numNeurons, numSenseNeurons, numTypes (4 u32s = 16 bytes)
             // + learnRate(f32), simWidth(f32), simHeight(f32), urgeRadius(f32) = 32 bytes total
@@ -2936,6 +2945,7 @@ export default defineComponent({
                         { binding: 1, resource: { buffer: genomeBuffer! } },          // per-brain genome (read_write)
                         { binding: 2, resource: { buffer: neuronOwnersBuffer! } },    // neuron ownership (read-only)
                         { binding: 3, resource: { buffer: neuronModsBuffer! } },      // output drives (read_write)
+                        { binding: 4, resource: { buffer: brainMetricsBuffer! } },    // per-need live metrics (read_write, inspector)
                     ],
                 })
                 brainOptsBindGroup = device.createBindGroup({
@@ -3299,6 +3309,7 @@ export default defineComponent({
                                 { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // genome (read_write)
                                 { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // neuronOwners
                                 { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // neuronMods (read_write)
+                                { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },           // brainMetrics (read_write, inspector)
                             ],
                         }),
                         device.createBindGroupLayout({
@@ -4767,13 +4778,10 @@ export default defineComponent({
         const URGE_READBACK_INTERVAL_MS = 200
         const urgeInspectorOpen = ref<boolean>(false)
         const urgeStats = ref<UrgeStat[]>([])
-        // Per-urge brain drive parameters (target/scale/gain), built deterministically at init
-        // and shown in the Brain Inspector. Index = local urge index k.
-        const brainDrives = ref<{ target: number, scale: number, gain: number }[]>([])
         let isReadingBackUrges = false // concurrency guard: one readback in flight at a time
         let urgeReadbackTimer: number | null = null
         // Previous per-urge values (keyed by urge id) so we can show a trend between readbacks.
-        let prevUrgeValues = new Map<number, { control: number, signal: number, driveTarget: number, driveScale: number, driveGain: number }>()
+        let prevUrgeValues = new Map<number, { control: number, signal: number }>()
 
         // ---- Stable clone identity across readbacks --------------------------------------
         // Clones have no persistent GPU-side id (a dormant-pool slot re-labeled with a fractional
@@ -4795,29 +4803,25 @@ export default defineComponent({
         let lastReadTimeMs = 0 // wall-clock time of the most recent readback (for velocity extrapolation)
 
         // Snapshot of the global electrical parameters for the parameter card (reactive).
+        // These are the ACTIVE knobs the brain layer responds to — no deprecated/legacy zeros.
         const electricalParams = computed<ElectricalParams>(() => ({
-            metricMode: 0, // deprecated (goal modes gone)
+            brainGain: particleLife.brainGain,
+            brainLearnRate: particleLife.brainLearnRate,
             urgeRadius: particleLife.urgeRadius,
             neuronRadius: particleLife.neuronRadius,
             urgeForce: particleLife.urgeForce,
-            controlGain: 0, // deprecated
-            controlMax: 0, // deprecated
-            neuronInfluence: 0, // legacy
-            neuronAuthority: 0, // legacy
-            maxAuthority: 0, // legacy
             cohesion: particleLife.cohesion,
+            senseRadius: particleLife.senseRadius,
+            senseMode: particleLife.senseMode,
         }))
 
-        // Per-brain info (replaces old urgeGoalFor): brains have homeostatic needs in the genome.
-        const urgeGoalFor = (k: number) => {
-            return { mode: 2, targetValue: 1.0 } // always "homeostasis" (needs are setpoints)
-        }
-        const objectiveLabelFor = (k: number): string => {
-            const g = urgeGoalFor(k)
-            const n = (k % NUM_TYPES) + 1
-            const modeName = ['maximize', 'minimize', 'homeostasis'][g.mode]
-            const targetStr = g.mode === 2 ? ` @ ${g.targetValue.toFixed(2)}` : ''
-            return `${modeName} density of Color ${n}${targetStr}`
+        // A brain's objective is homeostasis across its K genome needs (need i targets color
+        // i % NUM_TYPES at a per-need setpoint). That mapping is fixed at init, so the label is
+        // stable; the live per-need metrics are shown in the card from the readback.
+        // (kept as a 1-arg function for the existing prop contract; the label is uniform
+        // across brains, so the index is intentionally unused.)
+        const objectiveLabelFor = (_k?: number): string => {
+            return `Homeostasis across ${GENOME_K} need-colors (keep each near its setpoint)`
         }
 
         // Colour + short objective for the on-canvas marker (reactive; only changes on selection/metric change).
@@ -4852,6 +4856,98 @@ export default defineComponent({
             return `#${id}`
         })
 
+        // Build an accurate per-brain neural-network snapshot from the real GPU buffers.
+        // k = local brain index. genome holds needs + weights; neuronMods holds the live net
+        // outputs (one per motor neuron); brainMetrics holds the per-need live density metric;
+        // owners maps each sense/motor neuron to its owning brain (0xFFFFFFFF = free).
+        const buildBrainNet = (
+            k: number,
+            genome: Float32Array,
+            neuronMods: Float32Array | null,
+            brainMetrics: Float32Array | null,
+            owners: Uint32Array,
+        ): BrainNet => {
+            const base = k * GENOME_STRIDE
+
+            // K needs (targetColor stored as u32-as-f32) + live metric + teaching error.
+            const needs: NeedStat[] = []
+            let teachSum = 0
+            let metricSum = 0
+            for (let i = 0; i < GENOME_K; i++) {
+                const nb = base + i * 4
+                const targetColor = Math.round(genome[nb]) % NUM_TYPES
+                const setpoint = genome[nb + 1]
+                const scale = Math.max(genome[nb + 2], 0.1)
+                const gain = genome[nb + 3]
+                const metric = brainMetrics ? brainMetrics[k * GENOME_K + i] : 0
+                // Mirror brainStep.wgsl: err = clamp((setpoint - metric)/scale, ±1) * gain
+                const error = Math.max(-1, Math.min(1, (setpoint - metric) / scale)) * gain
+                needs.push({ targetColor, setpoint, scale, gain, metric, error })
+                teachSum += error
+                metricSum += metric
+            }
+            const teach = teachSum / GENOME_K
+            const meanMetric = metricSum / GENOME_K
+
+            // Ownership: which sense + motor neurons this brain controls.
+            let ownedSense = 0
+            for (let s = 0; s < numSenseNeurons; s++) {
+                if (owners[s] === k) {
+                    ownedSense++
+                }
+            }
+            const ownedMotorIdx: number[] = []
+            for (let m = 0; m < numNeurons; m++) {
+                if (owners[numSenseNeurons + m] === k) {
+                    ownedMotorIdx.push(m)
+                }
+            }
+
+            // Net shape must mirror brainStep.wgsl exactly (S/M capped at MAX_S/MAX_M=32).
+            const S = Math.min(ownedSense, 32)
+            const M = Math.min(ownedMotorIdx.length, 32)
+            let H: number
+            let depth: number
+            if (S + M <= 8) {
+                H = Math.max(4, Math.min(32, Math.floor((S * M + 1) / 2)))
+                depth = 1
+            }
+            else {
+                const hCalc = Math.sqrt(Math.max(S, 1) * Math.max(M, 1))
+                H = Math.min(32, Math.max(4, Math.round(hCalc)))
+                depth = 2
+            }
+
+            // Live net outputs (neuronMods is the pre-brainGain drive, signed [-1,1]).
+            let meanDrive = 0
+            let maxAbsDrive = 0
+            if (neuronMods && ownedMotorIdx.length) {
+                let sum = 0
+                for (const m of ownedMotorIdx) {
+                    const d = neuronMods[m]
+                    sum += d
+                    const a = Math.abs(d)
+                    if (a > maxAbsDrive)
+                        maxAbsDrive = a
+                }
+                meanDrive = sum / ownedMotorIdx.length
+            }
+
+            // Weight statistics over the USED region of the net (first usedWeights floats).
+            const usedWeights = S * H + H + (depth === 2 ? H * H + H : 0) + H * M + M
+            let strongWeights = 0
+            let weightMaxAbs = 0
+            for (let w = 0; w < usedWeights; w++) {
+                const a = Math.abs(genome[base + GENOME_NEEDS_SIZE + w])
+                if (a > 0.5)
+                    strongWeights++
+                if (a > weightMaxAbs)
+                    weightMaxAbs = a
+            }
+
+            return { S, M, H, depth, meanDrive, maxAbsDrive, teach, meanMetric, usedWeights, strongWeights, weightMaxAbs, needs }
+        }
+
         // A single guarded readback. Never runs while a resize/erase is mutating buffers.
         const readUrgeStats = async () => {
             if (!urgeInspectorOpen.value)
@@ -4881,10 +4977,46 @@ export default defineComponent({
                     return
 
                 const particles = new Float32Array(arrayBuffer)
+
+                // ---- Read back the REAL brain data. The particle-buffer control/signal fields
+                // are non-authoritative for brains (hardcoded 0 / stale proxy); the genome,
+                // neuronMods, brainMetrics and ownership buffers are the source of truth.
+                let genome: Float32Array | null = null
+                let neuronMods: Float32Array | null = null
+                let brainMetrics: Float32Array | null = null
+                let owners: Uint32Array | null = null
+                if (genomeBuffer && numUrges > 0) {
+                    genome = new Float32Array(await readBufferFromGPU(genomeBuffer, numUrges * GENOME_STRIDE * 4))
+                    if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting)
+                        return
+                }
+                if (neuronModsBuffer && numNeurons > 0) {
+                    neuronMods = new Float32Array(await readBufferFromGPU(neuronModsBuffer, numNeurons * 4))
+                    if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting)
+                        return
+                }
+                if (brainMetricsBuffer && numUrges > 0) {
+                    brainMetrics = new Float32Array(await readBufferFromGPU(brainMetricsBuffer, numUrges * GENOME_K * 4))
+                    if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting)
+                        return
+                }
+                if (neuronOwnersBuffer && (numNeurons > 0 || numSenseNeurons > 0)) {
+                    owners = new Uint32Array(await readBufferFromGPU(neuronOwnersBuffer, (numSenseNeurons + numNeurons) * 4))
+                    if (!urgeInspectorOpen.value || isUpdatingParticles || isEraseCompleting)
+                        return
+                }
+
+                // Build one accurate neural-network snapshot per local brain k.
+                const brainNets = new Map<number, BrainNet>()
+                if (genome && owners) {
+                    for (let k = 0; k < numUrges; k++)
+                        brainNets.set(k, buildBrainNet(k, genome, neuronMods, brainMetrics, owners))
+                }
+
                 // Collect urges (originals + clones), motor neurons, and sense neurons.
                 // Clones are identified by the fractional part of their type float (set to .5 at
                 // activation; the shader truncates via u32() so it sees the same integer type).
-                const urgeEntries: { k: number, isClone: boolean, x: number, y: number, vx: number, vy: number, control: number, signal: number, goalB: number, driveTarget: number, driveScale: number, driveGain: number, displayId: number }[] = []
+                const urgeEntries: { k: number, isClone: boolean, x: number, y: number, vx: number, vy: number, displayId: number }[] = []
                 const motorNeuronPos: { x: number, y: number }[] = []
                 const senseNeuronPos: { x: number, y: number, mode: number }[] = [] // mode: 0=sight, 1=smell, 2=sound
 
@@ -4897,8 +5029,7 @@ export default defineComponent({
                     const localType = intType - NUM_TYPES
                     if (localType < numUrges) {
                         const isClone = rawType - intType > 0.1 // fractional tag = clone
-                        const goalB = Math.floor(particles[idx + 7])
-                        urgeEntries.push({ k: localType, isClone, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], control: particles[idx + 5], signal: particles[idx + 6], goalB: goalB >= 0 ? goalB : -1, driveTarget: particles[idx + 8], driveScale: particles[idx + 9], driveGain: particles[idx + 10], displayId: 0 })
+                        urgeEntries.push({ k: localType, isClone, x: particles[idx], y: particles[idx + 1], vx: particles[idx + 2], vy: particles[idx + 3], displayId: 0 })
                     }
                     else if (localType - numUrges < numNeurons) {
                         // Motor neuron (muscle)
@@ -4976,12 +5107,14 @@ export default defineComponent({
                     }
                     const wired = muscles + eyes + ears + nose
                     const id = u.displayId
+                    // Clones share their parent's genome slot, so they show the same net.
+                    const brain = brainNets.get(u.k)
                     return {
                         id,
                         type: NUM_TYPES + u.k,
                         targetColor: u.k % NUM_TYPES,
-                        control: u.control,
-                        signal: u.signal,
+                        control: brain ? brain.meanDrive : 0, // real net output (was hardcoded 0)
+                        signal: brain ? brain.meanMetric : 0, // live aggregate metric (was stale proxy)
                         trendControl: 0,
                         trendSignal: 0,
                         wiredNeurons: wired,
@@ -4989,10 +5122,7 @@ export default defineComponent({
                         wiredEyes: eyes,
                         wiredEars: ears,
                         wiredNose: nose,
-                        goalB: u.goalB >= 0 ? u.goalB : undefined,
-                        driveTarget: u.driveTarget,
-                        driveScale: u.driveScale,
-                        driveGain: u.driveGain,
+                        brain,
                         ...(u.isClone ? { isClone: true as const, cloneOf: u.k, cloneId: -id - (u.k + 1) * 1000 } : {}),
                     }
                 })
@@ -5008,21 +5138,15 @@ export default defineComponent({
                 // first, then clones in birth order. Rows only move when their own urge dies —
                 // never when an unrelated clone is born elsewhere.
                 deduped.sort(compareUrgeRows)
-                const newPrev = new Map<number, { control: number, signal: number, driveTarget: number, driveScale: number, driveGain: number }>()
+                const newPrev = new Map<number, { control: number, signal: number }>()
                 for (const s of deduped) {
                     const prev = prevUrgeValues.get(s.id)
                     if (prev) {
+                        // Net output + aggregate metric change readback to readback as the net runs.
                         s.trendControl = s.control - prev.control
                         s.trendSignal = s.signal - prev.signal
-                        // Drive params drift via GPU mutation each frame — surface the per-readback Δ.
-                        if (s.driveTarget !== undefined && !Number.isNaN(s.driveTarget))
-                            s.trendDriveTarget = s.driveTarget - prev.driveTarget
-                        if (s.driveScale !== undefined && !Number.isNaN(s.driveScale))
-                            s.trendDriveScale = s.driveScale - prev.driveScale
-                        if (s.driveGain !== undefined && !Number.isNaN(s.driveGain))
-                            s.trendDriveGain = s.driveGain - prev.driveGain
                     }
-                    newPrev.set(s.id, { control: s.control, signal: s.signal, driveTarget: s.driveTarget ?? 0, driveScale: s.driveScale ?? 0, driveGain: s.driveGain ?? 0 })
+                    newPrev.set(s.id, { control: s.control, signal: s.signal })
                 }
                 prevUrgeValues = newPrev // prunes ids that no longer exist
                 urgeStats.value = deduped
@@ -5042,7 +5166,7 @@ export default defineComponent({
                 // Refresh the live control/metric readout in the on-canvas marker (if one is tracked).
                 if (urgeMarkerStatEl.value && selectedUrgeId.value !== -1) {
                     const sel = deduped.find(s => s.id === selectedUrgeId.value)
-                    urgeMarkerStatEl.value.textContent = sel ? `control ${sel.control >= 0 ? '+' : ''}${sel.control.toFixed(2)} · metric ${sel.signal.toFixed(2)}` : ''
+                    urgeMarkerStatEl.value.textContent = sel ? `net ${sel.control >= 0 ? '+' : ''}${sel.control.toFixed(2)} · metric ${sel.signal.toFixed(2)}` : ''
                 }
             }
             catch {
@@ -6100,7 +6224,6 @@ export default defineComponent({
             experimentLog,
             clearExperimentLog,
             damageEventLog,
-            brainDrives,
             electricalParams,
             selectedUrgeId,
             urgeMarkerEl,

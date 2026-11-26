@@ -2824,16 +2824,12 @@ export default defineComponent({
 
         // Electrical params snapshot for the inspector card
         const electricalParams = computed(() => ({
-            metricMode: particleLife.metricMode,
             urgeRadius: particleLife.urgeRadius,
             neuronRadius: particleLife.neuronRadius,
             urgeForce: particleLife.urgeForce,
-            controlGain: particleLife.controlGain,
-            controlMax: particleLife.controlMax,
-            neuronInfluence: 0,
-            neuronAuthority: 0,
-            maxAuthority: 0,
             cohesion: particleLife.cohesion,
+            senseRadius: particleLife.senseRadius,
+            senseMode: particleLife.senseMode,
         }))
 
         // Color strings for the inspector (HSL → CSS string)

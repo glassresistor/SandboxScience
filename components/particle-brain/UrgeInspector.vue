@@ -22,9 +22,9 @@
                     <span class="ml-auto rounded bg-cyan-500/15 px-1.5 py-0.5 text-[0.6rem] text-cyan-300 tracking-wide font-mono uppercase ring-1 ring-cyan-500/40">shared</span>
                 </div>
                 <p class="mb-2 text-[0.72rem] text-zinc-400 leading-snug">
-                    These knobs apply to <b>every</b> urge &amp; neuron at once. The per-urge values below
-                    (<span class="text-emerald-300">control</span>,
-                    <span class="text-amber-300">metric</span>, target color) are what each individual urge carries.
+                    These knobs apply to <b>every</b> brain &amp; neuron at once. The per-brain cards below show
+                    each brain’s live <span class="text-emerald-300">net output</span>, its neural-net shape, and the
+                    <span class="text-amber-300">metric vs setpoint</span> for every genome need.
                 </p>
                 <ul class="flex flex-col gap-1">
                     <li
@@ -54,12 +54,12 @@
                     </span>
                 </div>
                 <p class="mb-2 text-[0.72rem] text-zinc-400 leading-snug">
-                    One tracking card per live urge — every clone gets its own card (grouped under its parent,
+                    One tracking card per live brain — every clone gets its own card (grouped under its parent,
                     e.g. <span class="text-violet-300 font-mono">#3-C1</span>), and rows keep their place as clones
-                    are born or die. Each row’s top line is its <b>objective</b> (what it wants) — fixed unless you
-                    change the metric or species count. The <span class="text-emerald-300">control</span> bar is centred at 0:
-                    <span class="text-rose-300">left = repel</span>, <span class="text-emerald-300">right = attract</span>.<br>
-                    <span class="text-sky-300">Click a row to track that urge on the canvas.</span>
+                    are born or die. The <span class="text-emerald-300">net output</span> bar is the brain’s real drive to its
+                    motor neurons (centred at 0: <span class="text-rose-300">left = repel</span>,
+                    <span class="text-emerald-300">right = attract</span>); the table below it shows each need’s live metric against its setpoint.<br>
+                    <span class="text-sky-300">Click a row to track that brain on the canvas.</span>
                 </p>
 
                 <ul class="flex flex-col gap-1.5">
@@ -107,23 +107,17 @@
                             </span>
                         </div>
 
-                        <!-- what it wants (primary goal + secondary if merged) -->
-                        <div class="mt-1 flex flex-col gap-0.5">
+                        <!-- objective (stable): homeostasis across its K need-colors -->
+                        <div class="mt-1">
                             <p class="flex items-center gap-1.5 text-[0.74rem] text-zinc-200 leading-tight">
                                 <span class="i-tabler-target shrink-0 text-amber-400" />
                                 <span>{{ objectiveLabelFor(s.cloneOf ?? s.id) }}</span>
                             </p>
-                            <!-- Secondary goal from a merge: shows what the absorbed urge wanted -->
-                            <p v-if="s.goalB !== undefined" class="ml-5 flex items-center gap-1.5 text-[0.74rem] text-zinc-300 leading-tight">
-                                <span class="i-tabler-target shrink-0 text-violet-400" />
-                                <span :class="s.goalB === (s.cloneOf ?? s.id) ? 'text-amber-300 font-semibold' : ''">{{ objectiveLabelFor(s.goalB) }}</span>
-                                <span v-if="s.goalB === (s.cloneOf ?? s.id)" class="text-[0.62rem] text-amber-400/70 font-mono">×2</span>
-                            </p>
                         </div>
 
-                        <!-- control signed bar -->
+                        <!-- net output: the REAL brain→muscle drive (mean of owned motor drives, signed [-1,1]) -->
                         <div class="mt-1.5 flex items-center gap-2">
-                            <span class="w-12 shrink-0 text-[0.68rem] text-zinc-400">Control</span>
+                            <span class="w-14 shrink-0 text-[0.68rem] text-zinc-400">Net output</span>
                             <div class="relative h-2 flex-1 overflow-hidden rounded-full bg-slate-700/70">
                                 <!-- center divider -->
                                 <div class="absolute bottom-0 left-1/2 top-0 w-px bg-white/40" />
@@ -138,52 +132,54 @@
                                 class="w-14 shrink-0 text-right text-[0.72rem] font-mono tabular-nums"
                                 :class="s.control >= 0 ? 'text-emerald-300' : 'text-rose-300'"
                             >{{ fmt(s.control) }}</span>
-                            <span class="w-4 shrink-0 text-center" title="Δ control vs previous readback">
+                            <span class="w-4 shrink-0 text-center" title="Δ net output vs previous readback">
                                 <span v-if="s.trendControl > TREND_EPS" class="i-tabler-arrow-up text-emerald-400" />
                                 <span v-else-if="s.trendControl < -TREND_EPS" class="i-tabler-arrow-down text-rose-400" />
                                 <span v-else class="i-tabler-minus text-zinc-500" />
                             </span>
                         </div>
 
-                        <!-- metric / signal value (the live number) -->
-                        <div class="mt-1 flex items-center gap-2">
-                            <span class="w-12 shrink-0 text-[0.68rem] text-zinc-400">Metric</span>
-                            <div class="relative h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/70">
-                                <div
-                                    class="absolute bottom-0 left-0 top-0 rounded-full bg-amber-500/70"
-                                    :style="{ width: signalFill(s.signal) }"
-                                />
-                            </div>
-                            <span class="w-14 shrink-0 text-right text-[0.72rem] text-amber-300 font-mono tabular-nums">{{ fmt(s.signal) }}</span>
-                            <span
-                                v-if="s.trendSignal !== undefined && Math.abs(s.trendSignal) > TREND_EPS"
-                                class="w-4 shrink-0 text-center text-[0.62rem] font-mono"
-                                :class="s.trendSignal > 0 ? 'text-emerald-400' : 'text-rose-400'"
-                            >
-                                {{ s.trendSignal > 0 ? '+' : '' }}{{ fmt(s.trendSignal) }}
+                        <!-- neural network summary (accurate, from genome + ownership buffers) -->
+                        <div v-if="s.brain" class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded bg-fuchsia-500/5 px-1.5 py-1 text-[0.68rem] font-mono tabular-nums ring-1 ring-fuchsia-500/20">
+                            <span class="flex items-center gap-1 text-fuchsia-200" title="Net shape: sense inputs × hidden units × motor outputs; ×N means N hidden layers">
+                                <span class="i-tabler-brain shrink-0 text-fuchsia-300" />{{ s.brain.S }}·{{ s.brain.H }}·{{ s.brain.M }}{{ s.brain.depth > 1 ? `×${s.brain.depth}` : '' }}
+                            </span>
+                            <span class="text-zinc-600">|</span>
+                            <span class="flex items-center gap-1 text-indigo-200" title="Teaching signal: mean of the K need errors — drives delta-rule learning">
+                                teach {{ fmt(s.brain.teach, 3) }}
+                            </span>
+                            <span class="text-zinc-600">|</span>
+                            <span class="flex items-center gap-1 text-sky-200" title="Weights: strong (|w|>0.5) over total, and max magnitude (clamped at ±2). Grows as the net learns.">
+                                w {{ s.brain.strongWeights }}/{{ s.brain.usedWeights }} · max {{ fmt(s.brain.weightMaxAbs, 2) }}
                             </span>
                         </div>
 
-                        <!-- brain drive model: live per-particle target / scale / gain (mutates over time) -->
-                        <div
-                            v-if="s.driveTarget !== undefined"
-                            class="mt-1.5 flex items-center gap-1.5 rounded bg-indigo-500/5 px-1.5 py-1 ring-1 ring-indigo-500/20"
-                            title="Brain drive model (live): error = (target - metric) / scale × gain. These values drift continuously via GPU mutation — watch them tick."
-                        >
-                            <span class="i-tabler-brain shrink-0 text-indigo-300" />
-                            <span class="text-[0.62rem] uppercase tracking-wide font-mono text-indigo-300/80">drive</span>
-                            <span class="ml-auto flex items-center gap-2 font-mono tabular-nums text-[0.7rem]">
-                                <span class="flex items-center gap-0.5 text-indigo-200" title="Target: the metric value this urge wants to reach (homeostasis setpoint)">
-                                    t&nbsp;{{ fmt(s.driveTarget, 3) }}<span :class="trendIcon(s.trendDriveTarget)" />
-                                </span>
-                                <span class="flex items-center gap-0.5 text-sky-300" title="Scale: error normalisation — smaller = more sensitive to deviation">
-                                    s&nbsp;{{ fmt(s.driveScale, 3) }}<span :class="trendIcon(s.trendDriveScale)" />
-                                </span>
-                                <span class="flex items-center gap-0.5 text-emerald-300" title="Gain: how strongly this urge's error feeds the brain (its importance)">
-                                    g&nbsp;{{ fmt(s.driveGain, 3) }}<span :class="trendIcon(s.trendDriveGain)" />
-                                </span>
-                            </span>
+                        <!-- per-need live table: each genome need's target color vs its setpoint -->
+                        <div v-if="s.brain" class="mt-1.5">
+                            <p class="mb-0.5 text-[0.62rem] text-zinc-500 tracking-wide font-mono uppercase">
+                                Needs · live metric vs setpoint
+                            </p>
+                            <ul class="flex flex-col gap-0.5">
+                                <li v-for="(n, i) in s.brain.needs" :key="i" class="flex items-center gap-1.5 text-[0.68rem] font-mono tabular-nums">
+                                    <span class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/30" :style="{ backgroundColor: colorFor(n.targetColor) }" />
+                                    <span class="w-7 shrink-0 text-zinc-400">C{{ n.targetColor + 1 }}</span>
+                                    <!-- metric bar (fill = live metric vs a soft cap); white tick marks the setpoint -->
+                                    <div class="relative h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/70">
+                                        <div class="absolute bottom-0 left-0 top-0 rounded-full" :class="needBarColor(n)" :style="{ width: needFill(n) }" />
+                                        <div class="absolute bottom-0 top-0 w-px bg-white/60" :style="{ left: setpointPos(n) }" title="setpoint" />
+                                    </div>
+                                    <span class="w-12 shrink-0 text-right text-zinc-300">{{ fmt(n.metric) }}</span>
+                                    <span class="w-16 shrink-0 text-right" :class="needErrClass(n)" title="error = clamp((setpoint − metric)/scale, ±1) × gain">
+                                        {{ n.error >= 0 ? '↑' : '↓' }}{{ fmt(Math.abs(n.error), 2) }}
+                                    </span>
+                                </li>
+                            </ul>
                         </div>
+
+                        <!-- fallback: no genome/net buffers for this renderer (CPU), or first GPU tick -->
+                        <p v-else class="mt-1.5 text-[0.68rem] text-zinc-500">
+                            No neural-net telemetry available.
+                        </p>
                     </li>
                 </ul>
             </div>
@@ -194,16 +190,46 @@
 <script lang="ts">
 import { computed, defineComponent } from 'vue'
 
-// A single urge's live telemetry, read back from the GPU a few times per second.
+// One genome need of a brain, with its LIVE metric read back from the GPU.
+// targetColor = which matter color this need wants; setpoint/scale/gain are the homeostasis
+// parameters (mutate slowly via brainMutate); metric is the current normalized density of that
+// color near the brain (written by brainStep each frame); error is the teaching contribution.
+export interface NeedStat {
+    targetColor: number // matter color index this need wants (0..numTypes-1)
+    setpoint: number // homeostasis target for the metric (normalized density)
+    scale: number // error normalisation — smaller = more sensitive to deviation
+    gain: number // weight of this need's error into the teaching signal
+    metric: number // LIVE normalized density of targetColor within urgeRadius of the brain
+    error: number // clamp((setpoint - metric) / scale, ±1) * gain  (mirrors brainStep)
+}
+
+// A full per-brain neural-network snapshot, read back from the real GPU buffers
+// (genome + neuronMods + brainMetrics + ownership). Accurate source of truth.
+export interface BrainNet {
+    S: number // sense neurons owned → net inputs
+    M: number // motor neurons owned → net outputs
+    H: number // hidden units (mirrors brainStep.wgsl shape)
+    depth: number // 1 or 2 hidden layers
+    meanDrive: number // mean signed net output across owned motor neurons (the real "control")
+    maxAbsDrive: number // strongest |drive| among owned motor neurons
+    teach: number // scalar teaching signal = mean of the K need errors
+    meanMetric: number // mean of the K live need metrics (aggregate activity)
+    usedWeights: number // total weights in the net (S*H + H [+H*H+H] + H*M + M)
+    strongWeights: number // count of |w| > 0.5 (net has learned structure)
+    weightMaxAbs: number // max |w| across used weights (clamped at ±2 by the shader)
+    needs: NeedStat[] // the K genome needs with live metrics
+}
+
+// A single brain's live telemetry, read back from the GPU a few times per second.
 export interface UrgeStat {
     id: number // local urge index k (originals) or stable negative id (clones)
     type: number // NUM_TYPES + k (the particle type code, always the parent's)
-    targetColor: number // k % NUM_TYPES (the matter color this urge maximises)
-    control: number // signed, [-controlMax, +controlMax]  (+ attract / - repel)
-    signal: number // smoothed objective metric value
+    targetColor: number // k % NUM_TYPES (representative matter color for the dot)
+    control: number // signed net output [-1, 1] (meanDrive) — real brain→muscle drive
+    signal: number // aggregate live metric (mean of the K need metrics)
     trendControl: number // control - prevControl (0 if no prior readback)
     trendSignal?: number // signal - prevSignal (0/undefined if no prior readback)
-    wiredNeurons?: number // optional: total neurons within neuronRadius of this urge
+    wiredNeurons?: number // optional: total neurons within radius of this brain
     wiredMuscles?: number // motor neurons within neuronRadius ("muscles")
     wiredEyes?: number // sense neurons with mode=sight within senseRadius ("eyes")
     wiredEars?: number // sense neurons with mode=sound within senseRadius ("ears")
@@ -211,35 +237,21 @@ export interface UrgeStat {
     isClone?: boolean // true if this row represents a clone particle
     cloneOf?: number // parent urge k (only set when isClone)
     cloneId?: number // per-parent sequential clone number (1 = first clone of that parent)
-    goalB?: number // secondary goal index (local k) from a merge; undefined if none
-    driveTarget?: number // brain: desired metric value (homeostasis setpoint), mutates over time
-    driveScale?: number // brain: error normalisation (sensitivity), mutates over time
-    driveGain?: number // brain: weight of this urge's error into the network, mutates over time
-    trendDriveTarget?: number // ΔdriveTarget vs previous readback (0/undefined if no prior)
-    trendDriveScale?: number // ΔdriveScale vs previous readback
-    trendDriveGain?: number // ΔdriveGain vs previous readback
+    brain?: BrainNet // accurate per-brain neural-network data (clones share their parent's)
 }
 
-// One urge's brain drive model parameters (the per-urge "constitution" the recurrent
-// network reads). target = desired metric value, scale = error sensitivity, gain = weight.
-export interface BrainDrive {
-    target: number
-    scale: number
-    gain: number
-}
-
-// Snapshot of the global electrical parameters that apply to all urges/neurons.
+// Snapshot of the ACTIVE global parameters that apply to every brain/neuron.
+// brainGain/brainLearnRate are optional: the legacy CPU renderer has no brain net,
+// so it omits them (the card shows "—" for those two).
 export interface ElectricalParams {
-    metricMode: number
-    urgeRadius: number
-    neuronRadius: number
-    urgeForce: number
-    controlGain: number
-    controlMax: number
-    neuronInfluence: number
-    neuronAuthority: number
-    maxAuthority: number
-    cohesion: number
+    brainGain?: number // global net output gain — scales neuronMods into motor force
+    brainLearnRate?: number // delta-rule learning rate for brain weights (0 = frozen)
+    urgeRadius: number // radius a brain measures its metric & a neuron pushes/pulls its color
+    neuronRadius: number // capture radius: within it a brain can grab free neurons
+    urgeForce: number // strength of a motor neuron's actuation on its target color
+    cohesion: number // how strongly brains/neurons cling to the body & avoid overlap
+    senseRadius: number // perception radius shared by all three senses
+    senseMode: number // 0=cycle, 1=all sight, 2=all smell, 3=all sound
 }
 
 interface ParamMeta {
@@ -249,25 +261,23 @@ interface ParamMeta {
     isSelect?: boolean
 }
 
-// One-line "what it does" for each shared parameter (mirrors the Quantum/Electrical docs).
+// One-line "what it does" for each active shared parameter (mirrors the brain docs).
 const PARAM_META: ParamMeta[] = [
-    { key: 'metricMode', label: 'Goal Family', isSelect: true, desc: 'The family of per-urge goals; the exact goal (attract/repel, density/fraction) still varies by index.' },
-    { key: 'urgeRadius', label: 'Urge Radius', desc: 'Radius over which an urge measures its goal metric and a neuron pushes/pulls its color.' },
-    { key: 'neuronRadius', label: 'Neuron Radius', desc: 'Radius (from the neuron) within which an urge drives it.' },
-    { key: 'urgeForce', label: 'Urge Field Strength', desc: 'Strength of a neuron’s field on its color, scaled by the drive it receives from nearby urges.' },
-    { key: 'controlGain', label: 'Control Gain', desc: 'Learning rate: how strongly the metric change (vs last frame) pushes an urge’s control toward its goal sign.' },
-    { key: 'controlMax', label: 'Control Max', desc: 'Clamp on |control| — attract is +, repel is −.' },
-    { key: 'neuronInfluence', label: 'Neuron Influence', desc: '(Legacy, unused) How strongly a nearby neuron nudged an urge’s control.' },
-    { key: 'neuronAuthority', label: 'Authority / Neuron', desc: '(Legacy, unused) Extra authority gained per nearby neuron.' },
-    { key: 'maxAuthority', label: 'Max Authority', desc: '(Legacy, unused) Cap on the accumulated neuron authority.' },
-    { key: 'cohesion', label: 'Cohesion', desc: 'How strongly urges/neurons cling to the body and avoid overlapping each other.' },
+    { key: 'brainGain', label: 'Brain Gain', desc: 'Global output gain — scales each net’s drive into the force its motor neurons apply to their color. Higher = stronger actuation.' },
+    { key: 'brainLearnRate', label: 'Learn Rate', desc: 'Delta-rule learning rate for brain weights. 0 = frozen; >0 lets each net adapt from its need errors.' },
+    { key: 'urgeRadius', label: 'Urge Radius', desc: 'Radius over which a brain measures its need metrics and a motor neuron pushes/pulls its color.' },
+    { key: 'neuronRadius', label: 'Capture Radius', desc: 'Within this distance a brain can capture free sense/motor neurons into its net.' },
+    { key: 'urgeForce', label: 'Neuron Force', desc: 'Strength of a motor neuron’s actuation on its target color, scaled by the drive it receives.' },
+    { key: 'cohesion', label: 'Cohesion', desc: 'How strongly brains/neurons cling to the body and avoid overlapping each other.' },
+    { key: 'senseRadius', label: 'Sense Radius', desc: 'Perception radius shared by all three senses (sight / smell / sound).' },
+    { key: 'senseMode', label: 'Sense Mode', isSelect: true, desc: 'Which sense each sense neuron uses. Cycle gives a mix; the others specialise.' },
 ]
 
-const METRIC_MODE_NAMES: Record<number, string> = {
-    0: 'Mixed Density',
-    1: 'Mixed Fraction',
-    2: 'Density / Fraction',
-    3: 'Cycle All',
+const SENSE_MODE_NAMES: Record<number, string> = {
+    0: 'Cycle all',
+    1: 'All sight',
+    2: 'All smell',
+    3: 'All sound',
 }
 
 // Below this |Δ| a trend is shown as "flat" to avoid flicker from float noise.
@@ -284,8 +294,7 @@ export default defineComponent({
         targetColors: { type: Array as () => string[], required: true }, // rgb() strings, index = matter color id
         numTypes: { type: Number, required: true },
         selectedId: { type: Number, required: false, default: -1 }, // urge id currently tracked on the canvas (-1 = none)
-        objectiveLabelFor: { type: Function as unknown as () => ObjectiveLabelFn, required: true }, // per-urge goal label by index k
-        brainDrives: { type: Array as () => BrainDrive[], required: false, default: () => [] }, // per-urge brain drive model (index = local urge k)
+        objectiveLabelFor: { type: Function as unknown as () => ObjectiveLabelFn, required: true }, // per-brain goal label
     },
     emits: ['update:selectedId'],
     setup(props, { emit }) {
@@ -306,11 +315,11 @@ export default defineComponent({
             return n.toFixed(digits)
         }
 
-        const metricModeName = (mode: number): string => METRIC_MODE_NAMES[mode] ?? `Mode ${mode}`
+        const senseModeName = (mode: number): string => SENSE_MODE_NAMES[mode] ?? `Mode ${mode}`
 
         const displayValue = (meta: ParamMeta): string => {
             if (meta.isSelect)
-                return metricModeName(props.params.metricMode)
+                return senseModeName(props.params.senseMode)
             return fmt(props.params[meta.key])
         }
 
@@ -328,14 +337,39 @@ export default defineComponent({
             return { right: '50%', left: 'auto', width: `${widthPct}%` }
         }
 
-        // Metric bar: the scale depends on metricMode (count vs 0..1 fraction), so we only
-        // normalise the "fraction" mode; counts are capped at a soft ceiling for display.
-        const signalFill = (signal: number): string => {
-            let ratio: number
-            if (props.params.metricMode === 1)
-                ratio = Math.min(Math.max(signal, 0), 1)
-            else ratio = Math.min(Math.max(signal, 0) / 40, 1) // soft cap for count-based metrics
+        // ---- Per-need table helpers (live metric vs setpoint) --------------------------
+        // Soft cap so one need's bar fill stays comparable to its siblings.
+        const needCap = (n: NeedStat): number => Math.max(n.setpoint * 1.6, 0.8)
+
+        const needFill = (n: NeedStat): string => {
+            const ratio = Math.min(Math.max(n.metric, 0) / needCap(n), 1)
             return `${(ratio * 100).toFixed(1)}%`
+        }
+
+        // Position of the setpoint tick on the same scale as the metric fill.
+        const setpointPos = (n: NeedStat): string => {
+            const ratio = Math.min(Math.max(n.setpoint, 0) / needCap(n), 1)
+            return `${(ratio * 100).toFixed(1)}%`
+        }
+
+        // Fill color by how close the live metric is to its setpoint (homeostasis met?).
+        const needBarColor = (n: NeedStat): string => {
+            const dev = Math.abs(n.metric - n.setpoint) / Math.max(n.setpoint, 0.1)
+            if (dev < 0.3)
+                return 'bg-emerald-500/70'
+            if (dev < 0.8)
+                return 'bg-amber-500/70'
+            return 'bg-rose-500/70'
+        }
+
+        // Error readout color: small = satisfied, large = far from setpoint.
+        const needErrClass = (n: NeedStat): string => {
+            const a = Math.abs(n.error)
+            if (a > 0.6)
+                return 'text-rose-300'
+            if (a > 0.25)
+                return 'text-amber-300'
+            return 'text-emerald-300/80'
         }
 
         const colorFor = (colorId: number): string => {
@@ -347,14 +381,6 @@ export default defineComponent({
         // text always matches what the GPU is actually doing). STABLE over time for a given index.
         const objectiveLabelFor = (k: number): string => props.objectiveLabelFor(k)
 
-        // Resolve this urge's brain drive params by local index (clones inherit their parent's).
-        const brainDriveFor = (s: UrgeStat): BrainDrive | undefined => {
-            if (!props.brainDrives || !props.brainDrives.length)
-                return undefined
-            const idx = s.cloneOf ?? s.id
-            return props.brainDrives[idx]
-        }
-
         // Arrow class for a live trend value (drives tick every readback). Flat below TREND_EPS.
         const trendIcon = (delta?: number): string => {
             if (delta === undefined || Math.abs(delta) <= TREND_EPS_LOCAL)
@@ -362,7 +388,7 @@ export default defineComponent({
             return delta > 0 ? 'i-tabler-arrow-up text-emerald-400' : 'i-tabler-arrow-down text-rose-400'
         }
 
-        return { paramMeta, cloneCount, displayValue, fmt, barFill, signalFill, colorFor, objectiveLabelFor, brainDriveFor, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
+        return { paramMeta, cloneCount, displayValue, fmt, barFill, colorFor, objectiveLabelFor, needFill, setpointPos, needBarColor, needErrClass, trendIcon, select, TREND_EPS: TREND_EPS_LOCAL }
     },
 })
 </script>

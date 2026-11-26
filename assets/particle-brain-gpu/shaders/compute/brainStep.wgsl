@@ -65,6 +65,7 @@ struct BrainStepOpts {
 @group(0) @binding(1) var<storage, read_write> genome : array<f32>;
 @group(0) @binding(2) var<storage, read> neuronOwners : array<u32>; // [numSense + numMotor]
 @group(0) @binding(3) var<storage, read_write> neuronMods : array<f32>; // per-motor-neuron drive output
+@group(0) @binding(4) var<storage, read_write> brainMetrics : array<f32>; // per-brain per-need live metric (numBrains * K); written for the inspector
 
 @group(1) @binding(0) var<uniform> opts : BrainStepOpts;
 
@@ -79,6 +80,7 @@ var<workgroup> wg_S : u32;                         // count of owned sense neuro
 var<workgroup> wg_M : u32;                         // count of owned motor neurons
 var<workgroup> wg_errors : array<f32, K>;          // need errors (teaching signal)
 var<workgroup> wg_metricCounts : array<u32, K>;    // per-need target-color matter counts
+var<workgroup> wg_metrics : array<f32, K>;         // per-need normalized metric (O(1) count ratio)
 
 // O(1) metric: expected count of a color in a disk of radius r at baseline uniform distribution
 fn expectedCount(r : f32) -> f32 {
@@ -269,11 +271,18 @@ fn main(@builtin(workgroup_id) wid : vec3<u32>,
         let expC = max(expectedCount(opts.urgeRadius), 0.001);
         let metric = count / expC;
         wg_metricCounts[tid] = u32(count); // store for potential debugging
+        wg_metrics[tid] = metric;          // normalized metric (same space as setpoint)
 
         let err = clamp((setpoint - metric) / scale, -1.0, 1.0);
         wg_errors[tid] = err * gain;
     }
     workgroupBarrier();
+
+    // Write the per-need live metrics back to global memory so the inspector can show
+    // accurate values (each workgroup owns exactly one brain -> disjoint [brainId*K, +K) range).
+    if (tid < K) {
+        brainMetrics[brainId * K + tid] = wg_metrics[tid];
+    }
 
     // =====================================================================
     // PHASE 7: Delta-rule learning (flags instead of early returns)
