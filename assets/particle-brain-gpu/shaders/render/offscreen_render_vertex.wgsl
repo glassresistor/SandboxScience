@@ -48,6 +48,9 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) offset: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) particleType: f32,
+    @location(3) isDebugCircle: f32, // offscreen pass never draws debug radius rings
+    @location(4) shapeType: f32,     // 0=circle — the tiled background layer renders bodies as circles
 }
 
 @vertex
@@ -56,20 +59,26 @@ fn vertexMain(
     @builtin(vertex_index) vertexIndex: u32
 ) -> VertexOutput {
     if (instanceIndex >= options.numParticles) {
-        return VertexOutput(vec4f(0.0), vec2f(0.0), vec4f(0.0));
+        return VertexOutput(vec4f(0.0), vec2f(0.0), vec4f(0.0), 0.0, 0.0, 0.0);
     }
     let particle = particles[instanceIndex];
+    let pType = u32(particle.particleType);
     let offset = QUAD_VERTICES[vertexIndex];
     // Clamp to the color-table length so out-of-range/stale types render as the last entry
     // (the invisible dormant slot) instead of reading past the buffer.
-    let color = colors[min(u32(particle.particleType), arrayLength(&colors) - 1u)];
+    let color = colors[min(pType, arrayLength(&colors) - 1u)];
 
     let worldPos = vec2f(particle.x, particle.y) + offset * options.particleSize;
     let normalizedPos = (worldPos / vec2f(options.simWidth, options.simHeight)) * 2.0 - 1.0;
 
+    // Must emit the SAME interface as render_normal.wgsl's fragmentMain expects
+    // (this vertex is paired with that fragment in renderOffscreenPipeline).
     return VertexOutput(
         vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0),
         offset,
         color,
+        f32(pType), // location 2: particleType — fragment uses it for the electrical border ring
+        0.0,        // location 3: isDebugCircle — offscreen pass never draws debug radius rings
+        0.0         // location 4: shapeType — circle; bodies render as circles in the tiled layer
     );
 }
